@@ -1,0 +1,33 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    function isMember(gameId) {
+      return request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.members;
+    }
+    
+    match /games/{gameId} {
+      allow read: if request.auth != null; // Allow any authenticated user to read game data
+      allow write: if isMember(gameId); // Allow only game members to write
+      
+      // Log sub-collections
+      match /webrtc_logs/{logId} {
+          allow create: if isMember(gameId); // Only members can write logs for their own game
+          allow read: if isMember(gameId); // Only members can read logs
+      }
+      
+      match /game_logs/{logId} {
+          allow create: if isMember(gameId);
+          allow read: if isMember(gameId);
+      }
+    }
+    
+    match /scores/{scoreId} {
+      allow read: if true; // Anyone can read the scoreboard
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.playerUid; // Users can only create scores for themselves
+      allow update, delete: if false; // Nobody can edit or delete scores
+    }
+  }
+}
