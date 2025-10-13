@@ -1,12 +1,13 @@
 
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import GameSession from './game-session';
-import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameDelta } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameDelta, MovementPattern } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { useToast } from '@/hooks/use-toast';
-import { difficultyModifiers, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
+import { difficultyModifiers, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS, LOCAL_STORAGE_KEY } from '@/lib/game-data/constants';
 import type { User } from 'firebase/auth';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -16,7 +17,6 @@ import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 
 import type { Player, GameState, GameStatus } from './game-session';
-import { LOCAL_STORAGE_KEY } from './game-session';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 
@@ -96,14 +96,6 @@ export default function SinglePlayerGame({
         }
     }, [user, isCheating]);
 
-    const handleGameEnd = useCallback(async (result: GameResult) => {
-        if (gameStatus !== 'gameover') {
-            const savedResult = await saveFinishedGameResult(result);
-            setFinalGameResult(savedResult || result); // Use saved result with timestamp or fallback
-            setGameStatus('gameover');
-        }
-    }, [gameStatus, saveFinishedGameResult]);
-
     const saveGameState = useCallback(() => {
         if (gameStatus === 'gameover' || isCheating) return;
         
@@ -123,6 +115,15 @@ export default function SinglePlayerGame({
         toast({ title: 'Spiel gespeichert!' });
     }, [gameStatus, players, gameState, towersByCell, currentWave, difficulty, toast, isCheating]);
 
+
+    const handleGameEnd = useCallback(async (result: GameResult) => {
+        if (gameStatus !== 'gameover') {
+            saveGameState(); // Save final state before declaring it over
+            const savedResult = await saveFinishedGameResult(result);
+            setFinalGameResult(savedResult || result); // Use saved result with timestamp or fallback
+            setGameStatus('gameover');
+        }
+    }, [gameStatus, saveFinishedGameResult, saveGameState]);
 
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -250,9 +251,9 @@ export default function SinglePlayerGame({
         });
     }, [currentPath, saveGameState]);
     
-      const handlePlaceTower = useCallback((row: number, col: number) => {
+    const handlePlaceTower = useCallback((row: number, col: number) => {
         const player = players.find(p => p.id === 'player1');
-        const selectedTowerToBuild = initialTowers.find(t => t.isBase);
+        const selectedTowerToBuild = initialTowers.find(t => t.id === 'neutral-0'); // Simplified for example
 
         if (!selectedTowerToBuild || !player) return;
 
@@ -267,7 +268,7 @@ export default function SinglePlayerGame({
         const newTower: PlacedTower = {
             ...selectedTowerToBuild,
             specId: selectedTowerToBuild.id,
-            id: `tower-${row}-${col}`,
+            id: `tower-${row}-${col}-${Math.random()}`, // Make ID unique to force re-render
             position: { row, col },
             lastAttack: 0,
             health: selectedTowerToBuild.maxHealth,
@@ -290,7 +291,7 @@ export default function SinglePlayerGame({
 
         applyDeltas(deltas);
         audioManager.playSfx('build_tower');
-    }, [players, towersByCell, toast, applyDeltas]);
+    }, [players, towersByCell, toast, applyDeltas, START_NODE, END_NODE]);
 
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
@@ -396,7 +397,7 @@ export default function SinglePlayerGame({
         };
     
         spawnEnemy();
-    }, [currentWave, gameStatus, difficulty, isCheating, applyDeltas, isIntermission]);
+    }, [currentWave, gameStatus, difficulty, isCheating, applyDeltas, isIntermission, START_NODE, END_NODE]);
       
     useEffect(() => { startWaveRef.current = startWave; }, [startWave]);
 
@@ -472,5 +473,3 @@ export default function SinglePlayerGame({
         />
     )
 }
-
-    

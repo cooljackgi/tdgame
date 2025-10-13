@@ -11,13 +11,12 @@ import { doc, setDoc, serverTimestamp, getDoc, collection, addDoc } from 'fireba
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { difficultyModifiers, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
+import { difficultyModifiers, ALL_PICKABLE_ELEMENTS, LOCAL_STORAGE_KEY } from '@/lib/game-data/constants';
 import type { Difficulty, GameSaveState, Element } from '@/lib/game-data/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Lobby from '@/components/game/lobby';
 import SinglePlayerGame from '@/components/game/single-player-game';
 import type { Player } from '@/lib/game-data/types';
-import { LOCAL_STORAGE_KEY } from '@/components/game/game-session';
 import Link from 'next/link';
 import { normalizePlayers } from '@/lib/player-utils';
 import { audioManager } from '@/lib/audio/audio-manager';

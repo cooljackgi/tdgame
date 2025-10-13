@@ -33,7 +33,7 @@ export type GameState = {
 
 export type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'archived';
 
-export const LOCAL_STORAGE_KEY = 'nexus-singleplayer-save';
+
 const TUTORIAL_COMPLETED_KEY = 'nexus-tutorial-completed';
 
 type GameSessionProps = {
@@ -447,8 +447,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
           };
           deltas.push([DeltaType.TOWER_ATTACK, mainAttack]);
           
-          // The parent component (CoopGame or SinglePlayerGame) is responsible for state updates.
-          // The delta is enough. We find the tower and update its lastAttack time there.
           const updatedTowerData: Partial<PlacedTower> = { lastAttack: now };
           const cellKey = `${tower.position.row}_${tower.position.col}`;
           const newTower = { ...towersByCell[cellKey], ...updatedTowerData};
@@ -629,7 +627,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
       const allSpawned = spawnedThisWave >= (waveData?.enemies.count || 0);
 
       if (!isIntermission && allSpawned && liveEnemyCount === 0) {
-          
           audioManager.stopMusic();
           const nextWave = currentWave + 1;
           
@@ -654,7 +651,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
               if (canPickElement && !hasAllElements) {
                   stateUpdate = [DeltaType.GAME_STATE_UPDATE, { gameStatus: 'picking-element' }];
               } else {
-                  stateUpdate = [DeltaType.GAME_STATE_UPDATE, {
+                   stateUpdate = [DeltaType.GAME_STATE_UPDATE, {
                       currentWave: nextWave,
                       isIntermission: true,
                       waveStartCountdown: INTERMISSION_TIME,
@@ -672,7 +669,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost, gameState, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, towersByCell, enemies, spawnedThisWave, setPlayers]);
+  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, towersByCell, enemies, spawnedThisWave, setPlayers]);
 
   useEffect(() => {
     if (hasInteracted) {

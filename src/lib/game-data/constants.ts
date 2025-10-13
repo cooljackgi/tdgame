@@ -1,4 +1,5 @@
 
+
 import type { LucideIcon } from 'lucide-react';
 import {
   IconFire,
@@ -15,6 +16,7 @@ import type { Element, EnemyType } from './types';
 export const GRID_ROWS = 12;
 export const GRID_COLS = 12;
 
+export const LOCAL_STORAGE_KEY = 'nexus-singleplayer-save';
 export const ALL_PICKABLE_ELEMENTS: Element[] = ['fire', 'water', 'earth', 'air', 'light', 'dark', 'nature'];
 export const INTERMISSION_TIME = 15;
 

@@ -23,7 +23,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import type { Player } from '@/lib/game-data/types';
-import { normalizePlayers } from '@/lib/player-utils';
 import { httpsCallable } from 'firebase/functions';
 
 type GameLobbyInfo = {
@@ -58,9 +57,8 @@ export default function Lobby({ currentUser }: LobbyProps) {
     const unsubscribe = onSnapshot(gamesQuery, (snapshot) => {
       const gamesList: GameLobbyInfo[] = snapshot.docs.map(doc => {
         const data = doc.data();
-        const playersArr = normalizePlayers(data.players);
-        const player1 = playersArr.find(p => p.id === 'player1') || null;
-        const player2 = playersArr.find(p => p.id === 'player2') || null;
+        const player1 = data.players?.player1 || null;
+        const player2 = data.players?.player2 || null;
 
         return {
           id: doc.id,
