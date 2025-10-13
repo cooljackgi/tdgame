@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Users, Eye, Play, Trash } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { joinGame } from '@/lib/coop';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -82,7 +81,8 @@ export default function Lobby({ currentUser }: LobbyProps) {
   const handleJoinGame = async (gameId: string) => {
     setJoiningGameId(gameId);
     try {
-      await joinGame(functions, gameId);
+      const joinGameCallable = httpsCallable(functions, 'joinGame');
+      await joinGameCallable({ gameId });
       router.push(`/game/${gameId}`);
     } catch (error: any) {
       console.error("Failed to join game:", error);
