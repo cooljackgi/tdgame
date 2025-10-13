@@ -18,7 +18,8 @@ import { DeltaType } from "@/lib/game-data/types";
 import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from "@/lib/game-data/constants";
 import { audioManager } from "@/lib/audio/audio-manager";
 import { findPath } from '@/lib/pathfinding';
-import { waves } from '@/lib/game-data/enemies';
+import { towers as initialTowers } from '@/lib/game-data/towers';
+
 
 function CoopGame() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -39,6 +40,8 @@ function CoopGame() {
   const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [spawnedThisWave, setSpawnedThisWave] = useState(0);
+  const [clientPacketsPerSecond, setClientPacketsPerSecond] = useState(0);
+  const [clientBytesReceivedPerSecond, setClientBytesReceivedPerSecond] = useState(0);
 
   // --- Local State ---
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
@@ -56,8 +59,6 @@ function CoopGame() {
   const [fps, setFps] = useState(0);
   const [hostPacketsPerSecond, setHostPacketsPerSecond] = useState(0);
   const [hostBytesSentPerSecond, setHostBytesSentPerSecond] = useState(0);
-  const [clientPacketsPerSecond, setClientPacketsPerSecond] = useState(0);
-  const [clientBytesReceivedPerSecond, setClientBytesReceivedPerSecond] = useState(0);
   const [averagePacketSize, setAveragePacketSize] = useState(0);
 
   const rtc = useWebRTC(gameId, isGameHost, user);
@@ -140,7 +141,6 @@ function CoopGame() {
                   const stats = delta[1] as { pps: number, bps: number, avgSize: number };
                   setClientPacketsPerSecond(stats.pps);
                   setClientBytesReceivedPerSecond(stats.bps);
-                  setAveragePacketSize(stats.avgSize);
                 }
                 break;
             case DeltaType.GAME_STATE_UPDATE: {
@@ -171,15 +171,63 @@ function CoopGame() {
   }, [currentPath, isGameHost]);
     
   const broadcastGameData = useCallback((deltas: GameDelta[]) => {
-      if (deltas.length === 0 || !isGameHost) return;
+      if (deltas.length === 0) return;
       
       // Send to other players
-      rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
+      if(isGameHost) {
+         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
+      }
       
-      // Apply locally for the host
+      // Apply locally for the host. For clients, this is a no-op as they wait for server confirmation.
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
 
+
+  const handlePlaceTower = useCallback(async (row: number, col: number) => {
+    const localPlayer = players.find(p => p.id === localPlayerId);
+    // For now, only base tower can be built. A proper `selectedTowerToBuild` should be managed.
+    const selectedTowerToBuild = initialTowers.find(t => t.isBase);
+
+    if (!selectedTowerToBuild || !localPlayer || localPlayerId === 'spectator') return;
+
+    const cellKey = `${row}_${col}`;
+    const cost = selectedTowerToBuild.cost;
+
+    if (towersByCell[cellKey]) {
+        toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
+        return;
+    }
+    
+    const newTower: PlacedTower = {
+      ...selectedTowerToBuild,
+      id: `tower-${row}-${col}-${Math.random()}`,
+      specId: selectedTowerToBuild.id,
+      position: { row, col },
+      lastAttack: 0,
+      health: selectedTowerToBuild.maxHealth,
+      ownerId: localPlayer.id,
+    };
+    
+    const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
+    const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
+    if (!newPath) {
+        toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
+        return;
+    }
+    if (localPlayer.resources < cost) {
+        toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
+        return;
+    }
+    const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
+    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
+
+    broadcastGameData([
+        [DeltaType.TOWERS_UPDATE, newTowersByCell],
+        [DeltaType.PLAYER_UPDATE, playerUpdates]
+    ]);
+
+    audioManager.playSfx('build_tower');
+  }, [players, localPlayerId, towersByCell, broadcastGameData, toast, START_NODE, END_NODE]);
 
   useEffect(() => {
     if (!user || !gameId) return;
@@ -269,7 +317,7 @@ function CoopGame() {
       if (!currentUser) {
          if (process.env.NODE_ENV === 'development') {
             const devUser: User = {
-                uid: `dev-user-${Math.random()}`, // Make UID random for coop testing
+                uid: 'dev-user-' + Math.random().toString(36).substring(2, 9),
                 displayName: 'Dev Spieler',
                 email: 'dev@example.com',
                 photoURL: `https://i.pravatar.cc/150?u=dev-user-id`,
@@ -352,6 +400,7 @@ function CoopGame() {
       applyDeltas={applyDeltas}
       onGameEnd={handleGameEnd}
       onExit={() => router.push('/')}
+      handlePlaceTower={handlePlaceTower}
       attacks={attacks}
       damageNumbers={damageNumbers}
       splashRings={splashRings}
@@ -373,7 +422,3 @@ function CoopGame() {
 }
 
 export default CoopGame;
-
-    
-
-    
