@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import GameSession from "@/components/game/game-session";
@@ -37,7 +36,7 @@ function CoopGame() {
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
   const [isIntermission, setIsIntermission] = useState(true);
-  const [waveStartCountdown, setWaveStartCountdown] useState(INTERMISSION_TIME);
+  const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [spawnedThisWave, setSpawnedThisWave] = useState(0);
 
@@ -186,7 +185,7 @@ function CoopGame() {
     if (!user || !gameId) return;
 
     let gameUnsubscribe: Unsubscribe;
-    const logIntervals: NodeJS.Timeout[] = [];
+    const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
 
     const setupListeners = async (uid: string) => {
         try {
@@ -251,23 +250,6 @@ function CoopGame() {
               router.push('/');
             });
             
-            // Stats logging for the host
-            if(isGameHost) {
-                logIntervals.push(setInterval(() => {
-                    setHostPacketsPerSecond(rtc.packetsPerSecond);
-                    setHostBytesSentPerSecond(rtc.bytesPerSecond);
-                }, 1000));
-            } else { // Client sends its stats to host
-                logIntervals.push(setInterval(() => {
-                    const statsPayload = {
-                        pps: rtc.packetsPerSecond,
-                        bps: rtc.bytesPerSecond,
-                        avgSize: rtc.averagePacketSize,
-                    };
-                    rtc.sendMessage({ type: 'client_stats_update', payload: statsPayload });
-                }, 1000));
-            }
-
         } catch (e:any) {
             console.error("Error joining/setting up game:", e);
             toast({ title: "Fehler beim Beitreten", description: e.message, variant: 'destructive'});
@@ -279,7 +261,6 @@ function CoopGame() {
 
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
-        logIntervals.forEach(clearInterval);
     };
   }, [user, gameId, router, toast, isGameHost, rtc]);
 
@@ -323,10 +304,22 @@ function CoopGame() {
     if (gameId && isGameHost) {
         if(gameStatus === 'gameover') return;
       const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
-      await addDoc(logCollectionRef, { ...result, timestamp: serverTimestamp() });
+      const logData = {
+          ...result,
+          timestamp: serverTimestamp(),
+          hostPacketsPerSecond,
+          hostBytesSentPerSecond,
+          clientPacketsPerSecond,
+          clientBytesReceivedPerSecond,
+          averagePacketSize,
+          enemyCount: enemies.length,
+          towerCount: Object.keys(towersByCell).length,
+          fps,
+      };
+      await addDoc(logCollectionRef, logData);
       await updateDoc(doc(db, 'games', gameId), { gameStatus: 'gameover' });
     }
-  }, [gameId, isGameHost, gameStatus]);
+  }, [gameId, isGameHost, gameStatus, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize, enemies.length, Object.keys(towersByCell).length, fps]);
   
   if (loading || !localPlayerId) {
     return (
