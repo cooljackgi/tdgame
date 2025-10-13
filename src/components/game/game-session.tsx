@@ -68,6 +68,7 @@ type GameSessionProps = {
     applyDeltas: (deltas: GameDelta[]) => void;
     onGameEnd: (result: GameResult) => void;
     onExit: () => void;
+    handlePlaceTower: (row: number, col: number) => void;
     
     // --- VFX ---
     attacks: Attack[];
@@ -115,6 +116,7 @@ export default function GameSession({
     // Control
     isCoop, isGameHost, localPlayerId,
     broadcastGameData, applyDeltas, onGameEnd, onExit,
+    handlePlaceTower,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -237,43 +239,6 @@ export default function GameSession({
     setSelectedTowerToBuild(tower);
     setFocusedTower(null);
   }, [localPlayerId, localPlayer, toast, selectedTowerToBuild]);
-
-  const handlePlaceTower = useCallback(async (row: number, col: number) => {
-    if (!selectedTowerToBuild || !localPlayer || localPlayerId === 'spectator') return;
-
-    const cellKey = `${row}_${col}`;
-    const cost = selectedTowerToBuild.cost;
-
-    const newTower: PlacedTower = {
-      ...selectedTowerToBuild,
-      id: `tower-${row}-${col}`,
-      specId: selectedTowerToBuild.id,
-      position: { row, col },
-      lastAttack: 0,
-      health: selectedTowerToBuild.maxHealth,
-      ownerId: localPlayer.id,
-    };
-    
-    const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
-    const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
-    if (!newPath) {
-        toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
-        return;
-    }
-    if (localPlayer.resources < cost) {
-        toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
-        return;
-    }
-    const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
-
-    broadcastGameData([
-        [DeltaType.TOWERS_UPDATE, newTowersByCell],
-        [DeltaType.PLAYER_UPDATE, playerUpdates]
-    ]);
-
-    audioManager.playSfx('build_tower');
-  }, [selectedTowerToBuild, localPlayer, localPlayerId, toast, towersByCell, broadcastGameData, START_NODE, END_NODE]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
     if (!focusedTower || !localPlayer || localPlayerId === 'spectator') return;
