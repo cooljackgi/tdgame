@@ -1,5 +1,6 @@
+
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInAnonymously, type User, GoogleAuthProvider, signInWithPopup, signOut, connectAuthEmulator } from "firebase/auth";
 import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
@@ -32,6 +33,7 @@ if (typeof window !== "undefined" && window.location.hostname === "localhost") {
   try {
     connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
     connectFunctionsEmulator(functions, "localhost", 5001);
+    connectFirestoreEmulator(db, 'localhost', 8081);
     console.log("Successfully connected to Firebase Emulators.");
   } catch (e) {
     console.warn("Could not connect to Firebase Emulators. Are they running?", e);

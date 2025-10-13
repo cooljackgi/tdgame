@@ -1,14 +1,14 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, DocumentData, doc, deleteDoc } from 'firebase/firestore';
-import { db, functions } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
+import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Users, Eye, Play, Trash } from 'lucide-react';
-import type { User } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -20,9 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 import type { Player } from '@/lib/game-data/types';
-import { httpsCallable } from 'firebase/functions';
 
 type GameLobbyInfo = {
   id: string;
@@ -33,19 +32,15 @@ type GameLobbyInfo = {
   gameStatus: 'waiting' | 'playing' | 'gameover' | 'archived';
 };
 
-type LobbyProps = {
-  currentUser: User;
-};
-
-export default function Lobby({ currentUser }: LobbyProps) {
+const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () => void }) => {
   const [games, setGames] = useState<GameLobbyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [joiningGameId, setJoiningGameId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
+  const functions = getFunctions();
   
   useEffect(() => {
-    // Query now filters out 'archived' and 'gameover' games.
     const gamesQuery = query(
       collection(db, 'games'),
       where('gameStatus', 'in', ['waiting', 'playing']),
@@ -121,8 +116,11 @@ export default function Lobby({ currentUser }: LobbyProps) {
 
   return (
     <Card className="mt-8 text-left max-w-2xl mx-auto border-white/10 bg-card/70 backdrop-blur-sm">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-xl">Multiplayer-Lobby</CardTitle>
+        <Button onClick={onNewGame}>
+            <Swords className="mr-2"/> Neues Spiel
+        </Button>
       </CardHeader>
       <CardContent>
         {games.length === 0 ? (
@@ -153,7 +151,7 @@ export default function Lobby({ currentUser }: LobbyProps) {
                   <div className="flex gap-2">
                     {isPlayerInGame ? (
                        <Button onClick={() => router.push(`/game/${game.id}`)} variant="outline">
-                         <Play className="mr-2" /> Zurück ins Spiel
+                         <Play className="mr-2" /> Zurück
                        </Button>
                     ) : !isFull ? (
                       <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
@@ -198,3 +196,5 @@ export default function Lobby({ currentUser }: LobbyProps) {
     </Card>
   );
 }
+
+export default Lobby;

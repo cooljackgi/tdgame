@@ -1,13 +1,12 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Head from 'next/head';
-import { Loader2, Play, Users, Settings, LogIn, LogOut, Swords, Crown, BookOpen, HelpCircle, BarChart2, Waves, Music, AreaChart, TestTube2, Trophy } from 'lucide-react';
+import { Loader2, Play, Users, Settings, LogIn, LogOut, Swords, Crown, BookOpen, HelpCircle, BarChart2, Waves, Music, AreaChart, TestTube2, Trophy, Eye, Trash } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, auth, signInWithGoogle, logOut } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp, getDoc, collection, addDoc } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,12 +17,21 @@ import Lobby from '@/components/game/lobby';
 import SinglePlayerGame from '@/components/game/single-player-game';
 import type { Player } from '@/lib/game-data/types';
 import Link from 'next/link';
-import { normalizePlayers } from '@/lib/player-utils';
 import { audioManager } from '@/lib/audio/audio-manager';
-
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type GameMode = 'menu' | 'single' | 'coop-lobby' | 'cheat';
-
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
@@ -287,15 +295,8 @@ export default function Home() {
             <h1 className="text-3xl font-bold">Co-op Lobby</h1>
              <Button onClick={() => setGameMode('menu')}>Zurück zum Menü</Button>
         </div>
-       
-        <div className="flex justify-end mb-4">
-             <Button onClick={handleCreateCoopGame} disabled={creatingGame}>
-                {creatingGame ? <Loader2 className="mr-2 animate-spin" /> : <Swords className="mr-2"/>}
-                {creatingGame ? 'Erstelle...' : 'Neues Spiel erstellen'}
-            </Button>
-        </div>
 
-        {user && <Lobby currentUser={user} />}
+        {user && <Lobby currentUser={user} onNewGame={handleCreateCoopGame} />}
     </div>
   );
 

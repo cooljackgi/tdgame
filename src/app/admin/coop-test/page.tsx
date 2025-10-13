@@ -10,7 +10,6 @@ import { Loader2, TestTube2, Home, RefreshCw } from 'lucide-react';
 import { difficultyModifiers } from '@/lib/game-data/constants';
 import type { Player } from '@/lib/game-data/types';
 import Link from 'next/link';
-import { joinGame } from '@/lib/coop';
 import { httpsCallable } from 'firebase/functions';
 import CoopGame from '@/app/game/[gameId]/page';
 
@@ -96,7 +95,9 @@ export default function CoopTestPage() {
                 isTestGame: true, 
             });
             
-            await joinGame(functions, gameDocRef.id, CLIENT_UID);
+            const joinGameCallable = httpsCallable(functions, 'joinGame');
+            await joinGameCallable({ gameId: gameDocRef.id });
+
             await updateDoc(gameDocRef, { gameStatus: 'playing' });
             
             localStorage.setItem(TEST_GAME_ID_KEY, gameDocRef.id);

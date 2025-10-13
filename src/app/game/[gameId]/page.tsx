@@ -8,7 +8,6 @@ import { onAuthStateChanged, auth, functions } from "@/lib/firebase";
 import { doc, onSnapshot, updateDoc, getDoc, Unsubscribe, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useWebRTC } from '@/hooks/use-webrtc';
-import { joinGame } from '@/lib/coop';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
@@ -19,7 +18,7 @@ import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from "@/lib/game-data/constan
 import { audioManager } from "@/lib/audio/audio-manager";
 import { findPath } from '@/lib/pathfinding';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-
+import { httpsCallable } from "firebase/functions";
 
 function CoopGame() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -250,7 +249,8 @@ function CoopGame() {
             const isFull = !!gameData.player2Id;
 
             if (!isPlayer1 && !isPlayer2 && !isFull && !gameData.isTestGame) {
-                await joinGame(functions, gameId);
+                const joinGameCallable = httpsCallable(functions, 'joinGame');
+                await joinGameCallable({ gameId });
                 isPlayer2 = true;
                 toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
             }
