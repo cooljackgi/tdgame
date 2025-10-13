@@ -79,26 +79,7 @@ export default function SinglePlayerGame({
     const currentPath = useMemo(() => {
       const blockedPositions = Object.values(towersByCell).map(t => t.position);
       return findPath(START_NODE, END_NODE, blockedPositions, GRID_ROWS, GRID_COLS) || [];
-    }, [towersByCell, START_NODE, END_NODE]);
-
-    const saveGameState = useCallback(() => {
-        if (gameStatus === 'gameover' || isCheating) return;
-        
-        const stateToSave: GameSaveState = {
-            players: { 
-                player1: players.find(p => p.id === 'player1')!,
-                player2: null,
-            },
-            gameState,
-            towersByCell,
-            enemies: [], // Always save without enemies to start in intermission
-            currentWave,
-            difficulty,
-        };
-        
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
-        toast({ title: 'Spiel gespeichert!' });
-    }, [gameStatus, players, gameState, towersByCell, currentWave, difficulty, toast, isCheating]);
+    }, [towersByCell]);
 
     const saveFinishedGameResult = useCallback(async (resultToSave: GameResult): Promise<GameResult | null> => {
         if (!user || isCheating) return null;
@@ -122,6 +103,26 @@ export default function SinglePlayerGame({
             setGameStatus('gameover');
         }
     }, [gameStatus, saveFinishedGameResult]);
+
+    const saveGameState = useCallback(() => {
+        if (gameStatus === 'gameover' || isCheating) return;
+        
+        const stateToSave: GameSaveState = {
+            players: { 
+                player1: players.find(p => p.id === 'player1')!,
+                player2: null,
+            },
+            gameState,
+            towersByCell,
+            enemies: [], // Always save without enemies to start in intermission
+            currentWave,
+            difficulty,
+        };
+        
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+        toast({ title: 'Spiel gespeichert!' });
+    }, [gameStatus, players, gameState, towersByCell, currentWave, difficulty, toast, isCheating]);
+
 
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -172,19 +173,29 @@ export default function SinglePlayerGame({
                 case DeltaType.ENEMY_DIE: {
                     const id = delta[1];
                     setEnemies(prev => prev.filter(e => e.id !== id));
-                    // totalKilled is managed by the GameSession now
                     break;
                 }
                 case DeltaType.ENEMY_REACH_END: {
                     const id = delta[1];
                     setEnemies(prev => prev.filter(e => e.id !== id));
                     setGameState(s => ({ ...s, lives: Math.max(0, s.lives - 1) }));
-                    // totalLeaked is managed by the GameSession now
                     break;
                 }
                 case DeltaType.ENEMY_ADD_EFFECT: {
                     const [id, effect] = delta.slice(1);
-                    setEnemies(prev => prev.map(e => e.id === id ? { ...e, effects: [...e.effects, effect] } : e));
+                    setEnemies(prev => prev.map(e => {
+                      if(e.id === id) {
+                         const existingEffectIndex = e.effects.findIndex(ef => ef.type === effect.type);
+                         const newEffects = [...e.effects];
+                         if (existingEffectIndex !== -1) {
+                            newEffects[existingEffectIndex] = effect;
+                         } else {
+                            newEffects.push(effect);
+                         }
+                         return {...e, effects: newEffects};
+                      }
+                      return e;
+                    }));
                     break;
                 }
                 case DeltaType.ENEMY_REMOVE_EFFECT: {
@@ -221,13 +232,66 @@ export default function SinglePlayerGame({
                     if (newState.spawnedThisWave !== undefined) setSpawnedThisWave(newState.spawnedThisWave);
                     break;
                 }
-                case DeltaType.PLAYER_UPDATE:
-                    setPlayers(prev => prev.map(p => ({ ...p, resources: p.resources + ((delta[1] as Record<string,number>)[p.id] || 0) })));
+                 case DeltaType.TOWERS_UPDATE:
+                    setTowersByCell(delta[1]);
                     break;
+                case DeltaType.PLAYER_UPDATE: {
+                     const playerUpdates = delta[1] as Record<string, Partial<Player>>;
+                     setPlayers(prev => prev.map(p => {
+                        const update = playerUpdates[p.id];
+                        if (update) {
+                            return {...p, ...update};
+                        }
+                        return p;
+                     }));
+                    break;
+                }
             }
         });
     }, [currentPath, saveGameState]);
     
+      const handlePlaceTower = useCallback((row: number, col: number) => {
+        const player = players.find(p => p.id === 'player1');
+        const selectedTowerToBuild = initialTowers.find(t => t.isBase);
+
+        if (!selectedTowerToBuild || !player) return;
+
+        const cellKey = `${row}_${col}`;
+        const cost = selectedTowerToBuild.cost;
+
+        if (towersByCell[cellKey] || player.resources < cost) {
+            toast({ title: "Bau nicht möglich", description: "Feld belegt oder nicht genug Ressourcen.", variant: "destructive" });
+            return;
+        }
+
+        const newTower: PlacedTower = {
+            ...selectedTowerToBuild,
+            specId: selectedTowerToBuild.id,
+            id: `tower-${row}-${col}`,
+            position: { row, col },
+            lastAttack: 0,
+            health: selectedTowerToBuild.maxHealth,
+            ownerId: player.id,
+            isBase: true
+        };
+
+        const newTowers = { ...towersByCell, [cellKey]: newTower };
+        const newPath = findPath(START_NODE, END_NODE, Object.values(newTowers).map(t => t.position), GRID_ROWS, GRID_COLS);
+
+        if (!newPath) {
+            toast({ title: "Bau fehlgeschlagen", description: "Der Weg darf nicht blockiert werden.", variant: 'destructive' });
+            return;
+        }
+
+        const deltas: GameDelta[] = [
+          [DeltaType.TOWERS_UPDATE, newTowers],
+          [DeltaType.PLAYER_UPDATE, { [player.id]: { resources: player.resources - cost } }]
+        ];
+
+        applyDeltas(deltas);
+        audioManager.playSfx('build_tower');
+    }, [players, towersByCell, toast, applyDeltas]);
+
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
 
@@ -332,7 +396,7 @@ export default function SinglePlayerGame({
         };
     
         spawnEnemy();
-    }, [currentWave, gameStatus, difficulty, isCheating, applyDeltas, isIntermission, START_NODE, END_NODE]);
+    }, [currentWave, gameStatus, difficulty, isCheating, applyDeltas, isIntermission]);
       
     useEffect(() => { startWaveRef.current = startWave; }, [startWave]);
 
@@ -385,8 +449,8 @@ export default function SinglePlayerGame({
             isIntermission={isIntermission} setIsIntermission={setIsIntermission}
             waveStartCountdown={waveStartCountdown} setWaveStartCountdown={setWaveStartCountdown}
             currentPath={currentPath}
-            enemies={enemies}
-            spawnedThisWave={spawnedThisWave}
+            enemies={enemies} setEnemies={setEnemies}
+            spawnedThisWave={spawnedThisWave} setSpawnedThisWave={setSpawnedThisWave}
             isCoop={false}
             isGameHost={true}
             localPlayerId="player1"
@@ -394,6 +458,7 @@ export default function SinglePlayerGame({
             applyDeltas={applyDeltas}
             onGameEnd={handleGameEnd}
             onExit={onExit}
+            handlePlaceTower={handlePlaceTower}
             attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
@@ -407,3 +472,5 @@ export default function SinglePlayerGame({
         />
     )
 }
+
+    
