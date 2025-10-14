@@ -435,8 +435,13 @@ export default function SinglePlayerGame({
         const localPlayer = players.find(p => p.id === 'player1');
         if (!localPlayer) return;
 
-        // If deselecting or selecting the same tower again
-        if (tower === null || selectedTowerToBuild?.id === tower.id) {
+        if (tower === null) {
+            setSelectedTowerToBuild(null);
+            audioManager.playSfx('build_tower');
+            return;
+        }
+
+        if (selectedTowerToBuild?.id === tower.id) {
             setSelectedTowerToBuild(null);
             audioManager.playSfx('build_tower');
             return;

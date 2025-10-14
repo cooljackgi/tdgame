@@ -140,9 +140,9 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             <Separator />
           <p className="text-sm text-muted-foreground px-2">Upgrades:</p>
           <ul className="space-y-2">
-            {availableUpgrades.length > 0 ? availableUpgrades.map((tower) => (
+            {availableUpgrades.length > 0 ? availableUpgrades.map((tower, index) => (
                 <TowerCard 
-                  key={tower.id}
+                  key={`${tower.id}-${index}`}
                   tower={tower} 
                   onSelect={() => onUpgradeTower(tower.id)} 
                   disabled={localPlayer.resources < tower.cost - Math.round(focusedTower.cost * 0.75)}
@@ -212,6 +212,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 });
 
 export default TowerSelection;
+
 
 
 
