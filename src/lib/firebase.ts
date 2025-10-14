@@ -26,15 +26,15 @@ const db = initializeFirestore(app, {
 });
 
 const auth = getAuth(app);
-const functions = getFunctions(app);
+const functions = getFunctions(app, 'us-central1'); // Region für die Funktionen explizit angeben
 
 if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-  console.log("Connecting to Firebase Emulators...");
+  console.log("Connecting to Firebase Emulators (Client)...");
   try {
+    // Functions-Emulator-Verbindung wird serverseitig in der Funktion selbst gehandhabt
     connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
-    connectFunctionsEmulator(functions, "localhost", 5001);
     connectFirestoreEmulator(db, 'localhost', 8081);
-    console.log("Successfully connected to Firebase Emulators.");
+    console.log("Client successfully connected to Auth and Firestore Emulators.");
   } catch (e) {
     console.warn("Could not connect to Firebase Emulators. Are they running?", e);
   }

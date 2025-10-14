@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -38,7 +38,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   const [joiningGameId, setJoiningGameId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
-  const functions = getFunctions();
   
   useEffect(() => {
     const gamesQuery = query(
