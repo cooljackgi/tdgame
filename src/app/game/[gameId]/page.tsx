@@ -166,9 +166,6 @@ function CoopGame() {
                     return p;
                  }));
                 break;
-            case DeltaType.WORKER_UPDATE:
-                // Implemented in game-session, no need to handle here
-                break;
             case DeltaType.TOWER_UPGRADE_VFX:
                 const { towerId } = delta[1] as { towerId: string, position: Node };
                 setLastUpgradedTowerId(towerId);
@@ -190,52 +187,6 @@ function CoopGame() {
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
 
-
-  const handlePlaceTower = useCallback(async (row: number, col: number) => {
-    const localPlayer = players.find(p => p.id === localPlayerId);
-    // For now, only base tower can be built. A proper `selectedTowerToBuild` should be managed.
-    const selectedTowerToBuild = initialTowers.find(t => t.isBase);
-
-    if (!selectedTowerToBuild || !localPlayer || localPlayerId === 'spectator') return;
-
-    const cellKey = `${row}_${col}`;
-    const cost = selectedTowerToBuild.cost;
-
-    if (towersByCell[cellKey]) {
-        toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
-        return;
-    }
-    
-    const newTower: PlacedTower = {
-      ...selectedTowerToBuild,
-      id: `tower-${row}-${col}-${Math.random()}`,
-      specId: selectedTowerToBuild.id,
-      position: { row, col },
-      lastAttack: 0,
-      health: selectedTowerToBuild.maxHealth,
-      ownerId: localPlayer.id,
-    };
-    
-    const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
-    const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
-    if (!newPath) {
-        toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
-        return;
-    }
-    if (localPlayer.resources < cost) {
-        toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
-        return;
-    }
-    const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
-
-    broadcastGameData([
-        [DeltaType.TOWERS_UPDATE, newTowersByCell],
-        [DeltaType.PLAYER_UPDATE, playerUpdates]
-    ]);
-
-    audioManager.playSfx('build_tower');
-  }, [players, localPlayerId, towersByCell, broadcastGameData, toast, START_NODE, END_NODE]);
 
   useEffect(() => {
     if (!user || !gameId) return;
