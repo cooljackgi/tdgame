@@ -1,14 +1,19 @@
 
 {
-  "hosting": [
-    {
-      "target": "nextn",
-      "source": ".",
-      "frameworksBackend": {
-        "region": "us-central1"
+  "hosting": {
+    "target": "nextn",
+    "source": ".",
+    "rewrites": [
+      {
+        "source": "**",
+        "function": "nextServer"
       }
-    }
-  ],
+    ]
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
+  },
   "emulators": {
     "hosting": {
       "port": 9002
