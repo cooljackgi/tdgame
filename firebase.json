@@ -6,17 +6,11 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "function": "nextServer"
-      }
     ]
   },
   "functions": [
     {
-      "source": "functions",
+      "source": "app/src/functions",
       "codebase": "default",
       "runtime": "nodejs20",
       "ignore": [
