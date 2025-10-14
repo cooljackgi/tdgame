@@ -83,6 +83,7 @@ export type PlacedTower = Tower & {
   health: number;
   ownerId: Player['id'];
   isBase: boolean; // Overridden from Tower
+  isConstructing?: number | false; // Timestamp when construction/upgrade finishes
 };
 
 export type Attack = {
@@ -153,6 +154,8 @@ export type Enemy = {
   movementPattern: MovementPattern;
 };
 
+// This type is now deprecated, but kept for type safety.
+// The drone is no longer a moving entity.
 export type WorkerState = {
   position: { x: number; y: number };
   target: { type: 'build' | 'upgrade' | 'nudge', row: number, col: number, towerSpecId?: string, enemyId?: string } | null;
@@ -176,7 +179,7 @@ export enum DeltaType {
     PLAYER_UPDATE,
     TOWERS_UPDATE,
     CLIENT_STATS_UPDATE,
-    WORKER_UPDATE,
+    WORKER_UPDATE, // Kept for compatibility, but no longer used for a moving drone
     TOWER_UPGRADE_VFX,
 }
 

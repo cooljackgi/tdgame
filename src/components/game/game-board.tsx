@@ -14,7 +14,6 @@ import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import { enemyIconPaths } from '@/components/game/icons/enemy-icons';
-import WorkerDrone from './WorkerDrone';
 
 const CELL_SIZE = 64;
 
@@ -247,7 +246,7 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
 }
 
 const MemoizedTower = React.memo(function GameCell({
-  tower, isFocused, isJustUpgraded, onTowerClick, cooldownProgress, variant, isFiring, isBuffed
+  tower, isFocused, isJustUpgraded, onTowerClick, cooldownProgress, variant, isFiring, isBuffed, isConstructing
 }: {
   tower: PlacedTower,
   isFocused: boolean, isJustUpgraded: boolean,
@@ -256,8 +255,15 @@ const MemoizedTower = React.memo(function GameCell({
   variant: "basic" | "sniper" | "ballista",
   isFiring: boolean,
   isBuffed: boolean,
+  isConstructing?: number | false,
 }) {
   const {x, y} = gridToPx(tower.position);
+  
+  let constructionProgress = 1;
+  if(isConstructing) {
+      const remaining = isConstructing - Date.now();
+      constructionProgress = 1 - Math.max(0, remaining) / 2000;
+  }
 
   const towerContent = (
     <div className="relative flex items-center justify-center h-full w-full">
@@ -272,6 +278,8 @@ const MemoizedTower = React.memo(function GameCell({
         attackSpeed={tower.attackSpeed}
         isFiring={isFiring}
         isBuffed={isBuffed}
+        isConstructing={isConstructing}
+        constructionProgress={constructionProgress}
       />
     </div>
   );
@@ -1023,6 +1031,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         variant={variant}
                         isFiring={firingTowerIds.has(tower.id)}
                         isBuffed={buffedTowerIds.has(tower.id)}
+                        isConstructing={tower.isConstructing}
                       />
                     )
                   })}
@@ -1050,8 +1059,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         <TooltipContent><p>Nexus</p></TooltipContent>
                       </Tooltip>
                     </div>
-
-                 <WorkerDrone workerState={workerState} />
               
             </div>
             

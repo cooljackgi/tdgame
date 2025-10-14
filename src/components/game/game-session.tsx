@@ -145,8 +145,9 @@ export default function GameSession({
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
   
+  // This is a placeholder and is no longer used for a moving drone.
   const [workerState, setWorkerState] = useState<WorkerState>({ 
-    position: { x: 300, y: -50 }, 
+    position: { x: -100, y: -100 }, 
     target: null, 
     task: 'idle',
     taskProgress: 0,
@@ -245,50 +246,58 @@ export default function GameSession({
     setFocusedTower(null);
   }, [localPlayerId, localPlayer, toast, selectedTowerToBuild]);
 
+  // This function is now simplified. The actual build happens in the game loop.
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const localPlayer = players.find(p => p.id === localPlayerId);
     const towerSpec = selectedTowerToBuild;
 
-    if (!towerSpec || !localPlayer || localPlayerId === 'spectator' || workerState.task !== 'idle') return;
-
-    const cellKey = `${row}_${col}`;
-    const cost = towerSpec.cost;
-
+    if (!towerSpec || !localPlayer || localPlayerId === 'spectator') return;
+     const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
         toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         return;
     }
-    
+
+    // Optimistic path check
     const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
     const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
     if (!newPath) {
         toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
         return;
     }
-    if (localPlayer.resources < cost) {
+    if (localPlayer.resources < towerSpec.cost) {
         toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
 
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
-    const newWorkerState: WorkerState = {
-        ...workerState,
-        target: { type: 'build', row, col, towerSpecId: towerSpec.id },
-        task: 'moving',
+    // Immediately create a "constructing" tower
+     const constructingTower: PlacedTower = {
+      ...towerSpec,
+      id: `constructing-${row}-${col}-${Date.now()}`,
+      specId: towerSpec.id,
+      position: { row, col },
+      lastAttack: 0,
+      health: towerSpec.maxHealth,
+      ownerId: localPlayer.id,
+      isBase: towerSpec.isBase,
+      isConstructing: Date.now() + 2000, // End time of construction
     };
 
+    const newTowersByCell = { ...towersByCell, [cellKey]: constructingTower };
+    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - towerSpec.cost } };
+    
     broadcastGameData([
-        [DeltaType.PLAYER_UPDATE, playerUpdates],
-        [DeltaType.WORKER_UPDATE, newWorkerState]
+        [DeltaType.TOWERS_UPDATE, newTowersByCell],
+        [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
     cancelInteractions();
     audioManager.playSfx('build_tower');
 
-  }, [players, localPlayerId, workerState, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE, cancelInteractions]);
+  }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE, cancelInteractions]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
-    if (!focusedTower || !localPlayer || localPlayerId === 'spectator' || workerState.task !== 'idle') return;
+    if (!focusedTower || !localPlayer || localPlayerId === 'spectator') return;
 
     const upgradeTowerSpec = towers.find(t => t.id === upgradeId);
     if (!upgradeTowerSpec) {
@@ -304,23 +313,28 @@ export default function GameSession({
         return;
     }
     
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
+    const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+    const newTowersByCell = { ...towersByCell };
     
-    const newWorkerState: WorkerState = {
-        ...workerState,
-        target: { type: 'upgrade', row: focusedTower.position.row, col: focusedTower.position.col, towerSpecId: upgradeId },
-        task: 'moving',
+    const upgradingTower: PlacedTower = {
+        ...focusedTower,
+        ...upgradeTowerSpec,
+        isConstructing: Date.now() + 2000, // Upgrade time
+        specId: upgradeTowerSpec.id,
     };
+    newTowersByCell[cellKey] = upgradingTower;
+    
+    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
     
     broadcastGameData([
       [DeltaType.PLAYER_UPDATE, playerUpdates],
-      [DeltaType.WORKER_UPDATE, newWorkerState]
+      [DeltaType.TOWERS_UPDATE, newTowersByCell]
     ]);
     
     setFocusedTower(null);
     audioManager.playSfx('build_tower');
 
-  }, [focusedTower, localPlayer, localPlayerId, toast, towers, difficulty, broadcastGameData, workerState]);
+  }, [focusedTower, localPlayer, localPlayerId, toast, towers, difficulty, broadcastGameData]);
   
   const handleSellTower = useCallback(async () => {
     if (!focusedTower || !localPlayer || localPlayerId === 'spectator' || focusedTower.ownerId !== localPlayer.id) return;
@@ -380,39 +394,35 @@ export default function GameSession({
   }, [players, broadcastGameData, toast]);
 
   const cheat_nudgeEnemy = useCallback(() => {
-      if (enemies.length === 0 || workerState.task !== 'idle') return;
+    if (enemies.length === 0) return;
 
-      let furthestEnemy: Enemy | null = null;
-      let maxDist = 0;
+    let furthestEnemy: Enemy | null = null;
+    let maxDist = -1;
 
-      enemies.forEach(enemy => {
-        const { row: ex, col: ey } = enemy.position;
-        let minDistSq = Infinity;
-        currentPath.forEach(node => {
-            const distSq = (node.col - ey)*(node.col - ey) + (node.row - ex)*(node.row - ex);
-            if (distSq < minDistSq) minDistSq = distSq;
-        });
-
-        if (minDistSq > maxDist) {
-            maxDist = minDistSq;
-            furthestEnemy = enemy;
-        }
+    enemies.forEach(enemy => {
+      const { row: ex, col: ey } = enemy.position;
+      let minDistSq = Infinity;
+      currentPath.forEach(node => {
+          const distSq = (node.col - ey)*(node.col - ey) + (node.row - ex)*(node.row - ex);
+          if (distSq < minDistSq) minDistSq = distSq;
       });
-      
-      if (furthestEnemy) {
-        const target: WorkerState['target'] = { type: 'nudge', enemyId: furthestEnemy.id, row: furthestEnemy.position.row, col: furthestEnemy.position.col };
-        const newWorkerState: WorkerState = {
-            ...workerState,
-            target,
-            task: 'moving',
-        };
-        broadcastGameData([[DeltaType.WORKER_UPDATE, newWorkerState]]);
-        toast({ title: "Drohne unterwegs", description: `Stupst Gegner ${furthestEnemy.id} an.` });
-      } else {
-        toast({ title: "Kein Ziel gefunden", description: "Alle Gegner scheinen auf dem Weg zu sein." });
-      }
 
-  }, [enemies, currentPath, workerState, broadcastGameData, toast]);
+      if (minDistSq > maxDist) {
+          maxDist = minDistSq;
+          furthestEnemy = enemy;
+      }
+    });
+    
+    if (furthestEnemy) {
+      const newPathIndex = Math.max(0, furthestEnemy.pathIndex - 1);
+      const deltas = [[DeltaType.ENEMY_MOVE, furthestEnemy.id, newPathIndex, performance.now()]];
+      broadcastGameData(deltas);
+      toast({ title: "Gegner angestupst", description: `Gegner ${furthestEnemy.id} wurde zurückgesetzt.` });
+    } else {
+      toast({ title: "Kein Ziel gefunden", description: "Alle Gegner scheinen auf dem Weg zu sein." });
+    }
+
+  }, [enemies, currentPath, broadcastGameData, toast]);
 
  const handleLoadTestLayout = useCallback(() => {
     const testTowers: Record<string, PlacedTower> = {};
@@ -499,68 +509,24 @@ const handleLoadAllTowersLayout = useCallback(() => {
     let enemiesMap = new Map(enemies.map(e => [e.id, e]));
     
     if (isGameHost) {
-      // --- Worker Drone Simulation ---
-      if (workerState.task !== 'idle') {
-          const targetPos = workerState.target
-              ? { x: (workerState.target.col - 0.5) * 64, y: (workerState.target.row - 0.5) * 64 }
-              : { x: 300, y: -50 };
-
-          const dx = targetPos.x - workerState.position.x;
-          const dy = targetPos.y - workerState.position.y;
-          const dist = Math.hypot(dx, dy);
-          const WORKER_SPEED = 8;
-
-          if (dist < WORKER_SPEED) {
-              const target = workerState.target!;
-              let finalWorkerState: WorkerState = { ...workerState, task: 'idle', target: null, position: targetPos };
-              
-              if (target.type === 'build') {
-                  const towerSpec = initialTowers.find(t => t.id === target.towerSpecId);
-                  if (towerSpec) {
-                      const cellKey = `${target.row}_${target.col}`;
-                      const newTower: PlacedTower = {
-                          ...towerSpec,
-                          id: `tower-${target.row}-${target.col}-${now}`,
-                          specId: towerSpec.id,
-                          position: { row: target.row, col: target.col },
-                          lastAttack: 0,
-                          health: towerSpec.maxHealth,
-                          ownerId: 'player1', // simplified for now
-                          isBase: towerSpec.isBase,
-                      };
-                      deltas.push([DeltaType.TOWERS_UPDATE, { ...towersByCell, [cellKey]: newTower }]);
-                      deltas.push([DeltaType.TOWER_UPGRADE_VFX, { towerId: newTower.id, position: newTower.position }]);
-                  }
-              } else if (target.type === 'upgrade') {
-                    const upgradeTowerSpec = towers.find(t => t.id === target.towerSpecId);
-                    const cellKey = `${target.row}_${target.col}`;
-                    const focusedTower = towersByCell[cellKey];
-                    if (upgradeTowerSpec && focusedTower) {
-                         const upgradedTowerData: PlacedTower = { ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth };
-                         deltas.push([DeltaType.TOWERS_UPDATE, { ...towersByCell, [cellKey]: upgradedTowerData }]);
-                         deltas.push([DeltaType.TOWER_UPGRADE_VFX, { towerId: focusedTower.id, position: focusedTower.position }]);
-                    }
-              } else if (target.type === 'nudge') {
-                  const enemy = enemies.find(e => e.id === target.enemyId);
-                  if (enemy) {
-                      const newPathIndex = Math.max(0, enemy.pathIndex - 1);
-                      deltas.push([DeltaType.ENEMY_MOVE, enemy.id, newPathIndex, now]);
-                  }
-              }
-              
-              deltas.push([DeltaType.WORKER_UPDATE, finalWorkerState]);
-          } else {
-              const newPos = {
-                  x: workerState.position.x + (dx / dist) * WORKER_SPEED,
-                  y: workerState.position.y + (dy / dist) * WORKER_SPEED,
-              };
-              deltas.push([DeltaType.WORKER_UPDATE, { ...workerState, position: newPos }]);
-          }
+      // --- Construction Simulation ---
+      const newTowersByCell = { ...towersByCell };
+      let changed = false;
+      Object.values(newTowersByCell).forEach(tower => {
+        if (tower.isConstructing && tower.isConstructing <= now) {
+            delete tower.isConstructing;
+            changed = true;
+            // Send a VFX delta for the upgrade completion
+            deltas.push([DeltaType.TOWER_UPGRADE_VFX, { towerId: tower.id, position: tower.position }]);
+        }
+      });
+      if (changed) {
+          deltas.push([DeltaType.TOWERS_UPDATE, newTowersByCell]);
       }
-      
+
       // Tower attacks
-      placedTowers.forEach(tower => {
-        if (now - (tower.lastAttack || 0) <= tower.attackSpeed || tower.effect?.type === 'aura') return;
+      Object.values(newTowersByCell).forEach(tower => {
+        if (tower.isConstructing || (now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
 
         const enemiesInRange = enemies.filter(enemy => {
           if (!enemy) return false;
@@ -581,11 +547,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           };
           deltas.push([DeltaType.TOWER_ATTACK, mainAttack]);
           
-          const updatedTowerData: Partial<PlacedTower> = { lastAttack: now };
-          const cellKey = `${tower.position.row}_${tower.position.col}`;
-          const newTower = { ...towersByCell[cellKey], ...updatedTowerData};
-          const newTowers = {...towersByCell, [cellKey]: newTower};
-          deltas.push([DeltaType.TOWERS_UPDATE, newTowers]);
+          tower.lastAttack = now; // Direct mutation, will be part of the final update
 
 
           if (tower.effect?.type === 'chain' && tower.effect.bounces) {
@@ -618,13 +580,16 @@ const handleLoadAllTowersLayout = useCallback(() => {
           }
         }
       });
+      if(Object.values(newTowersByCell).some(t => t.lastAttack === now)) {
+          deltas.push([DeltaType.TOWERS_UPDATE, newTowersByCell]);
+      }
       
       const damageToApply: Map<string, { totalDamage: number; sources: PlacedTower[] }> = new Map();
       deltas.forEach(delta => {
           if (delta[0] !== DeltaType.TOWER_ATTACK) return;
           const attack = delta[1] as Attack;
 
-          const tower = placedTowers.find(t => t.id === attack.towerId);
+          const tower = Object.values(newTowersByCell).find(t => t.id === attack.towerId);
           const enemy = enemiesMap.get(attack.targetId);
           if (!tower || !enemy) return;
 
@@ -923,16 +888,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
     return [{ ...enemy, effects: newEffects }, delta];
   };
 
-  // Add the WORKER_UPDATE case to applyDeltas
-  const fullApplyDeltas = useCallback((deltas: GameDelta[]) => {
-      deltas.forEach(delta => {
-        if (delta[0] === DeltaType.WORKER_UPDATE) {
-            setWorkerState(delta[1]);
-        }
-      });
-      applyDeltas(deltas);
-  }, [applyDeltas, setWorkerState]);
-
   const interactionPrompt = localPlayerId === 'spectator'
     ? 'Du schaust zu.'
     : selectedTowerToBuild
@@ -1051,4 +1006,3 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
-

@@ -17,6 +17,8 @@ export type TowerProps = {
   className?: string;
   cooldownProgress?: number;
   attackSpeed?: number;
+  isConstructing?: number | false;
+  constructionProgress?: number;
 };
 
 // Export the muzzle points to be used by the game board for projectile origins
@@ -75,6 +77,8 @@ const Tower = React.memo(function Tower({
   cooldownProgress = 1,
   isFiring = false,
   isBuffed = false,
+  isConstructing = false,
+  constructionProgress = 1,
 }: TowerProps) {
   const tone = element === 'fire' ? 'text-orange-400' :
                element === 'water' ? 'text-sky-400' :
@@ -393,9 +397,28 @@ const Tower = React.memo(function Tower({
           </filter>
         </defs>
         
-        {renderBase}
-        {renderStructure()}
+        <g opacity={isConstructing ? constructionProgress : 1}>
+          {renderBase}
+          {renderStructure()}
+        </g>
         
+        {isConstructing && (
+          <g>
+              <circle cx="50" cy="50" r="20" fill="none" stroke="hsl(var(--primary) / 0.2)" strokeWidth="4" />
+              <circle
+                cx="50"
+                cy="50"
+                r="20"
+                fill="none"
+                stroke="hsl(var(--primary))"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 20}`}
+                strokeDashoffset={`${2 * Math.PI * 20 * (1 - constructionProgress!)}`}
+                transform="rotate(-90 50 50)"
+              />
+          </g>
+        )}
       </svg>
     </div>
   );
