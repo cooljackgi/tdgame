@@ -36,10 +36,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Diese Regel leitet WebSocket-Anfragen im Entwicklungsmodus um.
-  // Sie ist entscheidend, damit WebRTC-Signaling lokal funktioniert.
+  // Die rewrite-Regel wird nur für die lokale Entwicklung benötigt und
+  // wird jetzt nur in diesem Modus angewendet.
   async rewrites() {
-    // Diese Rewrites sollen nur im Entwicklungsmodus gelten.
     if (process.env.NODE_ENV === 'development') {
       return [
         {
@@ -48,7 +47,6 @@ const nextConfig: NextConfig = {
         },
       ]
     }
-    // Im Produktionsmodus gibt es keine Rewrites.
     return [];
   },
 };
