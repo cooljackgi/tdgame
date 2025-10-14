@@ -206,7 +206,7 @@ export default function SinglePlayerGame({
                     break;
                 }
                 case DeltaType.ENEMY_ADD_EFFECT: {
-                    const [id, effect] = delta.slice(1);
+                    const [id, effect] = delta.slice(1) as [string, TowerEffect];
                     setEnemies(prev => prev.map(e => {
                       if(e.id === id) {
                          const existingEffectIndex = e.effects.findIndex(ef => ef.type === effect.type);
@@ -459,6 +459,50 @@ export default function SinglePlayerGame({
         setFocusedTower(null);
     }, [players, toast, selectedTowerToBuild]);
 
+     const handleUpgradeTower = useCallback((upgradeId: string) => {
+        const localPlayer = players.find(p => p.id === 'player1');
+        if (!focusedTower || !localPlayer) return;
+
+        const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
+        if (!upgradeTowerSpec) {
+            toast({ title: "Upgrade-Fehler", variant: 'destructive' });
+            return;
+        }
+
+        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const cost = upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage);
+        
+        if (localPlayer.resources < cost) {
+            toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
+            return;
+        }
+        
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+        const newTowersByCell = { ...towersByCell };
+        
+        const upgradedTower: PlacedTower = {
+            ...upgradeTowerSpec,
+            id: `tower-${focusedTower.position.row}-${focusedTower.position.col}-${Date.now()}`,
+            specId: upgradeTowerSpec.id,
+            position: focusedTower.position,
+            lastAttack: focusedTower.lastAttack,
+            health: upgradeTowerSpec.maxHealth,
+            ownerId: localPlayer.id,
+        };
+        newTowersByCell[cellKey] = upgradedTower;
+        
+        const playerUpdate = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
+        
+        applyDeltas([
+            [DeltaType.PLAYER_UPDATE, playerUpdate],
+            [DeltaType.TOWERS_UPDATE, newTowersByCell],
+            [DeltaType.TOWER_UPGRADE_VFX, { towerId: upgradedTower.id, position: upgradedTower.position }]
+        ]);
+        
+        setFocusedTower(null);
+        audioManager.playSfx('build_tower');
+    }, [players, focusedTower, toast, difficulty, towersByCell, applyDeltas]);
+
 
     if (players.length === 0) {
         return (
@@ -490,10 +534,6 @@ export default function SinglePlayerGame({
             onGameEnd={handleGameEnd}
             onWaveComplete={() => { waveInProgressRef.current = false; }}
             onExit={onExit}
-            onSelectTowerToBuild={handleSelectTowerToBuild}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
-            setFocusedTower={setFocusedTower}
             attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
@@ -504,6 +544,14 @@ export default function SinglePlayerGame({
             isCheating={isCheating}
             fps={fps} setFps={setFps}
             finalGameResult={finalGameResult}
+            // Props specifically for single-player that are passed down
+            handleUpgradeTower={handleUpgradeTower}
+            handleSelectTowerToBuild={handleSelectTowerToBuild}
+            selectedTowerToBuild={selectedTowerToBuild}
+            focusedTower={focusedTower}
+            setFocusedTower={setFocusedTower}
         />
     )
 }
+
+    

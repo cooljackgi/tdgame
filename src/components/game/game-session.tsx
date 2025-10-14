@@ -79,6 +79,13 @@ type GameSessionProps = {
     setFiringTowerIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     firingTowerIds: Set<string>;
     
+    // --- Single Player Passthrough ---
+    handleSelectTowerToBuild?: (tower: Tower | null) => void;
+    selectedTowerToBuild?: Tower | null;
+    focusedTower?: PlacedTower | null;
+    setFocusedTower?: (tower: PlacedTower | null) => void;
+    handleUpgradeTower?: (upgradeId: string) => void;
+
     // --- Debug / Cheats ---
     isCheating?: boolean;
 
@@ -135,6 +142,13 @@ export default function GameSession({
     isCoop, isGameHost, localPlayerId,
     broadcastGameData, applyDeltas, onGameEnd, onWaveComplete, onExit,
 
+    // Single Player Passthrough
+    handleSelectTowerToBuild: spHandleSelectTowerToBuild,
+    selectedTowerToBuild: spSelectedTowerToBuild,
+    focusedTower: spFocusedTower,
+    setFocusedTower: spSetFocusedTower,
+    handleUpgradeTower: spHandleUpgradeTower,
+
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
 
@@ -155,8 +169,10 @@ export default function GameSession({
   const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
 
   // --- Local State (Client-side only) ---
-  const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
-  const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
+  // If in SP, use the state from the parent. If in MP, manage state locally.
+  const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(spSelectedTowerToBuild ?? null);
+  const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(spFocusedTower ?? null);
+  
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [justPlacedTowerId, setJustPlacedTowerId] = useState<string|null>(null);
@@ -241,29 +257,40 @@ export default function GameSession({
   }, [gameStatus, isCoop, isGameHost, toast, localPlayerId, broadcastGameData]);
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
-    setSelectedTowerToBuild(null);
-    setFocusedTower(tower);
+    if (isCoop) {
+        setSelectedTowerToBuild(null);
+        setFocusedTower(tower);
+    } else if (spSetFocusedTower) {
+        spSetFocusedTower(tower);
+    }
     audioManager.playSfx('build_tower');
-  }, []);
+  }, [isCoop, spSetFocusedTower]);
 
   const cancelInteractions = useCallback(() => {
     if (localPlayerId === 'spectator') return;
-    if (selectedTowerToBuild) {
-        audioManager.playSfx('build_tower');
+
+    const spIsActive = spSelectedTowerToBuild || spFocusedTower;
+    const mpIsActive = selectedTowerToBuild || focusedTower;
+
+    if (isCoop ? mpIsActive : spIsActive) {
+      audioManager.playSfx('build_tower');
+    }
+
+    if (isCoop) {
         setSelectedTowerToBuild(null);
-    }
-    if (focusedTower) { 
-        audioManager.playSfx('build_tower');
         setFocusedTower(null);
+    } else {
+        if(spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(null);
+        if(spSetFocusedTower) spSetFocusedTower(null);
     }
-  }, [localPlayerId, focusedTower, selectedTowerToBuild]);
+  }, [localPlayerId, selectedTowerToBuild, focusedTower, isCoop, spSelectedTowerToBuild, spFocusedTower, spHandleSelectTowerToBuild, spSetFocusedTower]);
 
   const handlePlaceTower = useCallback((row: number, col: number) => {
+    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const localPlayer = players.find(p => p.id === localPlayerId);
-    const towerSpec = selectedTowerToBuild;
 
-    if (!towerSpec || !localPlayer || localPlayerId === 'spectator') return;
-     const cellKey = `${row}_${col}`;
+    if (!towerToBuild || !localPlayer || localPlayerId === 'spectator') return;
+    const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
         toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         return;
@@ -276,23 +303,23 @@ export default function GameSession({
         toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
         return;
     }
-    if (localPlayer.resources < towerSpec.cost) {
+    if (localPlayer.resources < towerToBuild.cost) {
         toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
 
     const newTower: PlacedTower = {
-      ...towerSpec,
+      ...towerToBuild,
       id: `tower-${row}-${col}-${Date.now()}-${Math.random()}`,
-      specId: towerSpec.id,
+      specId: towerToBuild.id,
       position: { row, col },
       lastAttack: 0,
-      health: towerSpec.maxHealth,
+      health: towerToBuild.maxHealth,
       ownerId: localPlayer.id,
     };
 
     const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - towerSpec.cost } };
+    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - towerToBuild.cost } };
     
     broadcastGameData([
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
@@ -303,11 +330,17 @@ export default function GameSession({
     setTimeout(() => setJustPlacedTowerId(null), 1000);
     
     audioManager.playSfx('build_tower');
-  }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
+  }, [players, localPlayerId, towersByCell, isCoop, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
+    const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
     const currentLocalPlayer = players.find(p => p.id === localPlayerId);
-    if (!focusedTower || !currentLocalPlayer || localPlayerId === 'spectator') return;
+    if (!currentFocusedTower || !currentLocalPlayer || localPlayerId === 'spectator') return;
+
+    if (!isCoop && spHandleUpgradeTower) {
+        spHandleUpgradeTower(upgradeId);
+        return;
+    }
 
     const upgradeTowerSpec = towers.find(t => t.id === upgradeId);
     if (!upgradeTowerSpec) {
@@ -316,19 +349,20 @@ export default function GameSession({
     }
 
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
-    const cost = upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage);
+    const cost = upgradeTowerSpec.cost - Math.floor(currentFocusedTower.cost * refundPercentage);
     
     if (currentLocalPlayer.resources < cost) {
         toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
     
-    const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+    const cellKey = `${currentFocusedTower.position.row}_${currentFocusedTower.position.col}`;
     const newTowersByCell = { ...towersByCell };
     
     const upgradedTower: PlacedTower = {
-        ...focusedTower,
+        ...currentFocusedTower,
         ...upgradeTowerSpec,
+        id: `tower-${currentFocusedTower.position.row}-${currentFocusedTower.position.col}-${Date.now()}`, // Ensure unique ID on upgrade
         specId: upgradeTowerSpec.id,
     };
     newTowersByCell[cellKey] = upgradedTower;
@@ -341,18 +375,20 @@ export default function GameSession({
       [DeltaType.TOWER_UPGRADE_VFX, { towerId: upgradedTower.id, position: upgradedTower.position }]
     ]);
     
-    setFocusedTower(null);
+    if (isCoop) setFocusedTower(null);
+    else if(spSetFocusedTower) spSetFocusedTower(null);
+    
     audioManager.playSfx('build_tower');
-
-  }, [players, localPlayerId, focusedTower, toast, towers, difficulty, broadcastGameData, towersByCell]);
+  }, [players, localPlayerId, isCoop, focusedTower, spFocusedTower, spHandleUpgradeTower, towers, toast, difficulty, broadcastGameData, towersByCell, spSetFocusedTower]);
   
   const handleSellTower = useCallback(async () => {
+    const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
     const currentLocalPlayer = players.find(p => p.id === localPlayerId);
-    if (!focusedTower || !currentLocalPlayer || localPlayerId === 'spectator' || focusedTower.ownerId !== currentLocalPlayer.id) return;
+    if (!currentFocusedTower || !currentLocalPlayer || localPlayerId === 'spectator' || currentFocusedTower.ownerId !== currentLocalPlayer.id) return;
 
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
-    const refund = Math.round(focusedTower.cost * refundPercentage);
-    const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+    const refund = Math.round(currentFocusedTower.cost * refundPercentage);
+    const cellKey = `${currentFocusedTower.position.row}_${currentFocusedTower.position.col}`;
     
     const newTowersByCell = { ...towersByCell };
     delete newTowersByCell[cellKey];
@@ -364,27 +400,31 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    setFocusedTower(null);
+    if (isCoop) setFocusedTower(null);
+    else if(spSetFocusedTower) spSetFocusedTower(null);
+
     audioManager.playSfx('build_tower');
-  }, [players, localPlayerId, focusedTower, difficulty, broadcastGameData, towersByCell]);
+  }, [players, localPlayerId, isCoop, focusedTower, spFocusedTower, difficulty, broadcastGameData, towersByCell, spSetFocusedTower]);
 
   const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
+    if (!isCoop && spHandleSelectTowerToBuild) {
+        spHandleSelectTowerToBuild(tower);
+        return;
+    }
+    
     const currentLocalPlayer = players.find(p => p.id === localPlayerId);
-    if (!currentLocalPlayer || !tower) {
+    if (!currentLocalPlayer || (tower && currentLocalPlayer.resources < tower.cost)) {
+      if(tower) toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
       if (tower === null) setSelectedTowerToBuild(null);
       return;
     }
-    if (selectedTowerToBuild?.id === tower.id) {
+    if (selectedTowerToBuild?.id === tower?.id) {
         setSelectedTowerToBuild(null);
         return;
     }
-    if(currentLocalPlayer.resources < tower.cost) {
-      toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
-      return;
-    }
     setSelectedTowerToBuild(tower);
     setFocusedTower(null);
-  }, [players, localPlayerId, toast, selectedTowerToBuild]);
+  }, [isCoop, spHandleSelectTowerToBuild, players, localPlayerId, toast, selectedTowerToBuild]);
   
   const cheat_addResources = () => {
     if (!isCheating) return;
@@ -898,13 +938,16 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
   const interactionPrompt = localPlayerId === 'spectator'
     ? 'Du schaust zu.'
-    : selectedTowerToBuild
-    ? `Wähle Bauplatz für ${localPlayer?.name}: ${selectedTowerToBuild.name}`
-    : focusedTower
-    ? `Fokus: ${focusedTower.name} (Besitzer: ${players.find(p => p.id === focusedTower.ownerId)?.name})`
+    : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)
+    ? `Wähle Bauplatz für ${localPlayer?.name}: ${(isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)?.name}`
+    : (isCoop ? focusedTower : spFocusedTower)
+    ? `Fokus: ${(isCoop ? focusedTower : spFocusedTower)?.name} (Besitzer: ${players.find(p => p.id === (isCoop ? focusedTower : spFocusedTower)?.ownerId)?.name})`
     : (isCoop && localPlayerId ? `Du bist ${players.find(p=> p.id === localPlayerId)?.name}` : 'Wähle einen Turm zum Bauen');
     
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+  
+  const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
+  const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
@@ -937,8 +980,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
             currentPath={currentPath}
             handlePlaceTower={handlePlaceTower}
             onFocusTower={onFocusTower}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
+            selectedTowerToBuild={currentSelectedTower}
+            focusedTower={currentFocusedTower}
             rows={GRID_ROWS}
             cols={GRID_COLS}
             startNode={START_NODE}
@@ -948,7 +991,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             onSelectTowerToBuild={handleSelectTowerToBuild}
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
-            setFocusedTower={setFocusedTower}
+            setFocusedTower={isCoop ? setFocusedTower : spSetFocusedTower!}
             spawnedThisWave={spawnedThisWave}
             totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
             totalKilled={totalKilled}
@@ -1015,3 +1058,5 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
+    
