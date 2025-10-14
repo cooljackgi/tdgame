@@ -54,8 +54,12 @@ const getEventStyle = (eventName: string) => {
     return eventStyles.DEFAULT;
 }
 
+const isNetworkEvent = (event: string) => {
+    return event.startsWith('SIGNALING') || event.startsWith('PC_') || event.startsWith('DC_') || event.startsWith('ICE_');
+}
+
 export default function GameNetworkLogPage({ params }: { params: { gameId: string } }) {
-  const { gameId } = use(params);
+  const { gameId } = params;
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,19 +68,25 @@ export default function GameNetworkLogPage({ params }: { params: { gameId: strin
     if (!gameId) return;
 
     setLoading(true);
-    const logsQuery = query(collection(db, `games/${gameId}/webrtc_logs`), orderBy('timestamp', 'asc'));
+    // Corrected to read from game_logs
+    const logsQuery = query(collection(db, `games/${gameId}/game_logs`), orderBy('timestamp', 'asc'));
     
     const unsubscribe = onSnapshot(logsQuery, (querySnapshot) => {
-      const fetchedLogs: LogEntry[] = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          timestamp: (data.timestamp as Timestamp)?.toDate() || new Date(),
-          role: data.role,
-          event: data.event,
-          details: data.details,
-        };
-      });
+      const fetchedLogs: LogEntry[] = querySnapshot.docs
+        .map(doc => {
+            const data = doc.data();
+            // The event name is now in the 'type' field due to consolidation
+            const eventName = data.type || data.event; 
+            return {
+                id: doc.id,
+                timestamp: (data.timestamp as Timestamp)?.toDate() || new Date(data.clientTs || Date.now()),
+                role: data.role,
+                event: eventName,
+                details: data.details,
+            };
+        })
+        .filter(log => isNetworkEvent(log.event)); // Filter for network-related events
+
       setLogs(fetchedLogs);
       setLoading(false);
     }, (err: any) => {
