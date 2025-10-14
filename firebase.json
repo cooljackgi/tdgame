@@ -1,19 +1,30 @@
 
 {
-  "hosting": {
-    "source": ".",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "frameworksBackend": {
-      "region": "us-central1"
-    }
+  "functions": {
+    "source": "functions",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" install",
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ]
   },
+  "hosting": [
+    {
+      "target": "nextn",
+      "source": ".",
+      "frameworksBackend": {
+        "region": "us-central1"
+      }
+    }
+  ],
   "emulators": {
     "hosting": {
-      "port": 9002
+      "port": 9002,
+      "rewrites": [
+        {
+          "source": "/ws",
+          "function": "ws-relay"
+        }
+      ]
     },
     "functions": {
       "port": 5001
@@ -27,21 +38,5 @@
     "ui": {
       "enabled": true
     }
-  },
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.spec.js"
-      ],
-      "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run build"
-      ]
-    }
-  ]
+  }
 }

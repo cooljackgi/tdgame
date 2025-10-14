@@ -92,6 +92,9 @@ type GameSessionProps = {
     clientBytesReceivedPerSecond?: number;
     averagePacketSize?: number;
     finalGameResult?: GameResult | null;
+
+    // --- Local State for Single Player ---
+    onSelectTowerToBuild?: (tower: Tower) => void;
 }
 
 const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): PlacedTower[] => {
@@ -144,7 +147,10 @@ export default function GameSession({
     // Stats
     fps, setFps,
     isWsConnected, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize,
-    finalGameResult
+    finalGameResult,
+
+    // Local State
+    onSelectTowerToBuild,
 }: GameSessionProps) {
   
   const { toast } = useToast();
@@ -253,7 +259,14 @@ export default function GameSession({
   }, [localPlayerId, focusedTower, selectedTowerToBuild]);
 
   const handleSelectTowerToBuild = useCallback((tower: Tower) => {
-    if (localPlayerId === 'spectator' || !localPlayer) return;
+    if (onSelectTowerToBuild) { // Coop mode, use the passed down function
+        onSelectTowerToBuild(tower);
+        return;
+    }
+
+    // Single-player logic
+    const localPlayer = players.find(p => p.id === 'player1');
+    if (!localPlayer) return;
     
     if (selectedTowerToBuild?.id === tower.id) {
         setSelectedTowerToBuild(null);
@@ -270,7 +283,7 @@ export default function GameSession({
     audioManager.playSfx('build_tower');
     setSelectedTowerToBuild(tower);
     setFocusedTower(null);
-  }, [localPlayerId, localPlayer, toast, selectedTowerToBuild]);
+  }, [onSelectTowerToBuild, players, toast, selectedTowerToBuild]);
 
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const localPlayer = players.find(p => p.id === localPlayerId);
@@ -927,7 +940,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             endNode={END_NODE}
             interactionPrompt={interactionPrompt}
             cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={onSelectTowerToBuild}
+            onSelectTowerToBuild={handleSelectTowerToBuild}
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
             setFocusedTower={setFocusedTower}
