@@ -399,12 +399,12 @@ export default function SinglePlayerGame({
         }
     }, [isIntermission, gameStatus]);
 
-
-    const handleSelectTowerToBuild = useCallback((tower: Tower) => {
+    const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
         const localPlayer = players.find(p => p.id === 'player1');
         if (!localPlayer) return;
 
-        if (selectedTowerToBuild?.id === tower.id) {
+        // If deselecting or selecting the same tower again
+        if (tower === null || selectedTowerToBuild?.id === tower.id) {
             setSelectedTowerToBuild(null);
             audioManager.playSfx('build_tower');
             return;
@@ -452,6 +452,10 @@ export default function SinglePlayerGame({
             onGameEnd={handleGameEnd}
             onWaveComplete={() => { waveInProgressRef.current = false; }}
             onExit={onExit}
+            onSelectTowerToBuild={handleSelectTowerToBuild}
+            selectedTowerToBuild={selectedTowerToBuild}
+            focusedTower={focusedTower}
+            setFocusedTower={setFocusedTower}
             attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
@@ -462,10 +466,6 @@ export default function SinglePlayerGame({
             isCheating={isCheating}
             fps={fps} setFps={setFps}
             finalGameResult={finalGameResult}
-            onSelectTowerToBuild={handleSelectTowerToBuild}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
-            setFocusedTower={setFocusedTower}
         />
     )
 }
