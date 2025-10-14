@@ -10,7 +10,7 @@ import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "../ui/tooltip";
 import TowerComponent from "@/components/game/Tower";
 
 
@@ -178,35 +178,40 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 
   if (isMobile) {
     return (
-      <ScrollArea className="h-full">
-        {content}
-      </ScrollArea>
+      <TooltipProvider>
+        <ScrollArea className="h-full">
+          {content}
+        </ScrollArea>
+      </TooltipProvider>
     );
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center gap-2">
-        {focusedTower ? (
-          <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Hammer className="h-5 w-5 text-primary" />
-        )}
-        <CardTitle className="truncate">
-          {getTitle()}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[calc(100vh-280px)] pr-4">
-          {content}
-        </ScrollArea>
-      </CardContent>
-    </Card>
+    <TooltipProvider>
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          {focusedTower ? (
+            <Button variant="ghost" size="icon" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Hammer className="h-5 w-5 text-primary" />
+          )}
+          <CardTitle className="truncate">
+            {getTitle()}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[calc(100vh-280px)] pr-4">
+            {content}
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   );
 });
 
 export default TowerSelection;
+
 
 
