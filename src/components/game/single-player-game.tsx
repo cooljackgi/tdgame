@@ -64,6 +64,8 @@ export default function SinglePlayerGame({
     // --- Local State ---
     const [showTutorial, setShowTutorial] = useState(false);
     const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
+    const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+    const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
 
     const spawnerRef = useRef<NodeJS.Timeout>();
     const countdownRef = useRef<NodeJS.Timeout>();
@@ -398,6 +400,28 @@ export default function SinglePlayerGame({
     }, [isIntermission, gameStatus]);
 
 
+    const handleSelectTowerToBuild = useCallback((tower: Tower) => {
+        const localPlayer = players.find(p => p.id === 'player1');
+        if (!localPlayer) return;
+
+        if (selectedTowerToBuild?.id === tower.id) {
+            setSelectedTowerToBuild(null);
+            audioManager.playSfx('build_tower');
+            return;
+        }
+
+        if (localPlayer.resources < tower.cost) {
+            toast({ title: "Nicht genügend Ressourcen", variant: 'destructive' });
+            audioManager.playSfx('build_tower');
+            return;
+        }
+        
+        audioManager.playSfx('build_tower');
+        setSelectedTowerToBuild(tower);
+        setFocusedTower(null);
+    }, [players, toast, selectedTowerToBuild]);
+
+
     if (players.length === 0) {
         return (
              <div className="flex flex-col items-center justify-center min-h-screen">
@@ -438,6 +462,10 @@ export default function SinglePlayerGame({
             isCheating={isCheating}
             fps={fps} setFps={setFps}
             finalGameResult={finalGameResult}
+            onSelectTowerToBuild={handleSelectTowerToBuild}
+            selectedTowerToBuild={selectedTowerToBuild}
+            focusedTower={focusedTower}
+            setFocusedTower={setFocusedTower}
         />
     )
 }
