@@ -1,8 +1,9 @@
+
 // src/app/admin/analytics/[gameId]/page.tsx
 'use client';
 
-import { useEffect, useState, useRef, use } from 'react';
-import { doc, getDoc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState, useMemo } from 'react';
+import { doc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, ArrowLeft, Network, Users, Gamepad2, AlertCircle, Zap, Terminal, Wifi, WifiOff, Download } from 'lucide-react';
@@ -30,8 +31,8 @@ interface GameData {
 const LiveMonitor = ({ gameId }: { gameId: string }) => {
     const { lastMessage, isConnected, packetsPerSecond, bytesPerSecond } = useWebRTC(gameId, false, auth.currentUser, true);
     const [messages, setMessages] = useState<NetMsg[]>([]);
-    const allMessagesRef = useRef<NetMsg[]>([]);
-    const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const allMessagesRef = React.useRef<NetMsg[]>([]);
+    const scrollAreaRef = React.useRef<HTMLDivElement>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -115,10 +116,15 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
 
 
 export default function GameAnalyticsDetailPage({ params }: { params: { gameId: string } }) {
-  const { gameId } = use(params);
+  const { gameId } = params;
   const [gameData, setGameData] = useState<GameData | null>(null);
+  const [gameLog, setGameLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const combinedLog = useMemo(() => {
+    return [...(gameLog ?? [])].sort((a,b) => (a.timestamp?.toMillis() || a.clientTs || 0) - (b.timestamp?.toMillis() || b.clientTs || 0))
+  }, [gameLog]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -142,7 +148,6 @@ export default function GameAnalyticsDetailPage({ params }: { params: { gameId: 
             gameName: data.gameName || docSnap.id,
             createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
             status: data.gameStatus || 'unbekannt',
-            gameLog: [], // Game log will be loaded separately
             players: normalizePlayers(data.players),
             difficulty: data.difficulty || 'Unbekannt',
             currentWave: data.currentWave || 0,
@@ -154,7 +159,7 @@ export default function GameAnalyticsDetailPage({ params }: { params: { gameId: 
         const logQuery = query(logCollectionRef, orderBy('timestamp', 'asc'));
         unsubscribeLogs = onSnapshot(logQuery, (snapshot) => {
           const logs = snapshot.docs.map(doc => doc.data());
-          setGameData(prev => prev ? { ...prev, gameLog: logs } : null);
+          setGameLog(logs);
         });
 
       } catch (err: any) {
@@ -264,8 +269,8 @@ export default function GameAnalyticsDetailPage({ params }: { params: { gameId: 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {gameData.gameLog && gameData.gameLog.length > 0 ? (
-            <AnalyticsChart data={gameData.gameLog} />
+          {combinedLog && combinedLog.length > 0 ? (
+            <AnalyticsChart data={combinedLog} />
           ) : (
             <p className="text-muted-foreground text-center py-10">
               Für dieses Spiel wurden keine Log-Daten gefunden.

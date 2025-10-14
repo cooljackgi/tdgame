@@ -19,7 +19,7 @@ import {
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { formatBytes } from '@/lib/utils';
-import { Cpu, Tower, Bug, Server, Wifi, ArrowDown, ArrowUp } from 'lucide-react';
+import { Cpu, Bug, Server, Wifi, ArrowDown, ArrowUp } from 'lucide-react';
 
 type AnalyticsChartProps = {
   data: any[];
@@ -46,11 +46,57 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export default function AnalyticsChart({ data }: AnalyticsChartProps) {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
-    const startTime = data[0].timestamp;
-    return data.map((entry) => ({
-      ...entry,
-      time: ((entry.timestamp - startTime) / 1000).toFixed(1), // Time in seconds since start
-    }));
+    
+    // Sortiere die Daten zuerst, da sie aus verschiedenen Quellen kommen könnten
+    const sortedData = data.sort((a,b) => (a.timestamp?.toMillis() || a.clientTs) - (b.timestamp?.toMillis() || b.clientTs));
+    
+    const startTime = sortedData[0]?.timestamp?.toMillis() || sortedData[0]?.clientTs;
+
+    // Reduziere und aggregiere die Daten
+    const aggregatedData: Record<string, any> = {};
+
+    sortedData.forEach(entry => {
+        const timeInSeconds = Math.round(((entry.timestamp?.toMillis() || entry.clientTs) - startTime) / 1000);
+        const key = String(timeInSeconds);
+
+        if (!aggregatedData[key]) {
+            aggregatedData[key] = {
+                time: timeInSeconds,
+                fps: 0,
+                enemyCount: 0,
+                towerCount: 0,
+                hostPacketsPerSecond: 0,
+                clientPacketsPerSecond: 0,
+                hostBytesSentPerSecond: 0,
+                clientBytesReceivedPerSecond: 0,
+                averagePacketSize: 0,
+            };
+        }
+        
+        const currentEntry = aggregatedData[key];
+        
+        // Host-seitige Game-Stats (sollte nur einmal pro Sekunde kommen)
+        if (entry.fps) currentEntry.fps = Math.max(currentEntry.fps, entry.fps);
+        if (entry.enemyCount) currentEntry.enemyCount = Math.max(currentEntry.enemyCount, entry.enemyCount);
+        if (entry.towerCount) currentEntry.towerCount = Math.max(currentEntry.towerCount, entry.towerCount);
+        if (entry.hostPacketsPerSecond) currentEntry.hostPacketsPerSecond = Math.max(currentEntry.hostPacketsPerSecond, entry.hostPacketsPerSecond);
+        if (entry.hostBytesSentPerSecond) currentEntry.hostBytesSentPerSecond = Math.max(currentEntry.hostBytesSentPerSecond, entry.hostBytesSentPerSecond);
+
+        // WebRTC NET_TICK events (können von host und client kommen)
+        if (entry.type === 'NET_TICK' && entry.details) {
+            if (entry.role === 'host') {
+                currentEntry.hostPacketsPerSecond = Math.max(currentEntry.hostPacketsPerSecond, entry.details.pps || 0);
+                currentEntry.hostBytesSentPerSecond = Math.max(currentEntry.hostBytesSentPerSecond, entry.details.bps || 0);
+                currentEntry.averagePacketSize = Math.max(currentEntry.averagePacketSize, entry.details.avg || 0);
+            } else if (entry.role === 'client') {
+                currentEntry.clientPacketsPerSecond = Math.max(currentEntry.clientPacketsPerSecond, entry.details.pps || 0);
+                currentEntry.clientBytesReceivedPerSecond = Math.max(currentEntry.clientBytesReceivedPerSecond, entry.details.bps || 0);
+            }
+        }
+    });
+    
+    return Object.values(aggregatedData);
+    
   }, [data]);
   
   if (chartData.length === 0) return null;
@@ -66,7 +112,7 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="time" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                        <XAxis dataKey="time" type="number" tick={{ fontSize: 12 }} domain={['dataMin', 'dataMax']} />
                         <YAxis domain={[0, 70]} tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Area type="monotone" dataKey="fps" name="Host FPS" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
@@ -84,7 +130,7 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="time" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                        <XAxis dataKey="time" type="number" tick={{ fontSize: 12 }} domain={['dataMin', 'dataMax']} />
                         <YAxis tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend />
@@ -104,7 +150,7 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="time" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                        <XAxis dataKey="time" type="number" tick={{ fontSize: 12 }} domain={['dataMin', 'dataMax']} />
                         <YAxis tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend />
@@ -124,7 +170,7 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="time" tick={{ fontSize: 12 }} interval="preserveStartEnd" />
+                        <XAxis dataKey="time" type="number" tick={{ fontSize: 12 }} domain={['dataMin', 'dataMax']} />
                         <YAxis tickFormatter={(val) => formatBytes(val)} tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend />
