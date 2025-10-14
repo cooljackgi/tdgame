@@ -278,29 +278,34 @@ function CoopGame() {
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-         if (process.env.NODE_ENV === 'development') {
-            const devUser: User = {
-                uid: 'dev-user-' + Math.random().toString(36).substring(2, 9),
-                displayName: 'Dev Spieler',
-                email: 'dev@example.com',
-                photoURL: `https://i.pravatar.cc/150?u=dev-user-id`,
-                providerId: 'password',
-                emailVerified: true, isAnonymous: false, metadata: {}, providerData: [], refreshToken: '', tenantId: null,
-                delete: async () => {}, getIdToken: async () => '', getIdTokenResult: async () => ({} as any), reload: async () => {}, toJSON: () => ({}),
-            };
-            setUser(devUser);
-        } else {
-            toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
-            router.push('/');
-        }
-      } else {
+      if (currentUser) {
         setUser(currentUser);
+      } else if (process.env.NODE_ENV === 'development') {
+        // This part causes hydration error, defer it
+      } else {
+        toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
+        router.push('/');
       }
     });
+
     return () => authUnsubscribe();
   }, [router, toast]);
   
+  useEffect(() => {
+    // This effect runs only on the client, after hydration
+    if (!user && process.env.NODE_ENV === 'development') {
+      const devUser: User = {
+        uid: 'dev-user-' + Math.random().toString(36).substring(2, 9),
+        displayName: 'Dev Spieler',
+        email: 'dev@example.com',
+        photoURL: `https://i.pravatar.cc/150?u=dev-user-id`,
+        providerId: 'password',
+        emailVerified: true, isAnonymous: false, metadata: {}, providerData: [], refreshToken: '', tenantId: null,
+        delete: async () => {}, getIdToken: async () => '', getIdTokenResult: async () => ({} as any), reload: async () => {}, toJSON: () => ({}),
+      };
+      setUser(devUser);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!rtc?.lastMessage || isGameHost) return;
@@ -333,7 +338,7 @@ function CoopGame() {
     }
   }, [gameId, isGameHost, gameStatus, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize, enemies.length, Object.keys(towersByCell).length, fps]);
   
-  if (loading || !localPlayerId) {
+  if (loading || !user || !localPlayerId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
@@ -385,4 +390,3 @@ function CoopGame() {
 }
 
 export default CoopGame;
-
