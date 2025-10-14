@@ -599,6 +599,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
       const resourcesGainedThisTick: Record<string, number> = {};
       let killedThisTick = 0;
+      let leakedThisTick = 0;
       damageToApply.forEach(({ totalDamage, sources }, enemyId) => {
           const enemy = enemiesMap.get(enemyId);
           if (!enemy || enemy.health <= 0) return;
@@ -638,7 +639,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           }
       });
 
-      let leakedThisTick = 0;
+      
       if (!isIntermission) {
         enemiesMap.forEach(enemy => {
             if(enemy.health <= 0) return;
@@ -926,7 +927,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             endNode={END_NODE}
             interactionPrompt={interactionPrompt}
             cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={handleSelectTowerToBuild}
+            onSelectTowerToBuild={onSelectTowerToBuild}
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
             setFocusedTower={setFocusedTower}

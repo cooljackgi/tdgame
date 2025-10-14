@@ -165,6 +165,11 @@ export default function SinglePlayerGame({
                     }));
                     break;
                 }
+                case DeltaType.ENEMY_PATH_UPDATE: {
+                    const [id, newPath, newPathIndex] = delta.slice(1);
+                    setEnemies(prev => prev.map(e => e.id === id ? { ...e, path: newPath, pathIndex: newPathIndex } : e));
+                    break;
+                }
                 case DeltaType.ENEMY_DAMAGE: {
                     const [id, damage] = delta.slice(1);
                     setEnemies(prev => prev.map(e => e.id === id ? { ...e, health: e.health - (damage as number), wasHit: true } : e));

@@ -23,16 +23,11 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.nextServer = exports.deleteTestGame = exports.archiveGame = exports.joinGame = void 0;
+exports.deleteTestGame = exports.archiveGame = exports.joinGame = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const zod_1 = require("zod");
-const next_1 = __importDefault(require("next"));
-const cors_1 = __importDefault(require("cors"));
 // Initialize Firebase Admin
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -174,16 +169,5 @@ exports.deleteTestGame = functions.https.onCall(async (data, context) => {
         }
         throw new functions.https.HttpsError("internal", "An unexpected error occurred while deleting the test game.");
     }
-});
-const dev = process.env.NODE_ENV !== 'production';
-const app = (0, next_1.default)({ dev, conf: { distDir: '../.next' } });
-const handle = app.getRequestHandler();
-const corsHandler = (0, cors_1.default)({ origin: true });
-exports.nextServer = functions.https.onRequest((req, res) => {
-    return corsHandler(req, res, async () => {
-        console.log('File: ' + req.originalUrl);
-        await app.prepare();
-        return handle(req, res);
-    });
 });
 //# sourceMappingURL=index.js.map

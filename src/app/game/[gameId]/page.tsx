@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import GameSession from "@/components/game/game-session";
@@ -84,6 +83,11 @@ function CoopGame() {
                     }
                     return e;
                 }));
+                break;
+            }
+            case DeltaType.ENEMY_PATH_UPDATE: {
+                const [id, newPath, newPathIndex] = delta.slice(1);
+                setEnemies(prev => prev.map(e => e.id === id ? { ...e, path: newPath, pathIndex: newPathIndex } : e));
                 break;
             }
             case DeltaType.ENEMY_DAMAGE: {
@@ -381,4 +385,3 @@ function CoopGame() {
 }
 
 export default CoopGame;
-
