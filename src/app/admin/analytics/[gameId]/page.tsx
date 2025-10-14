@@ -2,7 +2,7 @@
 // src/app/admin/analytics/[gameId]/page.tsx
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { doc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
@@ -32,8 +32,8 @@ interface GameData {
 const LiveMonitor = ({ gameId }: { gameId: string }) => {
     const { lastMessage, isConnected, packetsPerSecond, bytesPerSecond } = useWebRTC(gameId, false, auth.currentUser, true);
     const [messages, setMessages] = useState<NetMsg[]>([]);
-    const allMessagesRef = React.useRef<NetMsg[]>([]);
-    const scrollAreaRef = React.useRef<HTMLDivElement>(null);
+    const allMessagesRef = useRef<NetMsg[]>([]);
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
     const { toast } = useToast();
 
     useEffect(() => {
