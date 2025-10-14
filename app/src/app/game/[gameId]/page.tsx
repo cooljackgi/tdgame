@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import GameSession from "@/components/game/game-session";

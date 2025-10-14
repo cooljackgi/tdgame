@@ -927,7 +927,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             endNode={END_NODE}
             interactionPrompt={interactionPrompt}
             cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={handleSelectTowerToBuild}
+            onSelectTowerToBuild={onSelectTowerToBuild}
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
             setFocusedTower={setFocusedTower}
