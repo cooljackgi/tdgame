@@ -121,9 +121,11 @@ function CoopGame() {
                 }));
                 break;
             }
-            case DeltaType.ENEMY_REMOVE_EFFECT: {
+             case DeltaType.ENEMY_REMOVE_EFFECT: {
                 const [id, effectType] = delta.slice(1);
-                setEnemies(prev => prev.map(e => e.id === id ? { ...e, effects: e.effects.filter(ef => ef.type !== effectType) } : e));
+                setEnemies(prev => prev.map(e =>
+                  e.id === id ? { ...e, effects: e.effects.filter(ef => ef.type !== effectType) } : e
+                ));
                 break;
             }
             case DeltaType.TOWER_ATTACK:
@@ -181,6 +183,7 @@ function CoopGame() {
             case DeltaType.UPGRADE_TOWER_REQUEST:
             case DeltaType.SELL_TOWER_REQUEST:
                  if (isGameHost) {
+                    console.log("[CoopGame] Host received action request, dispatching event:", { type, payload });
                     document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type, payload } }));
                 }
                 break;
@@ -193,6 +196,7 @@ function CoopGame() {
       
       // Send to other players
       if(isGameHost) {
+         console.log("[CoopGame] Host broadcasting deltas:", deltas);
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
       
@@ -217,20 +221,25 @@ function CoopGame() {
                  return;
             }
             const gameData = gameSnap.data();
-            const isPlayer1 = gameData.player1Id === uid;
+            let isPlayer1 = gameData.player1Id === uid;
             let isPlayer2 = gameData.player2Id === uid;
             const isFull = !!gameData.player2Id;
 
+            // If user is not in the game and it's not full, join them.
             if (!isPlayer1 && !isPlayer2 && !isFull && !gameData.isTestGame) {
+                console.log("[CoopGame] User not in game, attempting to join...");
                 const joinGameCallable = httpsCallable(functions, 'joinGame');
                 await joinGameCallable({ gameId });
-                isPlayer2 = true;
+                isPlayer2 = true; // Assume join was successful
                 toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
+            } else if (!isPlayer1 && !isPlayer2) {
+                console.log("[CoopGame] User is a spectator.");
             }
 
             const currentRole = isPlayer1 ? 'player1' : (isPlayer2 ? 'player2' : 'spectator');
             setIsGameHost(currentRole === 'player1');
             setLocalPlayerId(currentRole);
+            console.log(`[CoopGame] User role set: ${currentRole}, isHost: ${currentRole === 'player1'}`);
 
             gameUnsubscribe = onSnapshot(gameDocRef, (snap) => {
                 if (!snap.exists()) {
@@ -245,8 +254,11 @@ function CoopGame() {
                 setPlayers(normalized);
 
                 const currentIsHost = data.player1Id === user.uid;
-                setIsGameHost(currentIsHost);
-                setLocalPlayerId(currentIsHost ? 'player1' : (normalized.some(p => p.id === 'player2' && p.name !== 'Wartet...') ? 'player2' : 'spectator'));
+                if (currentIsHost !== isGameHost) {
+                   console.log(`[CoopGame] Host status changed to: ${currentIsHost}`);
+                   setIsGameHost(currentIsHost);
+                }
+                setLocalPlayerId(currentIsHost ? 'player1' : (data.player2Id === user.uid ? 'player2' : 'spectator'));
 
                 // This is now the single source of truth for these states,
                 // driven by Firestore and then overridden by deltas.
@@ -283,7 +295,7 @@ function CoopGame() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast]);
+  }, [user, gameId, router, toast, isGameHost]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -314,13 +326,15 @@ function CoopGame() {
   useEffect(() => {
     if (!rtc?.lastMessage) return;
     const { type, payload } = rtc.lastMessage;
+    console.log("[CoopGame] Received message from useWebRTC:", { type, payload });
 
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
-    } else if (isGameHost) {
-      applyDeltas([[type, payload]]);
+    } else {
+      // This handles single action requests from clients
+      applyDeltas([[type as any, payload]]);
     }
-  }, [rtc.lastMessage, isGameHost, applyDeltas]);
+  }, [rtc.lastMessage, applyDeltas]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {

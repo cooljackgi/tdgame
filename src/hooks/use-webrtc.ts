@@ -97,8 +97,11 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         const gid = gameIdRef.current;
         if (!gid) return;
 
+        console.log(`[useWebRTC - ${currentRole}] Setting up DataChannel events for label: ${dc.label}`);
+
         dc.onopen = () => {
             if(dcPingRef.current) clearInterval(dcPingRef.current);
+            console.log(`[useWebRTC - ${currentRole}] ✅ DataChannel OPENED.`);
             logWebRTCEvent(gid, currentRole, 'DC_OPEN');
             setIsConnected(true);
             dcPingRef.current = setInterval(() => {
@@ -112,6 +115,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         dc.onclose = () => {
             if(dcPingRef.current) clearInterval(dcPingRef.current);
             dcPingRef.current = undefined;
+            console.log(`[useWebRTC - ${currentRole}] ❌ DataChannel CLOSED.`);
             logWebRTCEvent(gid, currentRole, 'DC_CLOSE');
             setIsConnected(false);
         };
@@ -119,6 +123,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (event.data === '{"type":"_ping"}') return;
             try {
                 const message = JSON.parse(event.data) as NetMsg;
+                console.log(`[useWebRTC - ${currentRole}] 📩 RX:`, message);
                 setLastMessage(message);
                 packetCountRef.current++;
                 byteCountRef.current += event.data.length;
@@ -133,6 +138,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
         if (!gid) return null;
 
+        console.log(`[useWebRTC - ${currentRole}] Creating new RTCPeerConnection.`);
         logWebRTCEvent(gid, currentRole, 'PC_CREATED');
         const pc = new RTCPeerConnection(iceConfiguration);
         
@@ -163,12 +169,14 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
         pc.onicecandidate = (event) => {
             if (event.candidate && signalingSocketRef.current?.readyState === WebSocket.OPEN) {
-                signalingSocketRef.current.send(JSON.stringify({
+                const msg = {
                   kind: 'signal',
                   type: 'ice-candidate',
                   from: selfIdRef.current,
                   payload: event.candidate
-                }));
+                };
+                console.log(`[useWebRTC - ${currentRole}] 🧊 Sending ICE candidate:`, msg);
+                signalingSocketRef.current.send(JSON.stringify(msg));
                 if (gid) logWebRTCEvent(gid, currentRole, 'PC_ICE_CANDIDATE', { candidate: event.candidate.candidate });
             }
         };
@@ -176,6 +184,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         pc.onconnectionstatechange = () => {
             const currentGid = gameIdRef.current;
             if (!currentGid) return;
+            console.log(`[useWebRTC - ${currentRole}] ⛓️ PC Connection State Change: ${pc.connectionState}`);
             logWebRTCEvent(currentGid, currentRole, 'PC_CONNECTION_STATE_CHANGE', { state: pc.connectionState });
             if (pc.connectionState === 'connected') {
                 logSelectedCandidatePair(pc);
@@ -185,6 +194,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         pc.ondatachannel = (event) => {
             const dc = event.channel;
             const currentGid = gameIdRef.current;
+            console.log(`[useWebRTC - ${currentRole}] 🤝 Got remote DataChannel: ${dc.label}`);
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
             dataChannelRef.current = dc;
             setupDataChannelEvents(dc);
@@ -210,10 +220,12 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
 
             if (signalingSocketRef.current && signalingSocketRef.current.readyState < WebSocket.CLOSING) {
+                console.log(`[useWebRTC - ${currentRole}] Closing existing signaling socket before reconnecting.`);
                 signalingSocketRef.current.close();
             }
 
             const signalingUrl = getSignalingUrl(gid, isMonitorRef.current);
+            console.log(`[useWebRTC - ${currentRole}] 🔌 Connecting to signaling server: ${signalingUrl}`);
             logWebRTCEvent(gid, currentRole, 'SIGNALING_CONNECTING', { url: signalingUrl });
             const ws = new WebSocket(signalingUrl);
             signalingSocketRef.current = ws;
@@ -223,6 +235,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
               if (!stopped) {
                 const delay = Math.min(30000, 1000 * Math.pow(2, backoffRef.current));
                 backoffRef.current++;
+                console.log(`[useWebRTC - ${currentRole}] 🔁 Scheduling signaling reconnect in ${delay}ms`);
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_RECONNECT_SCHEDULED', { delay });
                 reconnectTimerRef.current = setTimeout(connect, delay);
               }
@@ -230,13 +243,16 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             
             ws.onopen = () => {
                 backoffRef.current = 0;
+                console.log(`[useWebRTC - ${currentRole}] ✅ Signaling OPEN.`);
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_OPEN');
 
                 // Client starts sending "hello" periodically until an offer is received
                 if (!isHostRef.current && !isMonitorRef.current) {
                     const sendHello = () => {
                        if (ws.readyState === WebSocket.OPEN) {
-                         ws.send(JSON.stringify({ kind:'signal', type:'hello', from:selfIdRef.current }));
+                         const msg = { kind:'signal', type:'hello', from:selfIdRef.current };
+                         console.log(`[useWebRTC - ${currentRole}] 👋 Sending hello:`, msg);
+                         ws.send(JSON.stringify(msg));
                        }
                     };
                     sendHello();
@@ -247,6 +263,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
+                console.log(`[useWebRTC - ${currentRole}] 📩 Signaling RX:`, msg);
                 if(isMonitorRef.current || (msg.from && msg.from === selfIdRef.current)) return;
                 
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
@@ -260,19 +277,25 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 try {
                     // Host receives "hello", creates offer
                     if (msg.type === 'hello' && isHostRef.current) {
-                        // Guard: only re-offer if not already negotiating or DC is closed/null
-                        if (pc.signalingState !== 'stable') return;
+                        if (pc.signalingState !== 'stable') {
+                          console.log(`[useWebRTC - Host] Ignoring 'hello', already negotiating.`);
+                          return;
+                        }
 
                         if(!dataChannelRef.current || dataChannelRef.current.readyState === 'closed') {
+                            console.log(`[useWebRTC - Host] Creating data channel 'game_data'.`);
                             const dc = pc.createDataChannel('game_data', {ordered: false, maxRetransmits: 0});
                             dataChannelRef.current = dc;
                             setupDataChannelEvents(dc);
                             logWebRTCEvent(gid, currentRole, 'DC_CREATED', {label: dc.label});
                         }
                         
+                        console.log(`[useWebRTC - Host] Creating offer in response to 'hello'.`);
                         const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
-                        ws.send(JSON.stringify({ kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription }));
+                        const offerMsg = { kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription };
+                        console.log(`[useWebRTC - Host] 📤 Sending offer:`, offerMsg);
+                        ws.send(JSON.stringify(offerMsg));
                         logWebRTCEvent(gid, currentRole, 'PC_OFFER_CREATED_REHELLO');
                     
                     // Client receives "offer", creates answer
@@ -281,16 +304,20 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                         helloIntervalRef.current = undefined;
 
                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+                        console.log(`[useWebRTC - ${currentRole}] Creating answer.`);
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
                         if (ws.readyState === WebSocket.OPEN) {
-                          ws.send(JSON.stringify({ kind:'signal', type:'answer', from:selfIdRef.current, payload: pc.localDescription }));
+                          const answerMsg = { kind:'signal', type:'answer', from:selfIdRef.current, payload: pc.localDescription };
+                          console.log(`[useWebRTC - ${currentRole}] 📤 Sending answer:`, answerMsg);
+                          ws.send(JSON.stringify(answerMsg));
                         }
                     
                     // Host receives "answer"
                     } else if (msg.type === 'answer' && isHostRef.current) {
                         if (pc.signalingState !== 'stable') {
                             await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+                             console.log(`[useWebRTC - Host] Remote description (answer) set.`);
                         }
                     
                     // Both receive ICE candidates
@@ -309,6 +336,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             };
             
             ws.onclose = (e) => {
+                console.log(`[useWebRTC - ${currentRole}] ❌ Signaling CLOSED: Code ${e.code}, Reason: ${e.reason}`);
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_CLOSE', { code: e.code, reason: e.reason.toString() });
                 setIsConnected(false);
                 if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
@@ -316,6 +344,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             };
 
             ws.onerror = (err) => {
+                 console.error(`[useWebRTC - ${currentRole}] 💥 Signaling ERROR:`, err);
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_ERROR', { err: String(err) });
                 // onclose will be called next, which will trigger reconnect
             };
@@ -355,6 +384,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
         return () => {
             stopped = true; // This is a real unmount
+            console.log(`[useWebRTC - ${isHostRef.current ? 'Host' : 'Client'}] 🛑 Unmounting. Cleaning up all connections and timers.`);
             if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
             if (periodicLogIntervalRef.current) clearInterval(periodicLogIntervalRef.current);
             if (dcPingRef.current) clearInterval(dcPingRef.current);
@@ -378,6 +408,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         if (dc?.readyState === 'open' && dc.bufferedAmount < MAX_BUFFERED) {
             try {
                 const msgStr = JSON.stringify(message);
+                const role = isHostRef.current ? 'Host' : 'Client';
+                console.log(`[useWebRTC - ${role}] 📤 TX:`, message);
                 dc.send(msgStr);
                 packetCountRef.current++;
                 byteCountRef.current += msgStr.length;
