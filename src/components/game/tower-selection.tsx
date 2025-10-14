@@ -16,7 +16,7 @@ import TowerComponent from "@/components/game/Tower";
 
 type TowerSelectionProps = {
   allTowers: Tower[];
-  onSelectTower: (tower: Tower) => void;
+  onSelectTower: (tower: Tower | null) => void;
   focusedTower: PlacedTower | null;
   selectedTowerToBuild: Tower | null;
   onUpgradeTower: (upgradeId: string) => void;
@@ -123,7 +123,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 
   const content = (
       <>
-      {focusedTower ? (
+      {focusedTower && !isMobile ? (
          <div className="space-y-4">
             <div className="flex items-center justify-between p-2 bg-card rounded-lg">
                 <div className="flex flex-col">
@@ -157,7 +157,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
               <TowerCard 
                 key={tower.id}
                 tower={tower} 
-                onSelect={onSelectTower} 
+                onSelect={() => onSelectTower(tower)} 
                 disabled={!localPlayer || localPlayer.resources < tower.cost}
                 isSelected={selectedTowerToBuild?.id === tower.id}
               />
@@ -172,7 +172,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   );
 
   const getTitle = () => {
-    if (focusedTower) return `Upgrade ${focusedTower.name}`;
+    if (focusedTower && !isMobile) return `Upgrade ${focusedTower.name}`;
     return `Turm-Menü (${localPlayer?.name || '...'})`;
   };
 
@@ -212,7 +212,3 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 });
 
 export default TowerSelection;
-
-
-
-

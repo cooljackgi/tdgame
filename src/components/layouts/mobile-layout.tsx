@@ -51,7 +51,7 @@ interface MobileLayoutProps {
   handleGameControl: () => void;
   gameStatus: GameStatus;
   resetGame: () => void;
-  onSelectTowerToBuild: (tower: Tower) => void;
+  onSelectTowerToBuild: (tower: Tower | null) => void;
   handleUpgradeTower: (upgradeId: string) => void;
   handleSellTower: () => void;
   setFocusedTower: (tower: PlacedTower | null) => void;
@@ -76,6 +76,7 @@ interface MobileLayoutProps {
   cheat_heal?: () => void;
   cheat_unlockAll: () => void;
   firingTowerIds: Set<string>;
+  allTowers: Tower[];
     // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -96,6 +97,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     isCoop, playerRole, handleLoadTestLayout, handleLoadAllTowersLayout, isCheating, cheat_addResources, cheat_skipWaves, cheat_heal,
     cheat_unlockAll,
     firingTowerIds,
+    allTowers,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -117,10 +119,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
-    : (focusedTower ? `Upgrade ${focusedTower.name}` : (selectedTowerToBuild ? 'Turm bauen' : 'Turm-Menü'));
-  const sheetIcon = isSpectator ? <Eye /> : (focusedTower ? <ArrowUpCircle /> : <Hammer />);
+    : (selectedTowerToBuild ? 'Turm bauen' : 'Turm-Menü');
+  const sheetIcon = isSpectator ? <Eye /> : <Hammer />;
 
-  const handleSelectAndClose = (tower: Tower) => {
+  const handleSelectAndClose = (tower: Tower | null) => {
     onSelectTowerToBuild(tower);
     setIsBuildSheetOpen(false);
   };
@@ -156,6 +158,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           isCoop={isCoop}
           playerRole={playerRole}
           firingTowerIds={firingTowerIds}
+          onUpgradeTower={handleUpgradeTower}
+          onSellTower={handleSellTower}
+          allTowers={allTowers}
+          localPlayer={localPlayer}
         >
           {/* TOP OVERLAYS */}
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">
@@ -211,7 +217,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <Button
                   variant="outline"
                   className="h-14 flex flex-col justify-center"
-                  disabled={gameStatus === 'picking-element' || isSpectator}
+                  disabled={gameStatus === 'picking-element' || isSpectator || !!focusedTower}
                 >
                   {sheetIcon}
                   <span className="text-[11px] mt-1">{sheetTitle}</span>
@@ -235,7 +241,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                     <TowerSelection
                       allTowers={towers}
                       onSelectTower={handleSelectAndClose}
-                      focusedTower={focusedTower}
+                      focusedTower={null} // Pass null, as mobile context menu handles this
                       selectedTowerToBuild={selectedTowerToBuild}
                       onUpgradeTower={handleUpgradeTower}
                       onSellTower={handleSellAndClose}
