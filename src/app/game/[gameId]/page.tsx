@@ -274,7 +274,7 @@ function CoopGame() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, isGameHost, rtc]);
+  }, [user, gameId, router, toast]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -303,14 +303,34 @@ function CoopGame() {
   
 
   useEffect(() => {
-    if (!rtc?.lastMessage || isGameHost) return;
+    if (!rtc?.lastMessage) return;
     const { type, payload } = rtc.lastMessage;
+
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
-    } else if (type === 'client_stats_update' && isGameHost) { // Host processes stats
-      applyDeltas([[DeltaType.CLIENT_STATS_UPDATE, payload]]);
+    } else if (isGameHost) {
+      if (type === 'client_stats_update') {
+        applyDeltas([[DeltaType.CLIENT_STATS_UPDATE, payload]]);
+      } else if (type === 'build_tower_request') {
+        const { towerId, row, col, playerId } = payload;
+        // The GameSession needs to know about the tower spec
+        const towerSpec = initialTowers.find(t => t.id === towerId);
+        if (towerSpec) {
+            // Re-create a synthetic `handlePlaceTower` call on the host
+            // Temporarily set the selected tower for the validation logic
+            const gameSession = document.querySelector('.game-session-component'); // A way to get a handle on GameSession
+            if(gameSession) {
+               // This is tricky as we can't directly call the function with the right state.
+               // The logic must be self-contained in the message handler.
+               // Let's defer this to be handled inside `game-session` itself.
+               const placeTowerEvent = new CustomEvent('placeTowerRequest', { detail: { towerSpec, row, col, playerId } });
+               document.dispatchEvent(placeTowerEvent);
+            }
+        }
+      }
     }
-  }, [rtc?.lastMessage, isGameHost, applyDeltas]);
+  }, [rtc.lastMessage, isGameHost, applyDeltas]);
+
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
     if (gameId && isGameHost) {

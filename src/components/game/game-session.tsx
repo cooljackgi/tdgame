@@ -285,35 +285,43 @@ export default function GameSession({
     }
   }, [localPlayerId, selectedTowerToBuild, focusedTower, isCoop, spSelectedTowerToBuild, spFocusedTower, spHandleSelectTowerToBuild, spSetFocusedTower]);
 
-  const handlePlaceTower = useCallback((row: number, col: number) => {
+ const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id']) => {
     const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
-    const localPlayer = players.find(p => p.id === localPlayerId);
+    const builderId = requestedByPlayerId || localPlayerId;
+    const builderPlayer = players.find(p => p.id === builderId);
     
-    if (!towerToBuild || !localPlayer || localPlayerId === 'spectator') return;
+    // Tower must be selected, and a player must be building it
+    if (!towerToBuild || !builderPlayer || builderId === 'spectator') return;
 
-    if (!isGameHost) {
-        broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: localPlayer.id }]], true);
+    // If a client sends a request, only the host should process it.
+    if (isCoop && !isGameHost) {
+        broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
         cancelInteractions();
         return;
     }
     
-    // --- HOST-ONLY LOGIC ---
+    // --- HOST-ONLY LOGIC FROM HERE ---
     const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
-        toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
+        if(builderId === localPlayerId) { // Only show toast to the local player to avoid spam
+            toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
+        }
         return;
     }
 
     const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
     const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
     if (!newPath) {
-        toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
+        if(builderId === localPlayerId) {
+            toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
+        }
         return;
     }
 
-    const builderPlayer = players.find(p => p.id === localPlayer.id);
-    if (!builderPlayer || builderPlayer.resources < towerToBuild.cost) {
-        toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
+    if (builderPlayer.resources < towerToBuild.cost) {
+        if(builderId === localPlayerId) {
+            toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
+        }
         return;
     }
 
@@ -335,12 +343,14 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    setJustPlacedTowerId(newTower.id);
-    setTimeout(() => setJustPlacedTowerId(null), 1000);
-    
-    audioManager.playSfx('build_tower');
-    cancelInteractions();
-}, [isCoop, selectedTowerToBuild, spSelectedTowerToBuild, players, localPlayerId, isGameHost, broadcastGameData, cancelInteractions, towersByCell, toast, START_NODE, END_NODE]);
+    // Only the local player who initiated the build action should clear their interactions.
+    if(builderId === localPlayerId) {
+        setJustPlacedTowerId(newTower.id);
+        setTimeout(() => setJustPlacedTowerId(null), 1000);
+        audioManager.playSfx('build_tower');
+        cancelInteractions();
+    }
+}, [isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, localPlayerId, players, broadcastGameData, cancelInteractions, towersByCell, toast, START_NODE, END_NODE]);
 
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
