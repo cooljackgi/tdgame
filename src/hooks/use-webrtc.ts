@@ -65,7 +65,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     const selfIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
-    const dcPingRef = useRef<NodeJS.Timeout>();
+    const dcPingRef = useRef<ReturnType<typeof setInterval> | undefined>();
 
     // Refs for reconnect logic & state management inside useEffect
     const gameIdRef = useRef(gameId);
@@ -73,14 +73,18 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     const isHostRef = useRef(isHost);
     const isMonitorRef = useRef(isMonitor);
     const backoffRef = useRef(0);
-    const reconnectTimerRef = useRef<NodeJS.Timeout>();
-    const helloIntervalRef = useRef<NodeJS.Timeout>();
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+    const helloIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
     
     // Stats refs
     const packetCountRef = useRef(0);
     const byteCountRef = useRef(0);
-    const statsIntervalRef = useRef<NodeJS.Timeout>();
-    const periodicLogIntervalRef = useRef<NodeJS.Timeout>();
+    const statsIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
+    const periodicLogIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
+    const ppsRef = useRef(0);
+    const bpsRef = useRef(0);
+    const avgRef = useRef(0);
+
 
     // Update refs whenever props change, without re-triggering the main effect
     useEffect(() => { gameIdRef.current = gameId; }, [gameId]);
@@ -110,6 +114,12 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             dcPingRef.current = undefined;
             logWebRTCEvent(gid, currentRole, 'DC_CLOSE');
             setIsConnected(false);
+
+            // Re-negotiation logic
+            const ws = signalingSocketRef.current;
+            if (ws?.readyState === WebSocket.OPEN && !isHostRef.current && !isMonitorRef.current) {
+                ws.send(JSON.stringify({ kind:'signal', type:'hello', from:selfIdRef.current }));
+            }
         };
         dc.onmessage = (event) => {
             if (event.data === '{"type":"_ping"}') return;
@@ -174,12 +184,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (!currentGid) return;
             logWebRTCEvent(currentGid, currentRole, 'PC_CONNECTION_STATE_CHANGE', { state: pc.connectionState });
             if (pc.connectionState === 'connected') {
-                // For host, isConnected is true when its own DC opens.
-                // For client, this is a good indicator, but DC open is the real truth.
-                if (!isHostRef.current) setIsConnected(true);
                 logSelectedCandidatePair(pc);
-            } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                setIsConnected(false);
             }
         };
         
@@ -261,7 +266,11 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 try {
                     // Host receives "hello", creates offer
                     if (msg.type === 'hello' && isHostRef.current) {
-                        if(!dataChannelRef.current || dataChannelRef.current.readyState !== 'open') {
+                        // Guard: only re-offer if not already negotiating or DC is closed
+                        if (pc.signalingState !== 'stable') return;
+                        if (dataChannelRef.current && dataChannelRef.current.readyState !== 'closed') return;
+
+                        if(!dataChannelRef.current || dataChannelRef.current.readyState === 'closed') {
                             const dc = pc.createDataChannel('game_data', {ordered: false, maxRetransmits: 0});
                             dataChannelRef.current = dc;
                             setupDataChannelEvents(dc);
@@ -291,9 +300,12 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                     
                     // Both receive ICE candidates
                     } else if (msg.type === 'ice-candidate') {
-                        // Only add candidate if remote description is set
-                        if (pc.remoteDescription) {
-                            await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
+                        const cand = msg.payload;
+                        if (!pc.remoteDescription || !cand || (!cand.candidate && cand.candidate !== '')) return;
+                        try {
+                           await pc.addIceCandidate(new RTCIceCandidate(cand));
+                        } catch (e) {
+                           console.warn('addIceCandidate failed', e, cand);
                         }
                     }
                 } catch (e) {
@@ -317,21 +329,31 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         connect(); // Start the connection process
 
         statsIntervalRef.current = setInterval(() => {
-            setPacketsPerSecond(packetCountRef.current);
-            setBytesPerSecond(byteCountRef.current);
-            setAveragePacketSize(packetCountRef.current ? Math.round(byteCountRef.current / Math.max(1, packetCountRef.current)) : 0);
+            const pps = packetCountRef.current;
+            const bps = byteCountRef.current;
+            const avg = pps ? Math.round(bps / Math.max(1, pps)) : 0;
+            
+            setPacketsPerSecond(pps);
+            setBytesPerSecond(bps);
+            setAveragePacketSize(avg);
+            
+            ppsRef.current = pps;
+            bpsRef.current = bps;
+            avgRef.current = avg;
+
             packetCountRef.current = 0;
             byteCountRef.current = 0;
         }, 1000);
 
         periodicLogIntervalRef.current = setInterval(() => {
             const gid = gameIdRef.current;
-            if (gid && isConnected) {
+            const connected = dataChannelRef.current?.readyState === 'open';
+            if (gid && connected) {
                 const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
                 logWebRTCEvent(gid, currentRole, 'NET_TICK', {
-                    pps: packetsPerSecond,
-                    bps: bytesPerSecond,
-                    avg: averagePacketSize,
+                    pps: ppsRef.current,
+                    bps: bpsRef.current,
+                    avg: avgRef.current,
                 });
             }
         }, 2000); // Log stats every 2 seconds to avoid spamming Firestore
