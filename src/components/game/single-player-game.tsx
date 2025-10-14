@@ -236,6 +236,11 @@ export default function SinglePlayerGame({
                  case DeltaType.TOWERS_UPDATE:
                     setTowersByCell(delta[1]);
                     break;
+                case DeltaType.TOWER_UPGRADE_VFX:
+                     const { towerId } = delta[1] as { towerId: string };
+                     setLastUpgradedTowerId(towerId);
+                     setTimeout(() => setLastUpgradedTowerId(null), 1000);
+                    break;
                 case DeltaType.PLAYER_UPDATE: {
                      const playerUpdates = delta[1] as Record<string, Partial<Player>>;
                      setPlayers(prev => prev.map(p => {
@@ -251,48 +256,6 @@ export default function SinglePlayerGame({
         });
     }, [currentPath, saveGameState]);
     
-    const handlePlaceTower = useCallback((row: number, col: number) => {
-        const player = players.find(p => p.id === 'player1');
-        const selectedTowerToBuild = initialTowers.find(t => t.id === 'neutral-0'); // Simplified for example
-
-        if (!selectedTowerToBuild || !player) return;
-
-        const cellKey = `${row}_${col}`;
-        const cost = selectedTowerToBuild.cost;
-
-        if (towersByCell[cellKey] || player.resources < cost) {
-            toast({ title: "Bau nicht möglich", description: "Feld belegt oder nicht genug Ressourcen.", variant: "destructive" });
-            return;
-        }
-
-        const newTower: PlacedTower = {
-            ...selectedTowerToBuild,
-            specId: selectedTowerToBuild.id,
-            id: `tower-${row}-${col}-${Math.random()}`, // Make ID unique to force re-render
-            position: { row, col },
-            lastAttack: 0,
-            health: selectedTowerToBuild.maxHealth,
-            ownerId: player.id,
-            isBase: true
-        };
-
-        const newTowers = { ...towersByCell, [cellKey]: newTower };
-        const newPath = findPath(START_NODE, END_NODE, Object.values(newTowers).map(t => t.position), GRID_ROWS, GRID_COLS);
-
-        if (!newPath) {
-            toast({ title: "Bau fehlgeschlagen", description: "Der Weg darf nicht blockiert werden.", variant: 'destructive' });
-            return;
-        }
-
-        const deltas: GameDelta[] = [
-          [DeltaType.TOWERS_UPDATE, newTowers],
-          [DeltaType.PLAYER_UPDATE, { [player.id]: { resources: player.resources - cost } }]
-        ];
-
-        applyDeltas(deltas);
-        audioManager.playSfx('build_tower');
-    }, [players, towersByCell, toast, applyDeltas, START_NODE, END_NODE]);
-
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
 
@@ -460,7 +423,6 @@ export default function SinglePlayerGame({
             onGameEnd={handleGameEnd}
             onWaveComplete={() => { waveInProgressRef.current = false; }}
             onExit={onExit}
-            handlePlaceTower={handlePlaceTower}
             attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}

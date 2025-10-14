@@ -279,10 +279,9 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    cancelInteractions();
     audioManager.playSfx('build_tower');
 
-  }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE, cancelInteractions]);
+  }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
     if (!focusedTower || !localPlayer || localPlayerId === 'spectator') return;
@@ -669,7 +668,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
       if (!isIntermission && allSpawned && liveEnemyCount === 0) {
           audioManager.stopMusic();
-          if (onWaveComplete) onWaveComplete();
+          onWaveComplete?.();
 
           const nextWave = currentWave + 1;
           
