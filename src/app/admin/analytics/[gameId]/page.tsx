@@ -1,4 +1,3 @@
-
 // src/app/admin/analytics/[gameId]/page.tsx
 'use client';
 
@@ -98,7 +97,8 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
             <CardContent>
                 <ScrollArea className="h-64 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs" ref={scrollAreaRef}>
                    {messages.map((msg, index) => {
-                       const payloadString = JSON.stringify(msg.payload);
+                       const raw = msg?.payload;
+                       const payloadString = typeof raw === 'string' ? raw : JSON.stringify(raw ?? '');
                        const isSnapshot = payloadString.includes('GAME_STATE_SNAPSHOT');
                        const isBig = payloadString.length > 200;
                        return (
