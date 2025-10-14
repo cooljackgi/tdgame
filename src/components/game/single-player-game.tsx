@@ -22,6 +22,23 @@ import { waves } from '@/lib/game-data/enemies';
 
 const TUTORIAL_COMPLETED_KEY = 'nexus-tutorial-completed';
 
+// Function to find the closest path node to a given position
+function findClosestPathIndex(path: Node[], position: Node): number {
+    if (!path || path.length === 0) return 0;
+    let closestIndex = 0;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        const distSq = Math.pow(node.col - position.col, 2) + Math.pow(node.row - position.row, 2);
+        if (distSq < minDistance) {
+            minDistance = distSq;
+            closestIndex = i;
+        }
+    }
+    return closestIndex;
+}
+
 type SinglePlayerGameProps = {
     difficulty: Difficulty;
     onExit: () => void;
@@ -263,6 +280,21 @@ export default function SinglePlayerGame({
         });
     }, [currentPath, saveGameState]);
     
+    // This effect runs when the path changes. It tells all enemies to update their path.
+    useEffect(() => {
+        if (enemies.length === 0) return;
+
+        const deltas: GameDelta[] = enemies.map(enemy => {
+            const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
+            return [DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex];
+        });
+
+        if (deltas.length > 0) {
+            applyDeltas(deltas);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPath]);
+
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
 
