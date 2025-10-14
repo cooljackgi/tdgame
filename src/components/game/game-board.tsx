@@ -1,9 +1,10 @@
 
+
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, MovementPattern, WorkerState } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -13,6 +14,7 @@ import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import { enemyIconPaths } from '@/components/game/icons/enemy-icons';
+import WorkerDrone from './WorkerDrone';
 
 const CELL_SIZE = 64;
 
@@ -121,6 +123,7 @@ type GameBoardProps = {
   isCoop: boolean;
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   firingTowerIds: Set<string>;
+  workerState: WorkerState;
   children?: React.ReactNode;
 };
 
@@ -258,10 +261,11 @@ const MemoizedTower = React.memo(function GameCell({
 
   const towerContent = (
     <div className="relative flex items-center justify-center h-full w-full">
+      {isJustUpgraded && <div className="upgrade-ping" />}
       <TowerComponent
         element={tower.elements[0] ?? "neutral"}
         variant={variant}
-        isUpgraded={isJustUpgraded || !tower.isBase}
+        isUpgraded={!tower.isBase}
         isDamaged={tower.health < tower.maxHealth}
         size={CELL_SIZE * 0.8}
         cooldownProgress={cooldownProgress}
@@ -330,6 +334,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     isCoop,
     playerRole,
     firingTowerIds,
+    workerState,
     children,
 }, ref) => {
 
@@ -1045,6 +1050,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         <TooltipContent><p>Nexus</p></TooltipContent>
                       </Tooltip>
                     </div>
+
+                 <WorkerDrone workerState={workerState} />
               
             </div>
             
