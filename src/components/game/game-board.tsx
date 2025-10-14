@@ -160,7 +160,7 @@ function createPool<T extends {id: string}>(size: number) {
 }
 
 
-function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number, enemyPositions: Map<string, { x: number, y: number }>) {
+function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number, enemyPositions: Map<string, { x: number; y: number }>) {
     let fromPos = a._vfx.fromPx;
     let toPos = a._vfx.toPx;
 
