@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, TestTube2, Github } from 'lucide-react';
+import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, TestTube2, Github, Crown, Trophy, HelpCircle, Gamepad2, Trash2 } from 'lucide-react';
 import type { Difficulty, GameSaveState } from '@/lib/game-data/types';
 import { LOCAL_STORAGE_KEY, difficultyModifiers } from '@/lib/game-data/constants';
 import { onAuthStateChanged, signInWithGoogle, logOut, type User, auth } from '@/lib/firebase';
@@ -13,6 +13,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { Separator } from '@/components/ui/separator';
 
 // Lazy-loaded components
 const SinglePlayerGame = lazy(() => import('@/components/game/single-player-game'));
@@ -53,7 +54,7 @@ export default function Home() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && e.key === 'c') {
         setShowCheats(prev => !prev);
-        toast({ title: `Chaos-Modus ${!showCheats ? 'aktiviert' : 'deaktiviert'}` });
+        toast({ title: `Chaos-Modus ${!prev ? 'aktiviert' : 'deaktiviert'}` });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -168,70 +169,106 @@ export default function Home() {
     
     // Main Menu
     return (
-      <Card className="w-full max-w-lg border-white/10 bg-card/70 backdrop-blur-sm">
-        <CardHeader className="items-center text-center">
-          <Gem className="h-12 w-12 text-primary drop-shadow-[0_0_8px_hsl(var(--primary))]" />
-          <CardTitle className="text-4xl font-bold tracking-tighter pt-2">Elementarer Nexus</CardTitle>
-          <CardDescription>Ein Tower-Defense-Spiel der Elemente.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-            <div className="space-y-4">
-                 <div className="space-y-2">
-                    <label className="text-sm font-medium">Schwierigkeit</label>
-                    <Select onValueChange={(val: Difficulty) => setDifficulty(val)} defaultValue={difficulty}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                        {Object.keys(difficultyModifiers).map(d => (
-                            <SelectItem key={d} value={d}>{d}</SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                
-                 {savedGame && (
-                     <Card className="p-4 bg-primary/10 border-primary/20">
-                        <div className="flex justify-between items-center">
-                            <div>
-                               <p className="font-semibold">Gespeichertes Spiel</p>
-                               <p className="text-xs text-muted-foreground">Welle {savedGame.currentWave + 1} - {savedGame.difficulty}</p>
-                            </div>
-                            <div className="flex gap-2">
-                               <Button onClick={() => startGame('singleplayer')} size="sm"><Play className="mr-2"/>Fortsetzen</Button>
-                               <Button onClick={clearSavedGame} variant="destructive" size="sm">Löschen</Button>
-                            </div>
-                        </div>
-                     </Card>
-                 )}
-
-                 <Button onClick={startTutorial} variant="outline" className="w-full">
-                   <BookOpen className="mr-2"/> Tutorial starten
-                 </Button>
-                <Button onClick={() => startGame('singleplayer')} className="w-full" size="lg" disabled={!!savedGame}>
-                  <Swords className="mr-2" /> Neues Einzelspieler-Spiel
-                </Button>
-                
-                {user ? (
-                   <Button onClick={() => startGame('coop')} className="w-full" size="lg">
-                    <Users className="mr-2" /> Multiplayer-Lobby
-                  </Button>
-                ) : (
-                  <Button onClick={handleLogin} variant="secondary" className="w-full" size="lg">
-                    {loading ? <Loader2 className="mr-2 animate-spin"/> : <LogIn className="mr-2" />}
-                    Mit Google anmelden für Multiplayer
-                  </Button>
-                )}
+        <div className="w-full max-w-6xl mx-auto space-y-8">
+            <div className="text-center space-y-2">
+                <h1 className="text-4xl md:text-5xl font-bold tracking-tighter bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                    Elementarer Nexus
+                </h1>
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                    Ein strategisches Koop-Tower-Defense-Spiel. Verteidige den Nexus allein oder mit einem Freund gegen Wellen von Gegnern.
+                </p>
             </div>
-
-            <div className="flex justify-center items-center gap-4">
-              <Link href="/balancing">
-                 <Button variant="ghost" size="sm"><BarChart2 className="mr-2"/>Balancing</Button>
-              </Link>
-               <Link href="/explainer">
-                 <Button variant="ghost" size="sm"><BookOpen className="mr-2"/>Wiki</Button>
-              </Link>
-               <Link href="/admin/coop-test">
-                 <Button variant="ghost" size="sm"><TestTube2 className="mr-2"/>Koop-Test</Button>
-              </Link>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* Einzelspieler */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Einzelspieler</CardTitle>
+                        <CardDescription>Spiele alleine und teste deine Fähigkeiten.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div>
+                            <label className="text-sm font-medium mb-2 block">Schwierigkeit</label>
+                             <Select onValueChange={(val: Difficulty) => setDifficulty(val)} defaultValue={difficulty}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                {Object.keys(difficultyModifiers).map(d => (
+                                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                                ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button onClick={() => startGame('singleplayer')} className="w-full" size="lg" disabled={!!savedGame}>
+                            <Play className="mr-2" /> Neues Spiel starten
+                        </Button>
+                        {savedGame && (
+                           <div className="space-y-2">
+                            <Button onClick={() => startGame('singleplayer')} variant="outline" className="w-full">
+                                <Gamepad2 className="mr-2" /> Spielstand laden (Welle {savedGame.currentWave + 1})
+                            </Button>
+                             <Button onClick={clearSavedGame} variant="link" size="sm" className="w-full text-muted-foreground">
+                                Gespeichertes Spiel löschen
+                            </Button>
+                           </div>
+                        )}
+                    </CardContent>
+                </Card>
+                
+                {/* Multiplayer & Tools */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Multiplayer & Tools</CardTitle>
+                        <CardDescription>Spiele mit Freunden oder analysiere das Spiel.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {user ? (
+                           <Button onClick={() => startGame('coop')} className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
+                            <Users className="mr-2" /> Zur Lobby
+                          </Button>
+                        ) : (
+                           <Button onClick={handleLogin} variant="secondary" className="w-full">
+                            {loading ? <Loader2 className="mr-2 animate-spin"/> : <LogIn className="mr-2" />}
+                            Anmelden für Multiplayer
+                          </Button>
+                        )}
+                        <Button onClick={() => {setShowCheats(true); startGame('singleplayer');}} variant="secondary" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
+                            <Crown className="mr-2" /> Chaos-Modus
+                        </Button>
+                        <Separator className="my-2" />
+                        <Link href="/admin/coop-test" className="w-full block">
+                            <Button variant="outline" className="w-full"><TestTube2 className="mr-2" /> Koop-Test</Button>
+                        </Link>
+                         <Link href="/admin/analytics" className="w-full block">
+                            <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Analyse-Dashboard</Button>
+                        </Link>
+                         <Link href="/balancing" className="w-full block">
+                            <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Turm-Dashboard</Button>
+                        </Link>
+                         <Link href="/balancing/waves" className="w-full block">
+                            <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Wellen-Dashboard</Button>
+                        </Link>
+                    </CardContent>
+                </Card>
+                
+                {/* Anleitung */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Spielanleitung</CardTitle>
+                        <CardDescription>Lerne die Grundlagen und sieh deine Erfolge.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                         <Link href="/explainer" className="w-full block">
+                            <Button variant="outline" className="w-full"><HelpCircle className="mr-2"/> Anleitung ansehen</Button>
+                        </Link>
+                         <Link href="/scoreboard" className="w-full block">
+                            <Button variant="outline" className="w-full"><Trophy className="mr-2"/> Scoreboard</Button>
+                        </Link>
+                        <Button onClick={startTutorial} variant="outline" className="w-full">
+                           <BookOpen className="mr-2"/> Tutorial starten
+                        </Button>
+                    </CardContent>
+                </Card>
             </div>
              <div className="text-center mt-4">
               <a href="https://github.com/firebase/firebase-studio" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-2">
@@ -239,8 +276,7 @@ export default function Home() {
                 Powered by Firebase Studio
               </a>
             </div>
-        </CardContent>
-      </Card>
+        </div>
     );
   }
 
