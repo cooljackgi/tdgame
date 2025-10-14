@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Header from '@/components/game/header';
-import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameResultWithId, GameDelta } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -289,8 +289,7 @@ export default function GameSession({
     const builderId = requestedByPlayerId || localPlayerId;
 
     if (isCoop && !isGameHost) {
-        // Client sends a request to the host
-        const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+        const towerToBuild = selectedTowerToBuild;
         if (towerToBuild && builderId !== 'spectator') {
             broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
             cancelInteractions();
@@ -298,7 +297,6 @@ export default function GameSession({
         return;
     }
 
-    // --- HOST-ONLY LOGIC FROM HERE ---
     const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const builderPlayer = players.find(p => p.id === builderId);
     
@@ -352,7 +350,7 @@ export default function GameSession({
         audioManager.playSfx('build_tower');
         cancelInteractions();
     }
-}, [isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, localPlayerId, players, broadcastGameData, cancelInteractions, towersByCell, toast, START_NODE, END_NODE]);
+}, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, cancelInteractions, players, towersByCell, toast, START_NODE, END_NODE]);
 
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
@@ -372,7 +370,7 @@ export default function GameSession({
     }
 
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
-    const cost = upgradeTowerSpec.cost - Math.floor(currentFocusedTower.cost * refundPercentage);
+    const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(currentFocusedTower.cost * refundPercentage));
     
     if (currentLocalPlayer.resources < cost) {
         toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
@@ -385,7 +383,6 @@ export default function GameSession({
     const upgradedTower: PlacedTower = {
         ...currentFocusedTower,
         ...upgradeTowerSpec,
-        id: `tower-${currentFocusedTower.position.row}-${currentFocusedTower.position.col}-${Date.now()}`, // Ensure unique ID on upgrade
         specId: upgradeTowerSpec.id,
     };
     newTowersByCell[cellKey] = upgradedTower;
@@ -575,15 +572,15 @@ const handleLoadAllTowersLayout = useCallback(() => {
  const simulate = useCallback(async () => {
     const now = performance.now();
     const deltas: GameDelta[] = [];
-    let enemiesMap = new Map(enemies.map(e => [e.id, e]));
+    let enemiesMap = new Map(enemies.map(e => [e.id, { ...e }]));
     
     if (isGameHost) {
       // Tower attacks
       Object.values(towersByCell).forEach(tower => {
         if ((now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
 
-        const enemiesInRange = enemies.filter(enemy => {
-          if (!enemy) return false;
+        const enemiesInRange = Array.from(enemiesMap.values()).filter(enemy => {
+          if (!enemy || enemy.health <= 0) return false;
           const dx = enemy.position.row - tower.position.row;
           const dy = enemy.position.col - tower.position.col;
           return (dx * dx + dy * dy) <= (tower.range * tower.range);
@@ -601,8 +598,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           };
           deltas.push([DeltaType.TOWER_ATTACK, mainAttack]);
           
-          tower.lastAttack = now; // Direct mutation, will be part of the final update
-
+          tower.lastAttack = now;
 
           if (tower.effect?.type === 'chain' && tower.effect.bounces) {
               let currentTarget = mainTarget;
@@ -634,9 +630,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
           }
         }
       });
-      if(Object.values(towersByCell).some(t => t.lastAttack === now)) {
-          deltas.push([DeltaType.TOWERS_UPDATE, towersByCell]);
-      }
       
       const damageToApply: Map<string, { totalDamage: number; sources: PlacedTower[] }> = new Map();
       deltas.forEach(delta => {
@@ -664,7 +657,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           
           if (tower.effect?.type === 'splash' && tower.effect.radius) {
               deltas.push([DeltaType.VFX_SPLASH, { id: `sr-${now}`, x: enemy.position.col, y: enemy.position.row, r: tower.effect.radius, color: elementProjectileColors[tower.elements[0]] || '#fff' }]);
-              enemies.forEach(otherEnemy => {
+              enemiesMap.forEach(otherEnemy => {
                   if (otherEnemy.id === enemy.id) return;
                   const dx = otherEnemy.position.col - enemy.position.col;
                   const dy = otherEnemy.position.row - enemy.position.row;
@@ -678,8 +671,9 @@ const handleLoadAllTowersLayout = useCallback(() => {
       );
 
       const resourcesGainedThisTick: Record<string, number> = {};
-      let killedThisTick = 0;
-      let leakedThisTick = 0;
+      const deadIds = new Set<string>();
+      const leakedIds = new Set<string>();
+
       damageToApply.forEach(({ totalDamage, sources }, enemyId) => {
           const enemy = enemiesMap.get(enemyId);
           if (!enemy || enemy.health <= 0) return;
@@ -702,10 +696,11 @@ const handleLoadAllTowersLayout = useCallback(() => {
           const finalDamage = totalDamage * damageMultiplier * (1 - damageReduction);
           
           if (finalDamage > 0) {
+              enemy.health = Math.max(0, enemy.health - finalDamage);
               deltas.push([DeltaType.ENEMY_DAMAGE, enemy.id, finalDamage, sources[0]?.elements[0] ?? 'neutral']);
               
-              if (modifiedEnemy.health - finalDamage <= 0) {
-                  killedThisTick++;
+              if (enemy.health <= 0 && !deadIds.has(enemy.id)) {
+                  deadIds.add(enemy.id);
                   deltas.push([DeltaType.ENEMY_DIE, enemy.id]);
                   const killingBlowTower = sources[sources.length - 1];
                   if (killingBlowTower) {
@@ -722,7 +717,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
       
       if (!isIntermission) {
         enemiesMap.forEach(enemy => {
-            if(enemy.health <= 0) return;
+            if(enemy.health <= 0 || leakedIds.has(enemy.id)) return;
             
             const newEffects: EnemyStatusEffect[] = [];
             let isStunned = false;
@@ -756,13 +751,18 @@ const handleLoadAllTowersLayout = useCallback(() => {
                     }
                 }
                 if (enemy.position.row === END_NODE.row && enemy.position.col === END_NODE.col) {
-                    leakedThisTick++;
+                  if(!leakedIds.has(enemy.id)) {
+                    leakedIds.add(enemy.id);
                     deltas.push([DeltaType.ENEMY_REACH_END, enemy.id]);
+                  }
                 }
             }
         });
       }
       
+      deadIds.forEach(id => enemiesMap.delete(id));
+      leakedIds.forEach(id => enemiesMap.delete(id));
+
       if (Object.keys(resourcesGainedThisTick).length > 0) {
         const playerUpdates: Record<string, Partial<Player>> = {};
         players.forEach(p => {
@@ -774,10 +774,10 @@ const handleLoadAllTowersLayout = useCallback(() => {
         deltas.push([DeltaType.PLAYER_UPDATE, playerUpdates]);
       }
 
-      if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
-      if (leakedThisTick > 0) {
-          setTotalLeaked(l => l + leakedThisTick);
-          if (gameState.lives - leakedThisTick <= 0 && gameStatus !== 'gameover') {
+      setTotalKilled(k => k + deadIds.size);
+      if (leakedIds.size > 0) {
+          setTotalLeaked(l => l + leakedIds.size);
+          if (gameState.lives - leakedIds.size <= 0 && gameStatus !== 'gameover') {
               const result: GameResult = {
                   playerName: localPlayer?.name || 'Anonymer Spieler',
                   playerUid: 'local',
@@ -792,7 +792,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           }
       }
       
-      const liveEnemyCount = Array.from(enemiesMap.values()).filter(e => e.health > 0).length;
+      const liveEnemyCount = enemiesMap.size;
       const waveData = waves[currentWave];
       const allSpawned = spawnedThisWave >= (waveData?.enemies.count || 0);
 
@@ -997,6 +997,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
   const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
   const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
 
+  if (!localPlayer && localPlayerId !== 'spectator') return null;
+
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
       <Header 
@@ -1106,7 +1108,3 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
-
-    
-
-    
