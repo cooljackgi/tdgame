@@ -2,11 +2,27 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { z } from "zod";
+import next from "next";
+import cors from "cors";
 
 // Initialize Firebase Admin
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
+
+// Connect to emulators if running in development/emulator environment
+if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV === 'development') {
+    console.log("Connecting Functions to Firestore and Auth emulators...");
+    // The Admin SDK automatically uses the Auth emulator if FIRESTORE_EMULATOR_HOST is set.
+    // However, for direct admin.firestore() calls, we might need to be explicit.
+    if(process.env.FIRESTORE_EMULATOR_HOST) {
+      admin.firestore().settings({
+          host: process.env.FIRESTORE_EMULATOR_HOST,
+          ssl: false,
+      });
+    }
+}
+
 
 const db = admin.firestore();
 
@@ -14,6 +30,16 @@ const db = admin.firestore();
 const gameIdSchema = z.object({
   gameId: z.string().min(1),
 });
+
+// --- Type definitions copied from client to break dependency chain ---
+type Element = 'fire' | 'water' | 'earth' | 'air' | 'nature' | 'light' | 'dark' | 'neutral';
+export type Player = {
+  id: 'player1' | 'player2';
+  name: string;
+  avatarUrl?: string | null;
+  resources: number;
+  unlockedElements: Element[];
+};
 
 
 /**
@@ -185,4 +211,18 @@ export const deleteTestGame = functions.https.onCall(async (data, context) => {
         }
         throw new functions.https.HttpsError("internal", "An unexpected error occurred while deleting the test game.");
     }
+});
+
+
+const dev = process.env.NODE_ENV !== 'production';
+const app = next({ dev, conf: { distDir: '../.next' } });
+const handle = app.getRequestHandler();
+const corsHandler = cors({ origin: true });
+
+export const nextServer = functions.https.onRequest((req, res) => {
+  return corsHandler(req, res, async () => {
+    console.log('File: ' + req.originalUrl); 
+    await app.prepare();
+    return handle(req, res);
+  });
 });
