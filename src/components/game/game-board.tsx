@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -120,6 +120,7 @@ type GameBoardProps = {
   startNode: Node;
   endNode: Node;
   lastUpgradedTowerId: string | null;
+  justPlacedTowerId?: string | null;
   isCoop: boolean;
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   firingTowerIds: Set<string>;
@@ -250,10 +251,10 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
 }
 
 const MemoizedTower = React.memo(function GameCell({
-  tower, isFocused, isJustUpgraded, onTowerClick, cooldownProgress, variant, isFiring, isBuffed
+  tower, isFocused, isJustUpgraded, isJustBuilt, onTowerClick, cooldownProgress, variant, isFiring, isBuffed
 }: {
   tower: PlacedTower,
-  isFocused: boolean, isJustUpgraded: boolean,
+  isFocused: boolean, isJustUpgraded: boolean, isJustBuilt: boolean,
   onTowerClick: (e: React.MouseEvent, tower: PlacedTower) => void,
   cooldownProgress: number,
   variant: "basic" | "sniper" | "ballista",
@@ -270,6 +271,7 @@ const MemoizedTower = React.memo(function GameCell({
         element={tower.elements[0] ?? "neutral"}
         variant={variant}
         isUpgraded={!tower.isBase}
+        isJustBuilt={isJustBuilt}
         isDamaged={tower.health < tower.maxHealth}
         size={CELL_SIZE * 0.8}
         cooldownProgress={cooldownProgress}
@@ -335,6 +337,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     startNode, 
     endNode,
     lastUpgradedTowerId,
+    justPlacedTowerId,
     isCoop,
     playerRole,
     firingTowerIds,
@@ -1026,6 +1029,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                           tower={tower}
                           isFocused={focusedTower?.id === tower.id}
                           isJustUpgraded={lastUpgradedTowerId === tower.id}
+                          isJustBuilt={justPlacedTowerId === tower.id}
                           onTowerClick={onTowerClick}
                           cooldownProgress={towerCooldownsRef.current.get(tower.id) ?? 1}
                           variant={variant}
@@ -1155,4 +1159,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
 

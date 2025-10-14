@@ -10,6 +10,7 @@ export type TowerProps = {
   variant?: "basic" | "sniper" | "ballista";
   isUpgraded?: boolean;
   isJustUpgraded?: boolean;
+  isJustBuilt?: boolean;
   isDamaged?: boolean;
   isFiring?: boolean;
   isBuffed?: boolean;
@@ -70,6 +71,7 @@ const Tower = React.memo(function Tower({
   element,
   variant = "basic",
   isUpgraded = false,
+  isJustBuilt = false,
   size = 48,
   className,
   cooldownProgress = 1,
@@ -367,7 +369,11 @@ const Tower = React.memo(function Tower({
 
   return (
     <div
-      className={cn("relative select-none", className)}
+      className={cn(
+        "relative select-none", 
+        className,
+        isJustBuilt && "animate-build-in"
+      )}
       style={{ width: size, height: size }}
       aria-label={`Tower ${variant} – ${element}`}
     >

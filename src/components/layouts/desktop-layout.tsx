@@ -64,6 +64,7 @@ interface DesktopLayoutProps {
   intermissionTime: number;
   handleStartNextWaveNow: () => void;
   lastUpgradedTowerId: string | null;
+  justPlacedTowerId?: string | null;
   isCoop: boolean;
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   handleLoadTestLayout: () => void;
@@ -92,6 +93,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     rows, cols, startNode, endNode, interactionPrompt, cancelInteractions,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
+    justPlacedTowerId,
     isCoop,
     playerRole,
     handleLoadTestLayout,
@@ -303,6 +305,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 startNode={startNode}
                 endNode={endNode}
                 lastUpgradedTowerId={lastUpgradedTowerId}
+                justPlacedTowerId={justPlacedTowerId}
                 isCoop={isCoop}
                 playerRole={playerRole}
                 firingTowerIds={firingTowerIds}
@@ -316,7 +319,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
 
       {/* Right Sidebar - visible on XL */}
       <aside className="hidden xl:flex xl:flex-col gap-6" id="tutorial-build-menu-xl">
-        {!isSpectator && !focusedTower && (
+        {!isSpectator && (
           <TowerSelection
             allTowers={towers}
             onSelectTower={onSelectTowerToBuild}

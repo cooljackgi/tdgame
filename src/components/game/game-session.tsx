@@ -159,6 +159,7 @@ export default function GameSession({
   const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [justPlacedTowerId, setJustPlacedTowerId] = useState<string|null>(null);
   
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
@@ -191,7 +192,7 @@ export default function GameSession({
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost]);
+  }, [placedTowers, isGameHost, enemies, broadcastGameData, START_NODE, END_NODE]);
 
 
   const toggleMute = useCallback(() => {
@@ -239,9 +240,9 @@ export default function GameSession({
   }, [gameStatus, isCoop, isGameHost, toast, localPlayerId, broadcastGameData]);
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
-    audioManager.playSfx('build_tower');
-    setSelectedTowerToBuild(null); // Clear build selection
+    setSelectedTowerToBuild(null);
     setFocusedTower(tower);
+    audioManager.playSfx('build_tower');
   }, [setSelectedTowerToBuild, setFocusedTower]);
 
   const cancelInteractions = useCallback(() => {
@@ -296,6 +297,9 @@ export default function GameSession({
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
+    
+    setJustPlacedTowerId(newTower.id);
+    setTimeout(() => setJustPlacedTowerId(null), 1000);
     
     audioManager.playSfx('build_tower');
   }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
@@ -955,6 +959,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                 broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { isIntermission: false, waveStartCountdown: 0 }]]);
             }}
             lastUpgradedTowerId={lastUpgradedTowerId}
+            justPlacedTowerId={justPlacedTowerId}
             isCoop={isCoop}
             playerRole={localPlayerId}
             handleLoadTestLayout={handleLoadTestLayout}
