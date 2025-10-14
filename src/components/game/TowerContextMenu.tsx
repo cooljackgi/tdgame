@@ -77,7 +77,7 @@ const TowerContextMenu: React.FC<TowerContextMenuProps> = ({
         {availableUpgrades.length > 0 && tower.ownerId === localPlayer?.id && <Separator orientation="vertical" className="h-10 mx-1" />}
 
         {/* Upgrade Buttons */}
-        {tower.ownerId === localPlayer?.id && availableUpgrades.map(upgrade => {
+        {tower.ownerId === localPlayer?.id && availableUpgrades.map((upgrade, index) => {
           const upgradeCost = upgrade.cost - Math.floor(tower.cost * 0.75);
           const canAfford = (localPlayer?.resources ?? 0) >= upgradeCost;
           const specId = upgrade.specId || upgrade.id;
@@ -87,7 +87,7 @@ const TowerContextMenu: React.FC<TowerContextMenuProps> = ({
               "basic";
 
           return (
-            <Tooltip key={upgrade.id}>
+            <Tooltip key={`${upgrade.id}-${index}`}>
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
