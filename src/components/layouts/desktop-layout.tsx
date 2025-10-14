@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, WorkerState } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -73,9 +73,7 @@ interface DesktopLayoutProps {
   cheat_skipWaves?: () => void;
   cheat_heal?: () => void;
   cheat_unlockAll: () => void;
-  cheat_nudgeEnemy: () => void;
   firingTowerIds: Set<string>;
-  workerState: WorkerState;
   // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -102,9 +100,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     cheat_skipWaves,
     cheat_heal,
     cheat_unlockAll,
-    cheat_nudgeEnemy,
     firingTowerIds,
-    workerState,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -135,7 +131,6 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
         cheat_addResources={cheat_addResources}
         cheat_skipWaves={cheat_skipWaves}
         cheat_heal={cheat_heal}
-        cheat_nudgeEnemy={cheat_nudgeEnemy}
         isCoop={isCoop}
         isWsConnected={isWsConnected}
         hostPacketsPerSecond={hostPacketsPerSecond}
@@ -309,7 +304,6 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
             isCoop={isCoop}
             playerRole={playerRole}
             firingTowerIds={firingTowerIds}
-            workerState={workerState}
             >
             
             </GameBoard>
