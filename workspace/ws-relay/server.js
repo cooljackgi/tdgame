@@ -101,19 +101,24 @@ wss.on("connection", (ws, request) => {
   }
 
   ws.on("message", (data, isBinary) => {
-    // Monitore können nur zuhören, nicht senden.
-    if (ws.__isMonitor) return;
-
     const room = rooms.get(gameId);
     if (!room) return;
 
-    // Nachricht an den anderen Spieler weiterleiten
+    // A message from a monitor is ignored.
+    if (ws.__isMonitor) return;
+
+    // A message from a player is broadcast to the other player and all monitors.
+    const messageString = data.toString();
+    console.log(`[RELAY] Broadcasting from player in room ${gameId}:`, messageString.substring(0, 100));
+    
+    // Send to the other player in the room.
     for (const peer of room.players) {
       if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
         peer.send(data, { binary: isBinary });
       }
     }
-    // Kopie der Nachricht an alle Monitore senden
+    
+    // Also send a copy to all monitor clients.
     for (const monitor of room.monitors) {
         if (monitor.readyState === 1) {
             monitor.send(data, { binary: isBinary });
