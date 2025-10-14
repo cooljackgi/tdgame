@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, MovementPattern, WorkerState } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -122,7 +122,6 @@ type GameBoardProps = {
   isCoop: boolean;
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   firingTowerIds: Set<string>;
-  workerState: WorkerState;
   children?: React.ReactNode;
 };
 
@@ -246,7 +245,7 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
 }
 
 const MemoizedTower = React.memo(function GameCell({
-  tower, isFocused, isJustUpgraded, onTowerClick, cooldownProgress, variant, isFiring, isBuffed, isConstructing
+  tower, isFocused, isJustUpgraded, onTowerClick, cooldownProgress, variant, isFiring, isBuffed
 }: {
   tower: PlacedTower,
   isFocused: boolean, isJustUpgraded: boolean,
@@ -255,15 +254,9 @@ const MemoizedTower = React.memo(function GameCell({
   variant: "basic" | "sniper" | "ballista",
   isFiring: boolean,
   isBuffed: boolean,
-  isConstructing?: number | false,
 }) {
   const {x, y} = gridToPx(tower.position);
   
-  let constructionProgress = 1;
-  if(isConstructing) {
-      const remaining = isConstructing - Date.now();
-      constructionProgress = 1 - Math.max(0, remaining) / 2000;
-  }
 
   const towerContent = (
     <div className="relative flex items-center justify-center h-full w-full">
@@ -278,8 +271,6 @@ const MemoizedTower = React.memo(function GameCell({
         attackSpeed={tower.attackSpeed}
         isFiring={isFiring}
         isBuffed={isBuffed}
-        isConstructing={isConstructing}
-        constructionProgress={constructionProgress}
       />
     </div>
   );
@@ -342,7 +333,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     isCoop,
     playerRole,
     firingTowerIds,
-    workerState,
     children,
 }, ref) => {
 
@@ -1031,7 +1021,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         variant={variant}
                         isFiring={firingTowerIds.has(tower.id)}
                         isBuffed={buffedTowerIds.has(tower.id)}
-                        isConstructing={tower.isConstructing}
                       />
                     )
                   })}

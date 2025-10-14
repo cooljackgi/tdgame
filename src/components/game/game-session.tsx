@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Header from '@/components/game/header';
-import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameResultWithId, GameDelta, MovementPattern, WorkerState } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameResultWithId, GameDelta } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -144,14 +144,6 @@ export default function GameSession({
   
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
-  
-  // This is a placeholder and is no longer used for a moving drone.
-  const [workerState, setWorkerState] = useState<WorkerState>({ 
-    position: { x: -100, y: -100 }, 
-    target: null, 
-    task: 'idle',
-    taskProgress: 0,
-  });
 
   // Simulation
   const gameLoopRef = useRef<number | NodeJS.Timeout>();
@@ -246,7 +238,6 @@ export default function GameSession({
     setFocusedTower(null);
   }, [localPlayerId, localPlayer, toast, selectedTowerToBuild]);
 
-  // This function is now simplified. The actual build happens in the game loop.
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const localPlayer = players.find(p => p.id === localPlayerId);
     const towerSpec = selectedTowerToBuild;
@@ -270,20 +261,17 @@ export default function GameSession({
         return;
     }
 
-    // Immediately create a "constructing" tower
-     const constructingTower: PlacedTower = {
+    const newTower: PlacedTower = {
       ...towerSpec,
-      id: `constructing-${row}-${col}-${Date.now()}`,
+      id: `tower-${row}-${col}-${Date.now()}`,
       specId: towerSpec.id,
       position: { row, col },
       lastAttack: 0,
       health: towerSpec.maxHealth,
       ownerId: localPlayer.id,
-      isBase: towerSpec.isBase,
-      isConstructing: Date.now() + 2000, // End time of construction
     };
 
-    const newTowersByCell = { ...towersByCell, [cellKey]: constructingTower };
+    const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
     const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - towerSpec.cost } };
     
     broadcastGameData([
@@ -316,25 +304,25 @@ export default function GameSession({
     const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
     const newTowersByCell = { ...towersByCell };
     
-    const upgradingTower: PlacedTower = {
+    const upgradedTower: PlacedTower = {
         ...focusedTower,
         ...upgradeTowerSpec,
-        isConstructing: Date.now() + 2000, // Upgrade time
         specId: upgradeTowerSpec.id,
     };
-    newTowersByCell[cellKey] = upgradingTower;
+    newTowersByCell[cellKey] = upgradedTower;
     
     const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
     
     broadcastGameData([
       [DeltaType.PLAYER_UPDATE, playerUpdates],
-      [DeltaType.TOWERS_UPDATE, newTowersByCell]
+      [DeltaType.TOWERS_UPDATE, newTowersByCell],
+      [DeltaType.TOWER_UPGRADE_VFX, { towerId: upgradedTower.id, position: upgradedTower.position }]
     ]);
     
     setFocusedTower(null);
     audioManager.playSfx('build_tower');
 
-  }, [focusedTower, localPlayer, localPlayerId, toast, towers, difficulty, broadcastGameData]);
+  }, [focusedTower, localPlayer, localPlayerId, toast, towers, difficulty, broadcastGameData, towersByCell]);
   
   const handleSellTower = useCallback(async () => {
     if (!focusedTower || !localPlayer || localPlayerId === 'spectator' || focusedTower.ownerId !== localPlayer.id) return;
@@ -392,37 +380,6 @@ export default function GameSession({
     broadcastGameData([[DeltaType.PLAYER_UPDATE, playerUpdates]]);
     toast({ title: "Cheat Aktiviert", description: "Alle Elemente und massig Ressourcen freigeschaltet." });
   }, [players, broadcastGameData, toast]);
-
-  const cheat_nudgeEnemy = useCallback(() => {
-    if (enemies.length === 0) return;
-
-    let furthestEnemy: Enemy | null = null;
-    let maxDist = -1;
-
-    enemies.forEach(enemy => {
-      const { row: ex, col: ey } = enemy.position;
-      let minDistSq = Infinity;
-      currentPath.forEach(node => {
-          const distSq = (node.col - ey)*(node.col - ey) + (node.row - ex)*(node.row - ex);
-          if (distSq < minDistSq) minDistSq = distSq;
-      });
-
-      if (minDistSq > maxDist) {
-          maxDist = minDistSq;
-          furthestEnemy = enemy;
-      }
-    });
-    
-    if (furthestEnemy) {
-      const newPathIndex = Math.max(0, furthestEnemy.pathIndex - 1);
-      const deltas = [[DeltaType.ENEMY_MOVE, furthestEnemy.id, newPathIndex, performance.now()]];
-      broadcastGameData(deltas);
-      toast({ title: "Gegner angestupst", description: `Gegner ${furthestEnemy.id} wurde zurückgesetzt.` });
-    } else {
-      toast({ title: "Kein Ziel gefunden", description: "Alle Gegner scheinen auf dem Weg zu sein." });
-    }
-
-  }, [enemies, currentPath, broadcastGameData, toast]);
 
  const handleLoadTestLayout = useCallback(() => {
     const testTowers: Record<string, PlacedTower> = {};
@@ -509,24 +466,9 @@ const handleLoadAllTowersLayout = useCallback(() => {
     let enemiesMap = new Map(enemies.map(e => [e.id, e]));
     
     if (isGameHost) {
-      // --- Construction Simulation ---
-      const newTowersByCell = { ...towersByCell };
-      let changed = false;
-      Object.values(newTowersByCell).forEach(tower => {
-        if (tower.isConstructing && tower.isConstructing <= now) {
-            delete tower.isConstructing;
-            changed = true;
-            // Send a VFX delta for the upgrade completion
-            deltas.push([DeltaType.TOWER_UPGRADE_VFX, { towerId: tower.id, position: tower.position }]);
-        }
-      });
-      if (changed) {
-          deltas.push([DeltaType.TOWERS_UPDATE, newTowersByCell]);
-      }
-
       // Tower attacks
-      Object.values(newTowersByCell).forEach(tower => {
-        if (tower.isConstructing || (now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
+      Object.values(towersByCell).forEach(tower => {
+        if ((now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
 
         const enemiesInRange = enemies.filter(enemy => {
           if (!enemy) return false;
@@ -580,8 +522,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
           }
         }
       });
-      if(Object.values(newTowersByCell).some(t => t.lastAttack === now)) {
-          deltas.push([DeltaType.TOWERS_UPDATE, newTowersByCell]);
+      if(Object.values(towersByCell).some(t => t.lastAttack === now)) {
+          deltas.push([DeltaType.TOWERS_UPDATE, towersByCell]);
       }
       
       const damageToApply: Map<string, { totalDamage: number; sources: PlacedTower[] }> = new Map();
@@ -589,7 +531,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           if (delta[0] !== DeltaType.TOWER_ATTACK) return;
           const attack = delta[1] as Attack;
 
-          const tower = Object.values(newTowersByCell).find(t => t.id === attack.towerId);
+          const tower = Object.values(towersByCell).find(t => t.id === attack.towerId);
           const enemy = enemiesMap.get(attack.targetId);
           if (!tower || !enemy) return;
 
@@ -770,7 +712,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, workerState, towers]);
+  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
 
   useEffect(() => {
     if (hasInteracted) {
@@ -963,9 +905,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
             cheat_skipWaves={cheat_skipWaves}
             cheat_heal={cheat_heal}
             cheat_unlockAll={cheat_unlockAll}
-            cheat_nudgeEnemy={cheat_nudgeEnemy}
-            firingTowerIds={firingTowerIds}
-            workerState={workerState}
             // Network Stats
             isWsConnected={isWsConnected}
             clientPacketsPerSecond={clientPacketsPerSecond}
