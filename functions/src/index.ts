@@ -2,16 +2,13 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { z } from "zod";
-import next from "next";
-import cors from "cors";
 
-admin.initializeApp();
+// Initialize Firebase Admin
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
+
 const db = admin.firestore();
-
-// Initialize CORS middleware
-// We are allowing all origins for simplicity in this development environment.
-// For a production app, you might want to restrict this to your specific frontend URL.
-const corsHandler = cors({ origin: true });
 
 // --- Zod Schemas for Input Validation ---
 const gameIdSchema = z.object({
@@ -188,17 +185,4 @@ export const deleteTestGame = functions.https.onCall(async (data, context) => {
         }
         throw new functions.https.HttpsError("internal", "An unexpected error occurred while deleting the test game.");
     }
-});
-
-
-const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev, conf: { distDir: '.next' } });
-const handle = app.getRequestHandler();
-
-export const nextServer = functions.https.onRequest((req, res) => {
-  // Wrap the Next.js handler with the CORS middleware
-  return corsHandler(req, res, () => {
-    console.log('File: ' + req.originalUrl); 
-    return app.prepare().then(() => handle(req, res));
-  });
 });
