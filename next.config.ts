@@ -29,17 +29,28 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+       {
+        protocol: 'https',
+        hostname: 'i.pravatar.cc',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
   // Diese Regel leitet WebSocket-Anfragen im Entwicklungsmodus um.
   // Sie ist entscheidend, damit WebRTC-Signaling lokal funktioniert.
   async rewrites() {
-    return [
-      {
-        source: '/ws',
-        destination: 'http://localhost:8080/ws',
-      },
-    ]
+    // Diese Rewrites sollen nur im Entwicklungsmodus gelten.
+    if (process.env.NODE_ENV === 'development') {
+      return [
+        {
+          source: '/ws',
+          destination: 'http://localhost:8080/ws',
+        },
+      ]
+    }
+    // Im Produktionsmodus gibt es keine Rewrites.
+    return [];
   },
 };
 
