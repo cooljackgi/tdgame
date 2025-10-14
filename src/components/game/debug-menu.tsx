@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
-import { Bug, Sparkles, TestTube2, ChevronsRight, Heart, Coins, Microscope, Wifi, WifiOff, FileJson, ArrowDownUp, ArrowUp, ArrowDown } from 'lucide-react';
+import { Bug, Sparkles, TestTube2, ChevronsRight, Heart, Coins, Microscope, Wifi, WifiOff, FileJson, ArrowDownUp, ArrowUp, ArrowDown, Bot } from 'lucide-react';
 import { Button } from '../ui/button';
 import { formatBytes } from '@/lib/utils';
 import type { Player } from './game-session';
@@ -24,6 +24,7 @@ type DebugMenuProps = {
   cheat_addResources?: () => void;
   cheat_skipWaves?: () => void;
   cheat_heal?: () => void;
+  cheat_nudgeEnemy: () => void;
   isCoop?: boolean;
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -44,6 +45,7 @@ const DebugMenu = React.memo(function DebugMenu({
   cheat_addResources,
   cheat_skipWaves,
   cheat_heal,
+  cheat_nudgeEnemy,
   isCoop = false,
   isWsConnected,
   hostPacketsPerSecond,
@@ -102,6 +104,10 @@ const DebugMenu = React.memo(function DebugMenu({
               <Button onClick={cheat_unlockAll} variant="outline">
                   <Sparkles className="mr-2 h-4 w-4" />
                   Alles Freischalten
+              </Button>
+              <Button onClick={cheat_nudgeEnemy} variant="outline">
+                <Bot className="mr-2 h-4 w-4" />
+                Gegner anstupsen
               </Button>
               <Button onClick={onLoadTestLayout} variant="outline">
                   <TestTube2 className="mr-2 h-4 w-4" />

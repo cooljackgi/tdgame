@@ -153,6 +153,13 @@ export type Enemy = {
   movementPattern: MovementPattern;
 };
 
+export type WorkerState = {
+  position: { x: number; y: number };
+  target: { type: 'build' | 'upgrade' | 'nudge', row: number, col: number, towerSpecId?: string, enemyId?: string } | null;
+  task: 'idle' | 'moving' | 'building' | 'nudging' | 'upgrading';
+  taskProgress: number; // 0 to 1
+};
+
 
 export enum DeltaType {
     ENEMY_SPAWN,
@@ -169,6 +176,8 @@ export enum DeltaType {
     PLAYER_UPDATE,
     TOWERS_UPDATE,
     CLIENT_STATS_UPDATE,
+    WORKER_UPDATE,
+    TOWER_UPGRADE_VFX,
 }
 
 export type GameDelta = [DeltaType, ...any[]];

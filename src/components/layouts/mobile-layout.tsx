@@ -3,7 +3,7 @@
 import React, { useState, memo, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope } from 'lucide-react';
+import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot } from 'lucide-react';
 import PlayerStats from '@/components/game/player-stats';
 import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
@@ -18,7 +18,7 @@ import { Separator } from '../ui/separator';
 
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
-  Attack, DamageNumber, SplashRing, Difficulty
+  Attack, DamageNumber, SplashRing, Difficulty, WorkerState
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -76,7 +76,9 @@ interface MobileLayoutProps {
   cheat_skipWaves?: () => void;
   cheat_heal?: () => void;
   cheat_unlockAll: () => void;
+  cheat_nudgeEnemy: () => void;
   firingTowerIds: Set<string>;
+  workerState: WorkerState;
     // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -95,8 +97,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     isCoop, playerRole, handleLoadTestLayout, handleLoadAllTowersLayout, isCheating, cheat_addResources, cheat_skipWaves, cheat_heal,
-    cheat_unlockAll,
+    cheat_unlockAll, cheat_nudgeEnemy,
     firingTowerIds,
+    workerState,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -157,6 +160,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           isCoop={isCoop}
           playerRole={playerRole}
           firingTowerIds={firingTowerIds}
+          workerState={workerState}
         >
           {/* TOP OVERLAYS */}
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">
@@ -329,6 +333,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                         cheat_addResources={cheat_addResources}
                         cheat_skipWaves={cheat_skipWaves}
                         cheat_heal={cheat_heal}
+                        cheat_nudgeEnemy={cheat_nudgeEnemy}
                         isCoop={isCoop}
                         isWsConnected={isWsConnected}
                         hostPacketsPerSecond={hostPacketsPerSecond}
