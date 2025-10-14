@@ -667,13 +667,14 @@ const handleLoadAllTowersLayout = useCallback(() => {
       }
       
       if (Object.keys(resourcesGainedThisTick).length > 0) {
-        setPlayers(prevPlayers => prevPlayers.map(p => {
+        const playerUpdates: Record<string, Partial<Player>> = {};
+        players.forEach(p => {
             const resourcesToAdd = resourcesGainedThisTick[p.id];
             if (resourcesToAdd) {
-                return { ...p, resources: p.resources + resourcesToAdd };
+                playerUpdates[p.id] = { resources: p.resources + resourcesToAdd };
             }
-            return p;
-        }));
+        });
+        deltas.push([DeltaType.PLAYER_UPDATE, playerUpdates]);
       }
 
       if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
