@@ -171,6 +171,7 @@ export enum DeltaType {
     CLIENT_STATS_UPDATE,
     TOWER_UPGRADE_VFX,
     ENEMY_PATH_UPDATE,
+    BUILD_TOWER_REQUEST, // New delta type for client build requests
 }
 
 export type GameDelta = [DeltaType, ...any[]];
@@ -191,3 +192,5 @@ export type Wave = {
   waveNumber: number;
   enemies: WaveEnemyData;
 };
+
+    

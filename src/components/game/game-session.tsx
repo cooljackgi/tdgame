@@ -64,7 +64,7 @@ type GameSessionProps = {
     isCoop: boolean;
     isGameHost: boolean;
     localPlayerId: Player['id'] | 'spectator' | null;
-    broadcastGameData: (deltas: GameDelta[]) => void;
+    broadcastGameData: (deltas: GameDelta[], reliable?: boolean) => void;
     applyDeltas: (deltas: GameDelta[]) => void;
     onGameEnd: (result: GameResult) => void;
     onWaveComplete?: () => void;
@@ -181,7 +181,7 @@ export default function GameSession({
   const [totalLeaked, setTotalLeaked] = useState(0);
 
   // Simulation
-  const gameLoopRef = useRef<number | NodeJS.Timeout>();
+  const gameLoopRef = useRef<ReturnType<typeof setInterval> | undefined>();
   const lastRafTimeRef = useRef(performance.now());
   const simAccumulatorRef = useRef(0);
   
@@ -288,22 +288,31 @@ export default function GameSession({
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const localPlayer = players.find(p => p.id === localPlayerId);
-
+    
     if (!towerToBuild || !localPlayer || localPlayerId === 'spectator') return;
+
+    if (!isGameHost) {
+        broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: localPlayer.id }]], true);
+        cancelInteractions();
+        return;
+    }
+    
+    // --- HOST-ONLY LOGIC ---
     const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
         toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         return;
     }
 
-    // Optimistic path check
     const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
     const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
     if (!newPath) {
         toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
         return;
     }
-    if (localPlayer.resources < towerToBuild.cost) {
+
+    const builderPlayer = players.find(p => p.id === localPlayer.id);
+    if (!builderPlayer || builderPlayer.resources < towerToBuild.cost) {
         toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
@@ -315,11 +324,11 @@ export default function GameSession({
       position: { row, col },
       lastAttack: 0,
       health: towerToBuild.maxHealth,
-      ownerId: localPlayer.id,
+      ownerId: builderPlayer.id,
     };
 
     const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - towerToBuild.cost } };
+    const playerUpdates = { [builderPlayer.id]: { resources: builderPlayer.resources - towerToBuild.cost } };
     
     broadcastGameData([
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
@@ -330,7 +339,9 @@ export default function GameSession({
     setTimeout(() => setJustPlacedTowerId(null), 1000);
     
     audioManager.playSfx('build_tower');
-  }, [players, localPlayerId, towersByCell, isCoop, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
+    cancelInteractions();
+}, [isCoop, selectedTowerToBuild, spSelectedTowerToBuild, players, localPlayerId, isGameHost, broadcastGameData, cancelInteractions, towersByCell, toast, START_NODE, END_NODE]);
+
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
     const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
@@ -1058,5 +1069,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
+    
 
     
