@@ -286,24 +286,27 @@ export default function GameSession({
   }, [localPlayerId, selectedTowerToBuild, focusedTower, isCoop, spSelectedTowerToBuild, spFocusedTower, spHandleSelectTowerToBuild, spSetFocusedTower]);
 
  const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id']) => {
-    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const builderId = requestedByPlayerId || localPlayerId;
-    const builderPlayer = players.find(p => p.id === builderId);
-    
-    // Tower must be selected, and a player must be building it
-    if (!towerToBuild || !builderPlayer || builderId === 'spectator') return;
 
-    // If a client sends a request, only the host should process it.
     if (isCoop && !isGameHost) {
-        broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
-        cancelInteractions();
+        // Client sends a request to the host
+        const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+        if (towerToBuild && builderId !== 'spectator') {
+            broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
+            cancelInteractions();
+        }
         return;
     }
-    
+
     // --- HOST-ONLY LOGIC FROM HERE ---
+    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+    const builderPlayer = players.find(p => p.id === builderId);
+    
+    if (!towerToBuild || !builderPlayer || builderId === 'spectator') return;
+
     const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
-        if(builderId === localPlayerId) { // Only show toast to the local player to avoid spam
+        if(builderId === localPlayerId) {
             toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         }
         return;
@@ -343,7 +346,6 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    // Only the local player who initiated the build action should clear their interactions.
     if(builderId === localPlayerId) {
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
@@ -840,6 +842,31 @@ const handleLoadAllTowersLayout = useCallback(() => {
       broadcastGameData(deltas);
     }
   }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
+
+  // This effect listens for client build requests on the host
+  useEffect(() => {
+    if (!isGameHost) return;
+
+    const handleTowerRequest = (event: Event) => {
+        const { towerSpec, row, col, playerId } = (event as CustomEvent).detail;
+        
+        // Temporarily set the selected tower to simulate the build action
+        const originalSelectedTower = selectedTowerToBuild;
+        setSelectedTowerToBuild(towerSpec);
+        
+        // Defer the action to the next tick to ensure state is updated
+        setTimeout(() => {
+            handlePlaceTower(row, col, playerId);
+            setSelectedTowerToBuild(originalSelectedTower);
+        }, 0);
+    };
+
+    document.addEventListener('placeTowerRequest', handleTowerRequest);
+    return () => {
+        document.removeEventListener('placeTowerRequest', handleTowerRequest);
+    };
+}, [isGameHost, handlePlaceTower, selectedTowerToBuild]);
+
 
   useEffect(() => {
     if (hasInteracted) {
