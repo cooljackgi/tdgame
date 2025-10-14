@@ -142,7 +142,7 @@ export type Enemy = {
   speed: number; // path indices per second
   damage: number; // damage per second to towers
   bounty: number; // resources awarded on defeat
-  path: Node[]; // This will be removed, path is now global
+  path: Node[];
   pathIndex: number;
   position: { row: number; col: number };
   isBlocked: boolean;
@@ -170,6 +170,7 @@ export enum DeltaType {
     TOWERS_UPDATE,
     CLIENT_STATS_UPDATE,
     TOWER_UPGRADE_VFX,
+    ENEMY_PATH_UPDATE,
 }
 
 export type GameDelta = [DeltaType, ...any[]];

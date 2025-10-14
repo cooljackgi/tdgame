@@ -99,6 +99,24 @@ const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): P
     return Object.values(towersByCell);
 }
 
+// Function to find the closest path node to a given position
+function findClosestPathIndex(path: Node[], position: Node): number {
+    if (!path || path.length === 0) return 0;
+    let closestIndex = 0;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < path.length; i++) {
+        const node = path[i];
+        const distSq = Math.pow(node.col - position.col, 2) + Math.pow(node.row - position.row, 2);
+        if (distSq < minDistance) {
+            minDistance = distSq;
+            closestIndex = i;
+        }
+    }
+    return closestIndex;
+}
+
+
 export default function GameSession({ 
     // Injected State
     players, setPlayers,
@@ -156,6 +174,22 @@ export default function GameSession({
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   
+  // This effect runs on the host when the path changes. It tells all enemies to update their path.
+  useEffect(() => {
+    if (!isGameHost || enemies.length === 0) return;
+
+    const deltas: GameDelta[] = enemies.map(enemy => {
+      const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
+      return [DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex];
+    });
+
+    if (deltas.length > 0) {
+      broadcastGameData(deltas);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath]); // Only run when currentPath reference changes
+
+
   const toggleMute = useCallback(() => {
     setIsMuted(prev => {
         const newMutedState = !prev;
@@ -280,10 +314,6 @@ export default function GameSession({
     ]);
     
     audioManager.playSfx('build_tower');
-    
-    // Do not cancel interactions, allow multiple placements
-    // cancelInteractions();
-
   }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
@@ -640,7 +670,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                 const stepMs = 1000 / Math.max(0.001, effectiveSpeed);
 
                 if (now - enemy.lastMove > stepMs) {
-                    if(enemy.pathIndex < currentPath.length - 1) {
+                    if(enemy.pathIndex < (enemy.path || currentPath).length - 1) {
                         deltas.push([DeltaType.ENEMY_MOVE, enemy.id, enemy.pathIndex + 1, now]);
                     }
                 }
