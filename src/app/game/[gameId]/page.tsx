@@ -70,9 +70,10 @@ function CoopGame() {
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
     deltas.forEach(delta => {
         const type = delta[0];
+        const payload = delta[1];
         switch(type) {
             case DeltaType.ENEMY_SPAWN: {
-                const newEnemy = { ...delta[1], path: currentPath };
+                const newEnemy = { ...payload, path: currentPath };
                 setEnemies(prev => [...prev, newEnemy]);
                 break;
             }
@@ -98,12 +99,12 @@ function CoopGame() {
                 break;
             }
             case DeltaType.ENEMY_DIE: {
-                const id = delta[1];
+                const id = payload;
                 setEnemies(prev => prev.filter(e => e.id !== id));
                 break;
             }
             case DeltaType.ENEMY_REACH_END: {
-                const id = delta[1];
+                const id = payload;
                 setEnemies(prev => prev.filter(e => e.id !== id));
                 setGameState(s => ({ ...s, lives: Math.max(0, s.lives - 1) }));
                 break;
@@ -126,30 +127,30 @@ function CoopGame() {
                 break;
             }
             case DeltaType.TOWER_ATTACK:
-                setAttacks(prev => [...prev.slice(-200), delta[1]]);
+                setAttacks(prev => [...prev.slice(-200), payload]);
                 audioManager.playSfx('shoot', 0.3);
-                setFiringTowerIds(prev => new Set(prev).add((delta[1] as Attack).towerId));
+                setFiringTowerIds(prev => new Set(prev).add((payload as Attack).towerId));
                 setTimeout(() => setFiringTowerIds(prev => {
                     const s = new Set(prev);
-                    s.delete((delta[1] as Attack).towerId);
+                    s.delete((payload as Attack).towerId);
                     return s;
                 }), 150);
                 break;
             case DeltaType.VFX_DAMAGE_NUMBER:
-                setDamageNumbers(prev => [...prev.slice(-100), delta[1]]);
+                setDamageNumbers(prev => [...prev.slice(-100), payload]);
                 break;
             case DeltaType.VFX_SPLASH:
-                setSplashRings(prev => [...prev.slice(-50), delta[1]]);
+                setSplashRings(prev => [...prev.slice(-50), payload]);
                 break;
              case DeltaType.CLIENT_STATS_UPDATE:
                 if (isGameHost) {
-                  const stats = delta[1] as { pps: number, bps: number, avgSize: number };
+                  const stats = payload as { pps: number, bps: number, avgSize: number };
                   setClientPacketsPerSecond(stats.pps);
                   setClientBytesReceivedPerSecond(stats.bps);
                 }
                 break;
             case DeltaType.GAME_STATE_UPDATE: {
-                const newState = delta[1] as Partial<GameState & { gameStatus: GameStatus, currentWave: number, isIntermission: boolean, waveStartCountdown: number, spawnedThisWave: number }>;
+                const newState = payload as Partial<GameState & { gameStatus: GameStatus, currentWave: number, isIntermission: boolean, waveStartCountdown: number, spawnedThisWave: number }>;
                 if (newState.gameStatus) setGameStatus(newState.gameStatus);
                 if (newState.currentWave !== undefined) setCurrentWave(newState.currentWave);
                 if (newState.isIntermission !== undefined) setIsIntermission(newState.isIntermission);
@@ -159,10 +160,10 @@ function CoopGame() {
                 break;
             }
              case DeltaType.TOWERS_UPDATE:
-                setTowersByCell(delta[1]);
+                setTowersByCell(payload);
                 break;
             case DeltaType.PLAYER_UPDATE:
-                 const playerUpdates = delta[1] as Record<string, Partial<Player>>;
+                 const playerUpdates = payload as Record<string, Partial<Player>>;
                  setPlayers(prev => prev.map(p => {
                     const update = playerUpdates[p.id];
                     if (update) {
@@ -172,9 +173,16 @@ function CoopGame() {
                  }));
                 break;
             case DeltaType.TOWER_UPGRADE_VFX:
-                const { towerId } = delta[1] as { towerId: string, position: Node };
+                const { towerId } = payload as { towerId: string, position: Node };
                 setLastUpgradedTowerId(towerId);
                 setTimeout(() => setLastUpgradedTowerId(null), 1000);
+                break;
+            case DeltaType.BUILD_TOWER_REQUEST:
+            case DeltaType.UPGRADE_TOWER_REQUEST:
+            case DeltaType.SELL_TOWER_REQUEST:
+                 if (isGameHost) {
+                    document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type, payload } }));
+                }
                 break;
         }
     });
@@ -188,7 +196,7 @@ function CoopGame() {
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
       
-      // Apply locally for the host. For clients, this is a no-op as they wait for server confirmation.
+      // Apply locally for the host.
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
 
@@ -238,7 +246,7 @@ function CoopGame() {
 
                 const currentIsHost = data.player1Id === user.uid;
                 setIsGameHost(currentIsHost);
-                setLocalPlayerId(currentIsHost ? 'player1' : (normalized.some(p => p.id === 'player2') ? 'player2' : 'spectator'));
+                setLocalPlayerId(currentIsHost ? 'player1' : (normalized.some(p => p.id === 'player2' && p.name !== 'Wartet...') ? 'player2' : 'spectator'));
 
                 // This is now the single source of truth for these states,
                 // driven by Firestore and then overridden by deltas.
@@ -246,7 +254,7 @@ function CoopGame() {
                 setDifficulty(data.difficulty || 'Normal');
                 setGameStatus(data.gameStatus || 'waiting');
                 setCurrentWave(data.currentWave || 0);
-                setIsIntermission(data.isIntermission ?? false);
+                setIsIntermission(data.isIntermission ?? true);
                 setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                 setTowersByCell(data.towersByCell || {});
                 setSpawnedThisWave(data.spawnedThisWave || 0);
@@ -310,16 +318,7 @@ function CoopGame() {
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
     } else if (isGameHost) {
-      if (type === 'client_stats_update') {
-        applyDeltas([[DeltaType.CLIENT_STATS_UPDATE, payload]]);
-      } else if (type === 'build_tower_request') {
-        const { towerId, row, col, playerId } = payload;
-        const towerSpec = initialTowers.find(t => t.id === towerId);
-        if (towerSpec) {
-           const event = new CustomEvent('placeTowerRequest', { detail: { towerSpec, row, col, playerId } });
-           document.dispatchEvent(event);
-        }
-      }
+      applyDeltas([[type, payload]]);
     }
   }, [rtc.lastMessage, isGameHost, applyDeltas]);
 

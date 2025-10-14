@@ -1,3 +1,4 @@
+
 // src/app/page.tsx
 "use client";
 
@@ -98,10 +99,10 @@ export default function Home() {
             player2: null
         },
         gameState: { lives: difficultyMod.startLives },
-        gameStatus: 'waiting',
+        gameStatus: 'waiting', // The game starts in 'waiting'
         currentWave: 0,
         isIntermission: true,
-        waveStartCountdown: 999, // Some large number, lobby will control start
+        waveStartCountdown: 999, // A high number to indicate waiting for players
         createdAt: serverTimestamp(),
         towersByCell: {},
         lastDeltaTimestamp: null,

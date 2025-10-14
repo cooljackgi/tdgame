@@ -82,7 +82,6 @@ export type PlacedTower = Tower & {
   lastAttack: number; // timestamp of the last attack
   health: number;
   ownerId: Player['id'];
-  isBase: boolean; // Overridden from Tower
 };
 
 export type Attack = {
@@ -171,7 +170,9 @@ export enum DeltaType {
     CLIENT_STATS_UPDATE,
     TOWER_UPGRADE_VFX,
     ENEMY_PATH_UPDATE,
-    BUILD_TOWER_REQUEST, // New delta type for client build requests
+    BUILD_TOWER_REQUEST,
+    UPGRADE_TOWER_REQUEST,
+    SELL_TOWER_REQUEST,
 }
 
 export type GameDelta = [DeltaType, ...any[]];
