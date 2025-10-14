@@ -3,6 +3,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useParams } from 'next/navigation';
 import { doc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -115,8 +116,9 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
 };
 
 
-export default function GameAnalyticsDetailPage({ params }: { params: { gameId: string } }) {
-  const { gameId } = params;
+export default function GameAnalyticsDetailPage() {
+  const params = useParams();
+  const gameId = params.gameId as string;
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [gameLog, setGameLog] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
