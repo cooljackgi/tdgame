@@ -263,7 +263,7 @@ export default function GameSession({
 
     const newTower: PlacedTower = {
       ...towerSpec,
-      id: `tower-${row}-${col}-${Date.now()}`,
+      id: `tower-${row}-${col}-${Date.now()}-${Math.random()}`,
       specId: towerSpec.id,
       position: { row, col },
       lastAttack: 0,
@@ -912,6 +912,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             hostPacketsPerSecond={hostPacketsPerSecond}
             hostBytesSentPerSecond={hostBytesSentPerSecond}
             averagePacketSize={averagePacketSize}
+            firingTowerIds={firingTowerIds}
           />
       </main>
       
