@@ -1,4 +1,3 @@
-
 // src/app/page.tsx
 "use client";
 
@@ -9,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, TestTube2, Github } from 'lucide-react';
 import type { Difficulty, GameSaveState } from '@/lib/game-data/types';
 import { LOCAL_STORAGE_KEY, difficultyModifiers } from '@/lib/game-data/constants';
-import { onAuthStateChanged, signInWithGoogle, logOut, type User } from '@/lib/firebase';
+import { onAuthStateChanged, signInWithGoogle, logOut, type User, auth } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
@@ -251,5 +250,3 @@ export default function Home() {
     </main>
   );
 }
-
-    
