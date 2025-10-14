@@ -204,12 +204,12 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         let stopped = false;
         
         const connect = () => {
-            if (stopped || !gameIdRef.current || !userRef.current) {
-                if (!stopped) {
-                  // If not ready, poll until ready
-                  setTimeout(connect, 200);
-                }
-                return;
+            if (stopped || !gameIdRef.current || (!userRef.current && !isMonitorRef.current)) {
+              if (!stopped) {
+                // If not ready, poll until ready
+                setTimeout(connect, 200);
+              }
+              return;
             }
 
             const gid = gameIdRef.current;

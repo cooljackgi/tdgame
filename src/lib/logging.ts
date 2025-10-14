@@ -1,4 +1,3 @@
-
 // src/lib/logging.ts
 'use client';
 
@@ -52,14 +51,16 @@ export async function logWebRTCEvent(
     
     try {
         // The path to the dedicated logging sub-collection.
-        const logCollectionRef = collection(db, `games/${gameId}/webrtc_logs`);
+        // POINTING TO game_logs TO MERGE WITH OTHER GAME STATS
+        const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
 
         // Construct the log entry based on the user's specified schema.
         const logEntry = {
+            gameId,
             timestamp: serverTimestamp(), // Let Firestore determine the time.
             clientTs: Date.now(), // Add client-side timestamp for latency analysis.
+            type: event, // Use 'type' to match game_session logs
             role,
-            event,
             details: details ?? null, // Ensure details is not undefined.
         };
 
