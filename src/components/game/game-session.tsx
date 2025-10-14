@@ -272,10 +272,9 @@ export default function GameSession({
 
     const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
     const newWorkerState: WorkerState = {
-        position: workerState.position,
+        ...workerState,
         target: { type: 'build', row, col, towerSpecId: towerSpec.id },
         task: 'moving',
-        taskProgress: 0,
     };
 
     broadcastGameData([
@@ -308,10 +307,9 @@ export default function GameSession({
     const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
     
     const newWorkerState: WorkerState = {
-        position: workerState.position,
+        ...workerState,
         target: { type: 'upgrade', row: focusedTower.position.row, col: focusedTower.position.col, towerSpecId: upgradeId },
         task: 'moving',
-        taskProgress: 0,
     };
     
     broadcastGameData([
@@ -404,10 +402,9 @@ export default function GameSession({
       if (furthestEnemy) {
         const target: WorkerState['target'] = { type: 'nudge', enemyId: furthestEnemy.id, row: furthestEnemy.position.row, col: furthestEnemy.position.col };
         const newWorkerState: WorkerState = {
-            position: workerState.position,
+            ...workerState,
             target,
             task: 'moving',
-            taskProgress: 0,
         };
         broadcastGameData([[DeltaType.WORKER_UPDATE, newWorkerState]]);
         toast({ title: "Drohne unterwegs", description: `Stupst Gegner ${furthestEnemy.id} an.` });
@@ -515,6 +512,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
           if (dist < WORKER_SPEED) {
               const target = workerState.target!;
+              let finalWorkerState: WorkerState = { ...workerState, task: 'idle', target: null, position: targetPos };
               
               if (target.type === 'build') {
                   const towerSpec = initialTowers.find(t => t.id === target.towerSpecId);
@@ -527,7 +525,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                           position: { row: target.row, col: target.col },
                           lastAttack: 0,
                           health: towerSpec.maxHealth,
-                          ownerId: 'player1',
+                          ownerId: 'player1', // simplified for now
                           isBase: towerSpec.isBase,
                       };
                       deltas.push([DeltaType.TOWERS_UPDATE, { ...towersByCell, [cellKey]: newTower }]);
@@ -550,7 +548,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                   }
               }
               
-              deltas.push([DeltaType.WORKER_UPDATE, { ...workerState, task: 'idle', target: null, position: {x: targetPos.x, y: targetPos.y} }]);
+              deltas.push([DeltaType.WORKER_UPDATE, finalWorkerState]);
           } else {
               const newPos = {
                   x: workerState.position.x + (dx / dist) * WORKER_SPEED,
@@ -925,6 +923,16 @@ const handleLoadAllTowersLayout = useCallback(() => {
     return [{ ...enemy, effects: newEffects }, delta];
   };
 
+  // Add the WORKER_UPDATE case to applyDeltas
+  const fullApplyDeltas = useCallback((deltas: GameDelta[]) => {
+      deltas.forEach(delta => {
+        if (delta[0] === DeltaType.WORKER_UPDATE) {
+            setWorkerState(delta[1]);
+        }
+      });
+      applyDeltas(deltas);
+  }, [applyDeltas, setWorkerState]);
+
   const interactionPrompt = localPlayerId === 'spectator'
     ? 'Du schaust zu.'
     : selectedTowerToBuild
@@ -1043,3 +1051,4 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+

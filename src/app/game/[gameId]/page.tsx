@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import GameSession from "@/components/game/game-session";
@@ -11,7 +12,7 @@ import { useWebRTC } from '@/hooks/use-webrtc';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
-import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element, WorkerState } from '@/lib/game-data/types';
 import { Loader2 } from "lucide-react";
 import { DeltaType } from "@/lib/game-data/types";
 import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from "@/lib/game-data/constants";
@@ -164,6 +165,14 @@ function CoopGame() {
                     }
                     return p;
                  }));
+                break;
+            case DeltaType.WORKER_UPDATE:
+                // Implemented in game-session, no need to handle here
+                break;
+            case DeltaType.TOWER_UPGRADE_VFX:
+                const { towerId } = delta[1] as { towerId: string, position: Node };
+                setLastUpgradedTowerId(towerId);
+                setTimeout(() => setLastUpgradedTowerId(null), 1000);
                 break;
         }
     });
@@ -400,7 +409,6 @@ function CoopGame() {
       applyDeltas={applyDeltas}
       onGameEnd={handleGameEnd}
       onExit={() => router.push('/')}
-      handlePlaceTower={handlePlaceTower}
       attacks={attacks}
       damageNumbers={damageNumbers}
       splashRings={splashRings}
@@ -422,3 +430,4 @@ function CoopGame() {
 }
 
 export default CoopGame;
+
