@@ -1,16 +1,19 @@
 
 {
   "hosting": {
-    "source": ".",
+    "source": "app",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ]
+    ],
+    "frameworksBackend": {
+      "region": "us-central1"
+    }
   },
   "functions": [
     {
-      "source": "app/src/functions",
+      "source": "functions",
       "codebase": "default",
       "runtime": "nodejs20",
       "ignore": [
