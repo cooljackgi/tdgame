@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, getDocs, orderBy, query, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, Timestamp, getCountFromServer } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,20 +28,28 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchLogs = async () => {
       try {
-        const logsQuery = query(collection(db, 'games'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(logsQuery);
+        const gamesQuery = query(collection(db, 'games'), orderBy('createdAt', 'desc'));
+        const querySnapshot = await getDocs(gamesQuery);
         
-        const fetchedLogs: GameLog[] = querySnapshot.docs.map(doc => {
+        const fetchedLogsPromises: Promise<GameLog>[] = querySnapshot.docs.map(async (doc) => {
           const data = doc.data();
           const createdAt = (data.createdAt as Timestamp)?.toDate() || new Date();
+          
+          // Get count of logs from the subcollection
+          const logCollRef = collection(db, `games/${doc.id}/game_logs`);
+          const snapshot = await getCountFromServer(logCollRef);
+          const logCount = snapshot.data().count;
+
           return {
             id: doc.id,
             gameId: data.gameName || doc.id,
             createdAt: createdAt,
             status: data.gameStatus || 'unbekannt',
-            logLength: data.gameLog?.length || 0,
+            logLength: logCount,
           };
         });
+
+        const fetchedLogs = await Promise.all(fetchedLogsPromises);
         
         setLogs(fetchedLogs);
       } catch (err: any) {
