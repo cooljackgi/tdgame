@@ -2,6 +2,8 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { z } from "zod";
+import next from "next";
+import cors from "cors";
 
 // Initialize Firebase Admin
 if (admin.apps.length === 0) {
@@ -185,4 +187,18 @@ export const deleteTestGame = functions.https.onCall(async (data, context) => {
         }
         throw new functions.https.HttpsError("internal", "An unexpected error occurred while deleting the test game.");
     }
+});
+
+
+const dev = process.env.NODE_ENV !== 'production';
+const app = next({ dev, conf: { distDir: '../.next' } });
+const handle = app.getRequestHandler();
+const corsHandler = cors({ origin: true });
+
+export const nextServer = functions.https.onRequest((req, res) => {
+  return corsHandler(req, res, async () => {
+    console.log('File: ' + req.originalUrl);
+    await app.prepare();
+    return handle(req, res);
+  });
 });

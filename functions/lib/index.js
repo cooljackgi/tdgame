@@ -1,3 +1,4 @@
+
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -15,23 +16,13 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -42,12 +33,11 @@ const admin = __importStar(require("firebase-admin"));
 const zod_1 = require("zod");
 const next_1 = __importDefault(require("next"));
 const cors_1 = __importDefault(require("cors"));
-admin.initializeApp();
+// Initialize Firebase Admin
+if (admin.apps.length === 0) {
+    admin.initializeApp();
+}
 const db = admin.firestore();
-// Initialize CORS middleware
-// We are allowing all origins for simplicity in this development environment.
-// For a production app, you might want to restrict this to your specific frontend URL.
-const corsHandler = (0, cors_1.default)({ origin: true });
 // --- Zod Schemas for Input Validation ---
 const gameIdSchema = zod_1.z.object({
     gameId: zod_1.z.string().min(1),
@@ -186,13 +176,14 @@ exports.deleteTestGame = functions.https.onCall(async (data, context) => {
     }
 });
 const dev = process.env.NODE_ENV !== 'production';
-const app = (0, next_1.default)({ dev, conf: { distDir: '.next' } });
+const app = (0, next_1.default)({ dev, conf: { distDir: '../.next' } });
 const handle = app.getRequestHandler();
+const corsHandler = (0, cors_1.default)({ origin: true });
 exports.nextServer = functions.https.onRequest((req, res) => {
-    // Wrap the Next.js handler with the CORS middleware
-    return corsHandler(req, res, () => {
+    return corsHandler(req, res, async () => {
         console.log('File: ' + req.originalUrl);
-        return app.prepare().then(() => handle(req, res));
+        await app.prepare();
+        return handle(req, res);
     });
 });
 //# sourceMappingURL=index.js.map
