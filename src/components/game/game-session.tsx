@@ -85,6 +85,7 @@ type GameSessionProps = {
     focusedTower?: PlacedTower | null;
     setFocusedTower?: (tower: PlacedTower | null) => void;
     handleUpgradeTower?: (upgradeId: string) => void;
+    handleSellTower?: () => void;
 
     // --- Debug / Cheats ---
     isCheating?: boolean;
@@ -148,6 +149,7 @@ export default function GameSession({
     focusedTower: spFocusedTower,
     setFocusedTower: spSetFocusedTower,
     handleUpgradeTower: spHandleUpgradeTower,
+    handleSellTower: spHandleSellTower,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -252,7 +254,6 @@ export default function GameSession({
       return;
     }
     
-    console.log(`[GameSession] handleGameControl: Broadcasting GAME_STATE_UPDATE with status: ${newStatus}`);
     broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { gameStatus: newStatus }]]);
 
   }, [gameStatus, isCoop, isGameHost, toast, localPlayerId, broadcastGameData]);
@@ -292,25 +293,24 @@ export default function GameSession({
     if (isCoop && !isGameHost) {
         const towerToBuild = selectedTowerToBuild;
         if (towerToBuild && builderId !== 'spectator') {
-            console.log(`[GameSession - Client] Requesting to build tower: ${towerToBuild.id} at ${row},${col}`);
             broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
             cancelInteractions();
         }
         return;
     }
 
-    console.log(`[GameSession - Host] Processing place tower request for player ${builderId}`);
     const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const builderPlayer = players.find(p => p.id === builderId);
     
     if (!towerToBuild || !builderPlayer || builderId === 'spectator') {
-       console.warn(`[GameSession - Host] Build validation failed: No tower spec, no player, or spectator.`);
+       if(builderId === localPlayerId) {
+            toast({ title: "Bau nicht möglich", description: "Kein Turm ausgewählt oder du bist Zuschauer.", variant: "destructive" });
+        }
        return;
     }
 
     const cellKey = `${row}_${col}`;
     if (towersByCell[cellKey]) {
-        console.warn(`[GameSession - Host] Build validation failed: Cell ${cellKey} already occupied.`);
         if(builderId === localPlayerId) {
             toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         }
@@ -320,7 +320,6 @@ export default function GameSession({
     const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
     const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
     if (!newPath) {
-        console.warn(`[GameSession - Host] Build validation failed: Path would be blocked.`);
         if(builderId === localPlayerId) {
             toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
         }
@@ -328,7 +327,6 @@ export default function GameSession({
     }
 
     if (builderPlayer.resources < towerToBuild.cost) {
-        console.warn(`[GameSession - Host] Build validation failed: Insufficient resources.`);
         if(builderId === localPlayerId) {
             toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         }
@@ -345,7 +343,6 @@ export default function GameSession({
       ownerId: builderPlayer.id,
     };
 
-    console.log(`[GameSession - Host] Successfully placed tower ${newTower.id}. Broadcasting update.`);
     const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
     const playerUpdates = { [builderPlayer.id]: { resources: builderPlayer.resources - towerToBuild.cost } };
     
@@ -373,18 +370,14 @@ export default function GameSession({
         return;
     }
     
-    // For Coop, if not host, send request
     if (isCoop && !isGameHost) {
-        console.log(`[GameSession - Client] Requesting to upgrade tower at ${currentFocusedTower.position.row},${currentFocusedTower.position.col} to ${upgradeId}`);
         broadcastGameData([[DeltaType.UPGRADE_TOWER_REQUEST, { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, upgradeId: upgradeId, playerId: localPlayerId }]], true);
         cancelInteractions();
         return;
     }
 
-    console.log(`[GameSession - Host] Processing upgrade request for tower ${currentFocusedTower.id} to ${upgradeId}`);
     const upgradeTowerSpec = towers.find(t => t.id === upgradeId);
     if (!upgradeTowerSpec) {
-        console.warn(`[GameSession - Host] Upgrade validation failed: Spec ${upgradeId} not found.`);
         toast({ title: "Upgrade-Fehler", variant: 'destructive' });
         return;
     }
@@ -393,7 +386,6 @@ export default function GameSession({
     const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(currentFocusedTower.cost * refundPercentage));
     
     if (currentLocalPlayer.resources < cost) {
-        console.warn(`[GameSession - Host] Upgrade validation failed: Insufficient resources.`);
         toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
@@ -420,7 +412,6 @@ export default function GameSession({
     
     const playerUpdates = { [currentLocalPlayer.id]: { resources: currentLocalPlayer.resources - cost } };
     
-    console.log(`[GameSession - Host] Tower ${currentFocusedTower.id} upgraded. Broadcasting update.`);
     broadcastGameData([
       [DeltaType.PLAYER_UPDATE, playerUpdates],
       [DeltaType.TOWERS_UPDATE, newTowersByCell],
@@ -434,18 +425,24 @@ export default function GameSession({
   }, [players, localPlayerId, isCoop, isGameHost, focusedTower, spFocusedTower, spHandleUpgradeTower, towers, toast, difficulty, broadcastGameData, towersByCell, spSetFocusedTower, cancelInteractions]);
   
   const handleSellTower = useCallback(async () => {
+    // This is the single player implementation, called from the wrapper prop
+    if (!isCoop && spHandleSellTower) {
+      spHandleSellTower();
+      return;
+    }
+
+    // This is the multiplayer implementation
     const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
     const currentLocalPlayer = players.find(p => p.id === localPlayerId);
+    
     if (!currentFocusedTower || !currentLocalPlayer || localPlayerId === 'spectator' || currentFocusedTower.ownerId !== currentLocalPlayer.id) return;
     
     if (isCoop && !isGameHost) {
-        console.log(`[GameSession - Client] Requesting to sell tower at ${currentFocusedTower.position.row},${currentFocusedTower.position.col}`);
         broadcastGameData([[DeltaType.SELL_TOWER_REQUEST, { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, playerId: localPlayerId }]], true);
         cancelInteractions();
         return;
     }
 
-    console.log(`[GameSession - Host] Processing sell request for tower ${currentFocusedTower.id}`);
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
     const refund = Math.round(currentFocusedTower.cost * refundPercentage);
     const cellKey = `${currentFocusedTower.position.row}_${currentFocusedTower.position.col}`;
@@ -455,7 +452,6 @@ export default function GameSession({
 
     const playerUpdates = { [currentLocalPlayer.id]: { resources: currentLocalPlayer.resources + refund } };
 
-    console.log(`[GameSession - Host] Tower sold. Broadcasting update.`);
     broadcastGameData([
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
         [DeltaType.PLAYER_UPDATE, playerUpdates]
@@ -465,7 +461,7 @@ export default function GameSession({
     else if(spSetFocusedTower) spSetFocusedTower(null);
 
     audioManager.playSfx('build_tower');
-  }, [players, localPlayerId, isCoop, isGameHost, focusedTower, spFocusedTower, difficulty, broadcastGameData, towersByCell, spSetFocusedTower, cancelInteractions]);
+  }, [isCoop, spHandleSellTower, focusedTower, spFocusedTower, players, localPlayerId, isGameHost, broadcastGameData, cancelInteractions, difficulty, towersByCell, spSetFocusedTower]);
 
   const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
     if (!isCoop && spHandleSelectTowerToBuild) {
@@ -619,8 +615,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
     
     // This is the core host-only simulation logic
     if (isGameHost) {
-      console.log(`[Simulate] Tick running. isIntermission: ${isIntermission}, enemies: ${enemies.length}, gameStatus: ${gameStatus}`);
-
       // Tower attacks
       Object.values(towersByCell).forEach(tower => {
         if ((now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
@@ -740,17 +734,17 @@ const handleLoadAllTowersLayout = useCallback(() => {
           const finalDamage = totalDamage * damageMultiplier * (1 - damageReduction);
           
           if (finalDamage > 0) {
-              // Update host-side map first
-              enemy.health = Math.max(0, enemy.health - finalDamage);
+              const e = enemiesMap.get(enemy.id)!;
+              e.health = Math.max(0, e.health - finalDamage);
               deltas.push([DeltaType.ENEMY_DAMAGE, enemy.id, finalDamage, sources[0]?.elements[0] ?? 'neutral']);
               
-              if (enemy.health <= 0 && !deadIds.has(enemy.id)) {
-                  deadIds.add(enemy.id);
-                  deltas.push([DeltaType.ENEMY_DIE, enemy.id]);
+              if (e.health <= 0 && !deadIds.has(e.id)) {
+                  deadIds.add(e.id);
+                  deltas.push([DeltaType.ENEMY_DIE, e.id]);
                   const killingBlowTower = sources[sources.length - 1];
                   if (killingBlowTower) {
                       const playerToRewardId = killingBlowTower.ownerId;
-                      resourcesGainedThisTick[playerToRewardId] = (resourcesGainedThisTick[playerToRewardId] || 0) + enemy.bounty;
+                      resourcesGainedThisTick[playerToRewardId] = (resourcesGainedThisTick[playerToRewardId] || 0) + e.bounty;
                       if (killingBlowTower.effect?.type === 'lifesteal' && Math.random() < (killingBlowTower.effect.chance ?? 0)) {
                           resourcesGainedThisTick[playerToRewardId] += Math.round(finalDamage * (killingBlowTower.effect.potency ?? 0));
                       }
@@ -785,7 +779,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             });
             enemy.effects = newEffects; // Update host map
 
-            if (!isStunned) {
+            if (!isStunned && enemy.health > 0 && !leakedIds.has(enemy.id)) {
                 const slowEffect = newEffects.find(e => e.type === 'slow');
                 const effectiveSpeed = enemy.speed * (slowEffect ? (1 - slowEffect.potency!) : 1);
                 const stepMs = 1000 / Math.max(0.001, effectiveSpeed);
@@ -842,7 +836,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
       const allSpawned = spawnedThisWave >= (waveData?.enemies.count || 0);
 
       if (!isIntermission && allSpawned && liveEnemyCount === 0 && gameStatus !== 'gameover') {
-          console.log("[Simulate] Wave ended. Preparing for next wave or element pick.");
           audioManager.stopMusic();
           onWaveComplete?.();
 
@@ -895,14 +888,12 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
     const onHostAction = (ev: Event) => {
         const { type, payload } = (ev as CustomEvent).detail;
-        console.log(`[GameSession - Host] Received hostActionRequest:`, { type, payload });
 
         if (type === DeltaType.BUILD_TOWER_REQUEST) {
             const { towerId, row, col, playerId } = payload;
             const spec = towers.find(t => t.id === towerId);
             if (!spec) return;
 
-            // Temporarily set the selected tower for handlePlaceTower to use
             const original = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
             if(isCoop) setSelectedTowerToBuild(spec);
             
@@ -1131,7 +1122,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
             handleStartNextWaveNow={() => {
                 const canStart = !isCoop || isGameHost;
                 if (!isIntermission || !canStart || localPlayerId === 'spectator') return;
-                console.log("[GameSession] handleStartNextWaveNow: Broadcasting GAME_STATE_UPDATE to start wave.");
                 broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { isIntermission: false, waveStartCountdown: 0 }]]);
             }}
             lastUpgradedTowerId={lastUpgradedTowerId}
