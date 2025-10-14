@@ -280,6 +280,9 @@ export default function GameSession({
     ]);
     
     audioManager.playSfx('build_tower');
+    
+    // Do not cancel interactions, allow multiple placements
+    // cancelInteractions();
 
   }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
   
@@ -660,13 +663,28 @@ const handleLoadAllTowersLayout = useCallback(() => {
       }
 
       if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
-      if (leakedThisTick > 0) setTotalLeaked(l => l + leakedThisTick);
+      if (leakedThisTick > 0) {
+          setTotalLeaked(l => l + leakedThisTick);
+          if (gameState.lives - leakedThisTick <= 0 && gameStatus !== 'gameover') {
+              const result: GameResult = {
+                  playerName: localPlayer?.name || 'Anonymer Spieler',
+                  playerUid: 'local',
+                  date: new Date().toISOString(),
+                  difficulty: difficulty,
+                  wave: currentWave + 1,
+                  won: false,
+                  finalTowers: towersByCell
+              };
+              onGameEnd(result);
+              deltas.push([DeltaType.GAME_STATE_UPDATE, { gameStatus: 'gameover' }]);
+          }
+      }
       
       const liveEnemyCount = Array.from(enemiesMap.values()).filter(e => e.health > 0).length;
       const waveData = waves[currentWave];
       const allSpawned = spawnedThisWave >= (waveData?.enemies.count || 0);
 
-      if (!isIntermission && allSpawned && liveEnemyCount === 0) {
+      if (!isIntermission && allSpawned && liveEnemyCount === 0 && gameStatus !== 'gameover') {
           audioManager.stopMusic();
           onWaveComplete?.();
 
@@ -674,14 +692,14 @@ const handleLoadAllTowersLayout = useCallback(() => {
           
           let stateUpdate: GameDelta | null = null;
 
-          if (nextWave >= waves.length || gameState.lives <= 0) {
+          if (nextWave >= waves.length) {
               const result: GameResult = {
                   playerName: localPlayer?.name || 'Anonymer Spieler',
-                  playerUid: 'local', // Placeholder for single player
+                  playerUid: 'local',
                   date: new Date().toISOString(),
                   difficulty: difficulty,
                   wave: currentWave + 1,
-                  won: gameState.lives > 0,
+                  won: true,
                   finalTowers: towersByCell
               };
               onGameEnd(result);
@@ -711,7 +729,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
+  }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
 
   useEffect(() => {
     if (hasInteracted) {
