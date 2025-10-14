@@ -2,8 +2,6 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { z } from "zod";
-import next from "next";
-import cors from "cors";
 
 // Initialize Firebase Admin
 if (admin.apps.length === 0) {
@@ -13,8 +11,6 @@ if (admin.apps.length === 0) {
 // Connect to emulators if running in development/emulator environment
 if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV === 'development') {
     console.log("Connecting Functions to Firestore and Auth emulators...");
-    // The Admin SDK automatically uses the Auth emulator if FIRESTORE_EMULATOR_HOST is set.
-    // However, for direct admin.firestore() calls, we might need to be explicit.
     if(process.env.FIRESTORE_EMULATOR_HOST) {
       admin.firestore().settings({
           host: process.env.FIRESTORE_EMULATOR_HOST,
@@ -211,21 +207,4 @@ export const deleteTestGame = functions.https.onCall(async (data, context) => {
         }
         throw new functions.https.HttpsError("internal", "An unexpected error occurred while deleting the test game.");
     }
-});
-
-
-// This is a placeholder for the Next.js server. In a real production deployment with App Hosting,
-// this function would not be needed as App Hosting handles the Next.js server.
-// For emulation and older Firebase Hosting setups, it's required.
-const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev, conf: { distDir: '.next' } });
-const handle = app.getRequestHandler();
-const corsHandler = cors({ origin: true });
-
-export const nextServer = functions.https.onRequest((req, res) => {
-  // Wrap the Next.js handler with the CORS middleware
-  return corsHandler(req, res, () => {
-    console.log('File: ' + req.originalUrl); 
-    return app.prepare().then(() => handle(req, res));
-  });
 });
