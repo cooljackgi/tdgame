@@ -69,7 +69,7 @@ type GameSessionProps = {
     onGameEnd: (result: GameResult) => void;
     onWaveComplete?: () => void;
     onExit: () => void;
-    onSelectTowerToBuild: (tower: Tower) => void;
+    onSelectTowerToBuild: (tower: Tower | null) => void;
     selectedTowerToBuild: Tower | null;
     focusedTower: PlacedTower | null;
     setFocusedTower: (tower: PlacedTower | null) => void;
@@ -239,7 +239,7 @@ export default function GameSession({
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
     audioManager.playSfx('build_tower');
-    onSelectTowerToBuild(null as any); // Clear build selection
+    onSelectTowerToBuild(null); // Clear build selection
     setFocusedTower(tower);
   }, [onSelectTowerToBuild, setFocusedTower]);
 
@@ -247,7 +247,7 @@ export default function GameSession({
     if (localPlayerId === 'spectator') return;
     if (selectedTowerToBuild) {
         audioManager.playSfx('build_tower');
-        onSelectTowerToBuild(null as any);
+        onSelectTowerToBuild(null);
     }
     if (focusedTower) { 
         audioManager.playSfx('build_tower');
@@ -467,7 +467,16 @@ const handleLoadAllTowersLayout = useCallback(() => {
     if (localPlayerId === 'spectator' || !localPlayer) return;
       
     const playerUpdate = { [localPlayer.id]: { unlockedElements: [...localPlayer.unlockedElements, element] }};
-    const stateUpdate = { gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME };
+    const nextWave = currentWave + 1;
+
+    // Reset for the next wave
+    const stateUpdate = {
+        gameStatus: 'playing',
+        isIntermission: true,
+        waveStartCountdown: INTERMISSION_TIME,
+        currentWave: nextWave,
+        spawnedThisWave: 0, // Reset for the actual next wave
+    };
 
     broadcastGameData([
         [DeltaType.PLAYER_UPDATE, playerUpdate],

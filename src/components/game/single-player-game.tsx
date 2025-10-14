@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -282,18 +281,20 @@ export default function SinglePlayerGame({
     
     // This effect runs when the path changes. It tells all enemies to update their path.
     useEffect(() => {
-        if (enemies.length === 0) return;
-
-        const deltas: GameDelta[] = enemies.map(enemy => {
+        if (enemies.length === 0 || !waveInProgressRef.current) return;
+        const deltas: GameDelta[] = [];
+        enemies.forEach(enemy => {
             const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
-            return [DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex];
+            // Only update if the new index is valid and different, to prevent unnecessary updates
+            if (newPathIndex !== enemy.pathIndex) {
+                 deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex]);
+            }
         });
 
         if (deltas.length > 0) {
             applyDeltas(deltas);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPath]);
+    }, [currentPath, enemies, applyDeltas]);
 
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
