@@ -114,12 +114,6 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             dcPingRef.current = undefined;
             logWebRTCEvent(gid, currentRole, 'DC_CLOSE');
             setIsConnected(false);
-
-            // Re-negotiation logic
-            const ws = signalingSocketRef.current;
-            if (ws?.readyState === WebSocket.OPEN && !isHostRef.current && !isMonitorRef.current) {
-                ws.send(JSON.stringify({ kind:'signal', type:'hello', from:selfIdRef.current }));
-            }
         };
         dc.onmessage = (event) => {
             if (event.data === '{"type":"_ping"}') return;
@@ -204,7 +198,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         let stopped = false;
         
         const connect = () => {
-            if (stopped || !gameIdRef.current || (!userRef.current && !isMonitorRef.current)) {
+             if (stopped || !gameIdRef.current || (!userRef.current && !isMonitorRef.current)) {
               if (!stopped) {
                 // If not ready, poll until ready
                 setTimeout(connect, 200);
@@ -266,16 +260,17 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 try {
                     // Host receives "hello", creates offer
                     if (msg.type === 'hello' && isHostRef.current) {
-                        // Guard: only re-offer if not already negotiating or DC is closed
+                        // Guard: only re-offer if not already negotiating or DC is closed/null
                         if (pc.signalingState !== 'stable') return;
-                        if (dataChannelRef.current && dataChannelRef.current.readyState !== 'closed') return;
 
                         if(!dataChannelRef.current || dataChannelRef.current.readyState === 'closed') {
                             const dc = pc.createDataChannel('game_data', {ordered: false, maxRetransmits: 0});
                             dataChannelRef.current = dc;
                             setupDataChannelEvents(dc);
+                            logWebRTCEvent(gid, currentRole, 'DC_CREATED', {label: dc.label});
                         }
-                        const offer = await pc.createOffer({ iceRestart: true });
+                        
+                        const offer = await pc.createOffer();
                         await pc.setLocalDescription(offer);
                         ws.send(JSON.stringify({ kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription }));
                         logWebRTCEvent(gid, currentRole, 'PC_OFFER_CREATED_REHELLO');
