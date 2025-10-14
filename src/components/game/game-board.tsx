@@ -14,6 +14,7 @@ import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import { enemyIconPaths } from '@/components/game/icons/enemy-icons';
+import TowerContextMenu from './TowerContextMenu';
 
 const CELL_SIZE = 64;
 
@@ -123,6 +124,10 @@ type GameBoardProps = {
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   firingTowerIds: Set<string>;
   children?: React.ReactNode;
+  onUpgradeTower: (upgradeId: string) => void;
+  onSellTower: () => void;
+  allTowers: Tower[];
+  localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined
 };
 
 
@@ -334,6 +339,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     playerRole,
     firingTowerIds,
     children,
+    onUpgradeTower,
+    onSellTower,
+    allTowers,
+    localPlayer,
 }, ref) => {
 
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1040,14 +1049,16 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                           className="absolute flex items-center justify-center pointer-events-auto"
                           style={{ left: endPos.x, top: endPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)' }}
                       >
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex pointer-events-auto">
-                              <Target className="h-8 w-8 text-red-500 animate-ping" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent><p>Nexus</p></TooltipContent>
-                        </Tooltip>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex pointer-events-auto">
+                                <Target className="h-8 w-8 text-red-500 animate-ping" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Nexus</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                 
               </div>
@@ -1086,6 +1097,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
               )}
 
               {focusedTower && (
+                <>
                 <div 
                   className="absolute z-10 pointer-events-none"
                   style={{
@@ -1102,6 +1114,24 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     }}
                   ></div>
                 </div>
+                 <div
+                    className="absolute z-30"
+                     style={{
+                        left: gridToPx(focusedTower.position).x,
+                        top: gridToPx(focusedTower.position).y,
+                        transform: `translate(-50%, calc(-50% - ${CELL_SIZE * 0.7}px))`,
+                     }}
+                 >
+                    <TowerContextMenu
+                        tower={focusedTower}
+                        onUpgrade={onUpgradeTower}
+                        onSell={onSellTower}
+                        allTowers={allTowers}
+                        localPlayer={localPlayer}
+                        onClose={cancelInteractions}
+                    />
+                 </div>
+                 </>
               )}
               <div ref={hoverOverlayRef} className="absolute transition-opacity duration-100 opacity-0 pointer-events-none border-2 border-white/25 bg-white/5" style={{width: CELL_SIZE, height: CELL_SIZE}} />
           </div>
@@ -1125,3 +1155,4 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+

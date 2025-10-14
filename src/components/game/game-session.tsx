@@ -69,10 +69,6 @@ type GameSessionProps = {
     onGameEnd: (result: GameResult) => void;
     onWaveComplete?: () => void;
     onExit: () => void;
-    onSelectTowerToBuild: (tower: Tower | null) => void;
-    selectedTowerToBuild: Tower | null;
-    focusedTower: PlacedTower | null;
-    setFocusedTower: (tower: PlacedTower | null) => void;
     
     // --- VFX ---
     attacks: Attack[];
@@ -138,7 +134,6 @@ export default function GameSession({
     // Control
     isCoop, isGameHost, localPlayerId,
     broadcastGameData, applyDeltas, onGameEnd, onWaveComplete, onExit,
-    onSelectTowerToBuild, selectedTowerToBuild, focusedTower, setFocusedTower,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -160,6 +155,8 @@ export default function GameSession({
   const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
 
   // --- Local State (Client-side only) ---
+  const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+  const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   
@@ -181,16 +178,20 @@ export default function GameSession({
   useEffect(() => {
     if (!isGameHost || enemies.length === 0) return;
 
-    const deltas: GameDelta[] = enemies.map(enemy => {
-      const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
-      return [DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex];
-    });
+    const deltas: GameDelta[] = [];
+    const newPath = findPath(START_NODE, END_NODE, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS);
+    
+    if (newPath) {
+        enemies.forEach(enemy => {
+            const newPathIndex = findClosestPathIndex(newPath, enemy.position);
+            deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, newPath, newPathIndex]);
+        });
+    }
 
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath]); // Only run when currentPath reference changes
+  }, [placedTowers, isGameHost]);
 
 
   const toggleMute = useCallback(() => {
@@ -239,21 +240,21 @@ export default function GameSession({
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
     audioManager.playSfx('build_tower');
-    onSelectTowerToBuild(null); // Clear build selection
+    setSelectedTowerToBuild(null); // Clear build selection
     setFocusedTower(tower);
-  }, [onSelectTowerToBuild, setFocusedTower]);
+  }, [setSelectedTowerToBuild, setFocusedTower]);
 
   const cancelInteractions = useCallback(() => {
     if (localPlayerId === 'spectator') return;
     if (selectedTowerToBuild) {
         audioManager.playSfx('build_tower');
-        onSelectTowerToBuild(null);
+        setSelectedTowerToBuild(null);
     }
     if (focusedTower) { 
         audioManager.playSfx('build_tower');
         setFocusedTower(null);
     }
-  }, [localPlayerId, focusedTower, selectedTowerToBuild, onSelectTowerToBuild, setFocusedTower]);
+  }, [localPlayerId, focusedTower, selectedTowerToBuild, setSelectedTowerToBuild, setFocusedTower]);
 
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const localPlayer = players.find(p => p.id === localPlayerId);
@@ -360,6 +361,23 @@ export default function GameSession({
     audioManager.playSfx('build_tower');
   }, [focusedTower, localPlayer, localPlayerId, difficulty, broadcastGameData, towersByCell, setFocusedTower]);
 
+  const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
+    const localPlayer = players.find(p => p.id === localPlayerId);
+    if (!localPlayer || !tower) {
+      if (tower === null) setSelectedTowerToBuild(null);
+      return;
+    }
+    if (selectedTowerToBuild?.id === tower.id) {
+        setSelectedTowerToBuild(null);
+        return;
+    }
+    if(localPlayer.resources < tower.cost) {
+      toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
+      return;
+    }
+    setSelectedTowerToBuild(tower);
+    setFocusedTower(null);
+  }, [players, localPlayerId, toast, selectedTowerToBuild]);
   
   const cheat_addResources = () => {
     if (!isCheating) return;
@@ -954,6 +972,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
             hostBytesSentPerSecond={hostBytesSentPerSecond}
             averagePacketSize={averagePacketSize}
             firingTowerIds={firingTowerIds}
+            // Props for TowerContextMenu
+            allTowers={towers}
           />
       </main>
       

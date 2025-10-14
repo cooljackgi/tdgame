@@ -51,7 +51,7 @@ interface DesktopLayoutProps {
   endNode: Node;
   interactionPrompt: string | null;
   cancelInteractions: () => void;
-  onSelectTowerToBuild: (tower: Tower) => void;
+  onSelectTowerToBuild: (tower: Tower | null) => void;
   handleUpgradeTower: (upgradeId: string) => void;
   handleSellTower: () => void;
   setFocusedTower: (tower: PlacedTower | null) => void;
@@ -74,6 +74,7 @@ interface DesktopLayoutProps {
   cheat_heal?: () => void;
   cheat_unlockAll: () => void;
   firingTowerIds: Set<string>;
+  allTowers: Tower[];
   // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -101,6 +102,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     cheat_heal,
     cheat_unlockAll,
     firingTowerIds,
+    allTowers,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -143,7 +145,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   
   const interactionPromptComponent = (
     <>
-    {interactionPrompt && (
+    {interactionPrompt && !focusedTower && (
         <div className="bg-card/80 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-lg mb-4">
             <MessageCircle className="h-5 w-5 text-accent"/>
             <p className="text-sm font-medium flex-grow">
@@ -284,35 +286,37 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <div className="flex-grow flex items-center justify-center h-full">
         <div className="w-full h-full max-w-[80vh] aspect-square" id="tutorial-game-board">
             <GameBoard
-            ref={gameBoardRef}
-            placedTowers={placedTowers}
-            enemies={enemies}
-            attacks={attacks}
-            damageNumbers={damageNumbers}
-            splashRings={splashRings}
-            currentPath={currentPath}
-            handlePlaceTower={handlePlaceTower}
-            onFocusTower={onFocusTower}
-            cancelInteractions={cancelInteractions}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
-            rows={rows}
-            cols={cols}
-            startNode={startNode}
-            endNode={endNode}
-            lastUpgradedTowerId={lastUpgradedTowerId}
-            isCoop={isCoop}
-            playerRole={playerRole}
-            firingTowerIds={firingTowerIds}
-            >
-            
-            </GameBoard>
+                ref={gameBoardRef}
+                placedTowers={placedTowers}
+                enemies={enemies}
+                attacks={attacks}
+                damageNumbers={damageNumbers}
+                splashRings={splashRings}
+                currentPath={currentPath}
+                handlePlaceTower={handlePlaceTower}
+                onFocusTower={onFocusTower}
+                cancelInteractions={cancelInteractions}
+                selectedTowerToBuild={selectedTowerToBuild}
+                focusedTower={focusedTower}
+                rows={rows}
+                cols={cols}
+                startNode={startNode}
+                endNode={endNode}
+                lastUpgradedTowerId={lastUpgradedTowerId}
+                isCoop={isCoop}
+                playerRole={playerRole}
+                firingTowerIds={firingTowerIds}
+                onUpgradeTower={handleUpgradeTower}
+                onSellTower={handleSellTower}
+                allTowers={allTowers}
+                localPlayer={localPlayer}
+            />
         </div>
       </div>
 
       {/* Right Sidebar - visible on XL */}
       <aside className="hidden xl:flex xl:flex-col gap-6" id="tutorial-build-menu-xl">
-        {!isSpectator && (
+        {!isSpectator && !focusedTower && (
           <TowerSelection
             allTowers={towers}
             onSelectTower={onSelectTowerToBuild}
