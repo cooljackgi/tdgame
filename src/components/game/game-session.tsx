@@ -67,6 +67,7 @@ type GameSessionProps = {
     broadcastGameData: (deltas: GameDelta[]) => void;
     applyDeltas: (deltas: GameDelta[]) => void;
     onGameEnd: (result: GameResult) => void;
+    onWaveComplete?: () => void;
     onExit: () => void;
     handlePlaceTower: (row: number, col: number) => void;
     
@@ -115,7 +116,7 @@ export default function GameSession({
     
     // Control
     isCoop, isGameHost, localPlayerId,
-    broadcastGameData, applyDeltas, onGameEnd, onExit,
+    broadcastGameData, applyDeltas, onGameEnd, onWaveComplete, onExit,
     handlePlaceTower,
 
     // VFX
@@ -628,6 +629,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
       if (!isIntermission && allSpawned && liveEnemyCount === 0) {
           audioManager.stopMusic();
+          if (onWaveComplete) onWaveComplete();
+
           const nextWave = currentWave + 1;
           
           let stateUpdate: GameDelta | null = null;
@@ -669,7 +672,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, towersByCell, enemies, spawnedThisWave, setPlayers]);
+  }, [placedTowers, isGameHost, gameState.lives, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers]);
 
   useEffect(() => {
     if (hasInteracted) {

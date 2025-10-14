@@ -458,6 +458,7 @@ export default function SinglePlayerGame({
             broadcastGameData={applyDeltas}
             applyDeltas={applyDeltas}
             onGameEnd={handleGameEnd}
+            onWaveComplete={() => { waveInProgressRef.current = false; }}
             onExit={onExit}
             handlePlaceTower={handlePlaceTower}
             attacks={attacks}
