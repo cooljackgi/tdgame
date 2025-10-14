@@ -21,23 +21,6 @@ import { findPath } from '@/lib/pathfinding';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { httpsCallable } from "firebase/functions";
 
-// Function to find the closest path node to a given position
-function findClosestPathIndex(path: Node[], position: Node): number {
-    if (!path || path.length === 0) return 0;
-    let closestIndex = 0;
-    let minDistance = Infinity;
-
-    for (let i = 0; i < path.length; i++) {
-        const node = path[i];
-        const distSq = Math.pow(node.col - position.col, 2) + Math.pow(node.row - position.row, 2);
-        if (distSq < minDistance) {
-            minDistance = distSq;
-            closestIndex = i;
-        }
-    }
-    return closestIndex;
-}
-
 function CoopGame() {
   const { gameId } = useParams<{ gameId: string }>();
   const router = useRouter();
@@ -83,33 +66,6 @@ function CoopGame() {
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   const currentPath = useMemo(() => findPath(START_NODE, END_NODE, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
-
-  const broadcastGameData = useCallback((deltas: GameDelta[]) => {
-      if (deltas.length === 0) return;
-      
-      // Send to other players
-      if(isGameHost) {
-         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
-      }
-      
-      // Apply locally for the host. For clients, this is a no-op as they wait for server confirmation.
-      applyDeltas(deltas);
-  }, [rtc, isGameHost, applyDeltas]);
-
-  // This effect runs on the host when the path changes. It tells all enemies to update their path.
-  useEffect(() => {
-    if (!isGameHost || enemies.length === 0) return;
-
-    const deltas: GameDelta[] = enemies.map(enemy => {
-      const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
-      return [DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex];
-    });
-
-    if (deltas.length > 0) {
-      broadcastGameData(deltas);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPath]); // Only run when currentPath reference changes
 
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
     deltas.forEach(delta => {
@@ -224,6 +180,19 @@ function CoopGame() {
     });
   }, [currentPath, isGameHost]);
     
+  const broadcastGameData = useCallback((deltas: GameDelta[]) => {
+      if (deltas.length === 0) return;
+      
+      // Send to other players
+      if(isGameHost) {
+         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
+      }
+      
+      // Apply locally for the host. For clients, this is a no-op as they wait for server confirmation.
+      applyDeltas(deltas);
+  }, [rtc, isGameHost, applyDeltas]);
+
+
   useEffect(() => {
     if (!user || !gameId) return;
 
@@ -417,3 +386,4 @@ function CoopGame() {
 }
 
 export default CoopGame;
+
