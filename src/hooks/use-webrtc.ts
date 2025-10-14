@@ -62,7 +62,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     const [averagePacketSize, setAveragePacketSize] = useState(0);
 
     const signalingSocketRef = useRef<WebSocket | null>(null);
-    const selfIdRef = useRef<string>(crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+    const selfIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
     const dcPingRef = useRef<NodeJS.Timeout>();
@@ -174,7 +174,9 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (!currentGid) return;
             logWebRTCEvent(currentGid, currentRole, 'PC_CONNECTION_STATE_CHANGE', { state: pc.connectionState });
             if (pc.connectionState === 'connected') {
-                setIsConnected(true);
+                // For host, isConnected is true when its own DC opens.
+                // For client, this is a good indicator, but DC open is the real truth.
+                if (!isHostRef.current) setIsConnected(true);
                 logSelectedCandidatePair(pc);
             } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
                 setIsConnected(false);
@@ -211,7 +213,6 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (signalingSocketRef.current && signalingSocketRef.current.readyState < WebSocket.CLOSING) {
                 signalingSocketRef.current.close();
             }
-            // We do not close the peerConnection here, we reuse it or create it if it doesn't exist.
 
             const signalingUrl = getSignalingUrl(gid, isMonitorRef.current);
             logWebRTCEvent(gid, currentRole, 'SIGNALING_CONNECTING', { url: signalingUrl });
