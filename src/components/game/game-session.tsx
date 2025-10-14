@@ -192,7 +192,8 @@ export default function GameSession({
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  }, [placedTowers, isGameHost, enemies, broadcastGameData, START_NODE, END_NODE]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placedTowers, isGameHost, broadcastGameData, START_NODE.row, START_NODE.col, END_NODE.row, END_NODE.col]);
 
 
   const toggleMute = useCallback(() => {
@@ -243,7 +244,7 @@ export default function GameSession({
     setSelectedTowerToBuild(null);
     setFocusedTower(tower);
     audioManager.playSfx('build_tower');
-  }, [setSelectedTowerToBuild, setFocusedTower]);
+  }, []);
 
   const cancelInteractions = useCallback(() => {
     if (localPlayerId === 'spectator') return;
@@ -255,7 +256,7 @@ export default function GameSession({
         audioManager.playSfx('build_tower');
         setFocusedTower(null);
     }
-  }, [localPlayerId, focusedTower, selectedTowerToBuild, setSelectedTowerToBuild, setFocusedTower]);
+  }, [localPlayerId, focusedTower, selectedTowerToBuild]);
 
   const handlePlaceTower = useCallback((row: number, col: number) => {
     const localPlayer = players.find(p => p.id === localPlayerId);
@@ -305,7 +306,8 @@ export default function GameSession({
   }, [players, localPlayerId, towersByCell, selectedTowerToBuild, broadcastGameData, toast, START_NODE, END_NODE]);
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
-    if (!focusedTower || !localPlayer || localPlayerId === 'spectator') return;
+    const currentLocalPlayer = players.find(p => p.id === localPlayerId);
+    if (!focusedTower || !currentLocalPlayer || localPlayerId === 'spectator') return;
 
     const upgradeTowerSpec = towers.find(t => t.id === upgradeId);
     if (!upgradeTowerSpec) {
@@ -316,7 +318,7 @@ export default function GameSession({
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
     const cost = upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage);
     
-    if (localPlayer.resources < cost) {
+    if (currentLocalPlayer.resources < cost) {
         toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
@@ -331,7 +333,7 @@ export default function GameSession({
     };
     newTowersByCell[cellKey] = upgradedTower;
     
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources - cost } };
+    const playerUpdates = { [currentLocalPlayer.id]: { resources: currentLocalPlayer.resources - cost } };
     
     broadcastGameData([
       [DeltaType.PLAYER_UPDATE, playerUpdates],
@@ -342,10 +344,11 @@ export default function GameSession({
     setFocusedTower(null);
     audioManager.playSfx('build_tower');
 
-  }, [focusedTower, localPlayer, localPlayerId, toast, towers, difficulty, broadcastGameData, towersByCell, setFocusedTower]);
+  }, [players, localPlayerId, focusedTower, toast, towers, difficulty, broadcastGameData, towersByCell]);
   
   const handleSellTower = useCallback(async () => {
-    if (!focusedTower || !localPlayer || localPlayerId === 'spectator' || focusedTower.ownerId !== localPlayer.id) return;
+    const currentLocalPlayer = players.find(p => p.id === localPlayerId);
+    if (!focusedTower || !currentLocalPlayer || localPlayerId === 'spectator' || focusedTower.ownerId !== currentLocalPlayer.id) return;
 
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
     const refund = Math.round(focusedTower.cost * refundPercentage);
@@ -354,7 +357,7 @@ export default function GameSession({
     const newTowersByCell = { ...towersByCell };
     delete newTowersByCell[cellKey];
 
-    const playerUpdates = { [localPlayer.id]: { resources: localPlayer.resources + refund } };
+    const playerUpdates = { [currentLocalPlayer.id]: { resources: currentLocalPlayer.resources + refund } };
 
     broadcastGameData([
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
@@ -363,11 +366,11 @@ export default function GameSession({
     
     setFocusedTower(null);
     audioManager.playSfx('build_tower');
-  }, [focusedTower, localPlayer, localPlayerId, difficulty, broadcastGameData, towersByCell, setFocusedTower]);
+  }, [players, localPlayerId, focusedTower, difficulty, broadcastGameData, towersByCell]);
 
-  const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
-    const localPlayer = players.find(p => p.id === localPlayerId);
-    if (!localPlayer || !tower) {
+  const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
+    const currentLocalPlayer = players.find(p => p.id === localPlayerId);
+    if (!currentLocalPlayer || !tower) {
       if (tower === null) setSelectedTowerToBuild(null);
       return;
     }
@@ -375,7 +378,7 @@ export default function GameSession({
         setSelectedTowerToBuild(null);
         return;
     }
-    if(localPlayer.resources < tower.cost) {
+    if(currentLocalPlayer.resources < tower.cost) {
       toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
       return;
     }
@@ -942,7 +945,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             endNode={END_NODE}
             interactionPrompt={interactionPrompt}
             cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={onSelectTowerToBuild}
+            onSelectTowerToBuild={handleSelectTowerToBuild}
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
             setFocusedTower={setFocusedTower}
