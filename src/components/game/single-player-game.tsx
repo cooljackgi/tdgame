@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -450,7 +451,6 @@ export default function SinglePlayerGame({
 
         if (localPlayer.resources < tower.cost) {
             toast({ title: "Nicht genügend Ressourcen", variant: 'destructive' });
-            audioManager.playSfx('build_tower');
             return;
         }
         
@@ -503,6 +503,28 @@ export default function SinglePlayerGame({
         audioManager.playSfx('build_tower');
     }, [players, focusedTower, toast, difficulty, towersByCell, applyDeltas]);
 
+     const handleSellTower = useCallback(() => {
+        const localPlayer = players.find(p => p.id === 'player1');
+        if (!focusedTower || !localPlayer) return;
+
+        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const refund = Math.round(focusedTower.cost * refundPercentage);
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+        
+        const newTowersByCell = { ...towersByCell };
+        delete newTowersByCell[cellKey];
+
+        const playerUpdate = { [localPlayer.id]: { resources: localPlayer.resources + refund } };
+        
+        applyDeltas([
+            [DeltaType.PLAYER_UPDATE, playerUpdate],
+            [DeltaType.TOWERS_UPDATE, newTowersByCell],
+        ]);
+        
+        setFocusedTower(null);
+        audioManager.playSfx('build_tower');
+    }, [players, focusedTower, difficulty, towersByCell, applyDeltas]);
+
 
     if (players.length === 0) {
         return (
@@ -546,6 +568,7 @@ export default function SinglePlayerGame({
             finalGameResult={finalGameResult}
             // Props specifically for single-player that are passed down
             handleUpgradeTower={handleUpgradeTower}
+            handleSellTower={handleSellTower}
             handleSelectTowerToBuild={handleSelectTowerToBuild}
             selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}

@@ -298,18 +298,18 @@ export default function GameSession({
 
     if (builderId === 'spectator') return;
 
+    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+
     if (isCoop && !isGameHost) {
-        const towerToBuild = selectedTowerToBuild;
         if (towerToBuild) {
             console.log(`[GameSession - Client] Requesting to build tower: ${towerToBuild.id} at ${row},${col}`);
             broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
-            cancelInteractions();
+            // Don't cancel interactions here for the client
         }
         return;
     }
 
     console.log(`[GameSession - Host] Processing build request for player ${builderId}`);
-    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
     const builderPlayer = players.find(p => p.id === builderId);
     
     if (!towerToBuild || !builderPlayer) {
@@ -340,6 +340,7 @@ export default function GameSession({
         if(builderId === localPlayerId) {
             toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         }
+        // Don't cancel interaction, let the player try again on another cell
         return;
     }
 
@@ -365,7 +366,11 @@ export default function GameSession({
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
         audioManager.playSfx('build_tower');
-        cancelInteractions();
+        // Do NOT cancel interactions here to allow chain-building
+        const remainingResources = playerUpdates[builderPlayer.id].resources;
+        if(remainingResources < towerToBuild.cost){
+            cancelInteractions();
+        }
     }
 }, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, cancelInteractions, players, towersByCell, toast, START_NODE, END_NODE]);
 
@@ -1191,3 +1196,4 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
