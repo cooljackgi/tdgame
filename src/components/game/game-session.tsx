@@ -294,22 +294,27 @@ export default function GameSession({
 
  const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id']) => {
     const builderId = requestedByPlayerId || localPlayerId;
-    console.log(`[GameSession] handlePlaceTower called by ${builderId}`);
-
-    if (builderId === 'spectator') return;
-
     const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+    const cellKey = `${row}_${col}`;
+    const existingTower = towersByCell[cellKey];
 
-    if (isCoop && !isGameHost) {
-        if (towerToBuild) {
-            console.log(`[GameSession - Client] Requesting to build tower: ${towerToBuild.id} at ${row},${col}`);
-            broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
-            // Don't cancel interactions here for the client
+    // NEW: If trying to build on an existing tower, select it instead.
+    if (existingTower && towerToBuild) {
+        if (builderId === localPlayerId) {
+            onFocusTower(existingTower);
         }
         return;
     }
 
-    console.log(`[GameSession - Host] Processing build request for player ${builderId}`);
+    if (builderId === 'spectator') return;
+
+    if (isCoop && !isGameHost) {
+        if (towerToBuild) {
+            broadcastGameData([[DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId }]], true);
+        }
+        return;
+    }
+    
     const builderPlayer = players.find(p => p.id === builderId);
     
     if (!towerToBuild || !builderPlayer) {
@@ -319,28 +324,20 @@ export default function GameSession({
        return;
     }
 
-    const cellKey = `${row}_${col}`;
-    if (towersByCell[cellKey]) {
-        if(builderId === localPlayerId) {
-            toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
-        }
+    if (existingTower) { // Should be caught by the new logic, but keep as failsafe
+        if(builderId === localPlayerId) toast({ title: "Bau nicht möglich", description: "Feld ist bereits belegt.", variant: "destructive" });
         return;
     }
 
     const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
     const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
     if (!newPath) {
-        if(builderId === localPlayerId) {
-            toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
-        }
+        if(builderId === localPlayerId) toast({ title: "Bau fehlgeschlagen", description: "Der Weg für die Gegner darf nicht blockiert werden.", variant: 'destructive' });
         return;
     }
 
     if (builderPlayer.resources < towerToBuild.cost) {
-        if(builderId === localPlayerId) {
-            toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
-        }
-        // Don't cancel interaction, let the player try again on another cell
+        if(builderId === localPlayerId) toast({ title: "Bau fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
         return;
     }
 
@@ -366,13 +363,8 @@ export default function GameSession({
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
         audioManager.playSfx('build_tower');
-        // Do NOT cancel interactions here to allow chain-building
-        const remainingResources = playerUpdates[builderPlayer.id].resources;
-        if(remainingResources < towerToBuild.cost){
-            cancelInteractions();
-        }
     }
-}, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, cancelInteractions, players, towersByCell, toast, START_NODE, END_NODE]);
+}, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, players, towersByCell, toast, START_NODE, END_NODE, onFocusTower]);
 
   
   const handleUpgradeTower = useCallback(async (upgradeId: string) => {
@@ -1196,4 +1188,5 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
