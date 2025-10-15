@@ -5,6 +5,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { logWebRTCEvent } from '@/lib/logging';
 import type { User } from 'firebase/auth';
 
+const RELAY_DEFAULT = 'wss://ws-relay-345017018409.us-central1.run.app';
+
 // STUN Server Konfiguration (Google's öffentliche Server)
 const iceConfiguration: RTCConfiguration = {
   iceServers: [
@@ -29,6 +31,7 @@ export type NetMsg = {
 export type UseWebRTCReturn = {
     lastMessage: NetMsg | null;
     sendMessage: (message: NetMsg) => void;
+    sendActionRequest: (type: string, payload: any) => void;
     isConnected: boolean; // True, wenn der DataChannel offen ist
     packetsPerSecond: number;
     bytesPerSecond: number;
@@ -36,21 +39,15 @@ export type UseWebRTCReturn = {
 };
 
 const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
-    const baseQuery = `?gameId=${encodeURIComponent(gameId)}`;
-    const fullQuery = isMonitor ? `${baseQuery}&monitor=1` : baseQuery;
+  const q = `?gameId=${encodeURIComponent(gameId)}${isMonitor ? '&monitor=1' : ''}`;
 
-    // Priority 1: Use the environment variable if it's set (for production)
-    const envBase = process.env.NEXT_PUBLIC_WS_BASE;
-    if (envBase) {
-      const baseUrl = envBase.endsWith('/ws') ? envBase.substring(0, envBase.length - 3) : envBase;
-      return `${baseUrl}/ws${fullQuery}`;
-    }
+  // 1) ENV erlaubt Override (nice-to-have)
+  const envBase = process.env.NEXT_PUBLIC_WS_BASE;
+  const base = (envBase ? envBase.replace(/\/ws$/, '') : RELAY_DEFAULT);
 
-    // Priority 2: Fallback for local development, using the Next.js rewrite path.
-    const proto = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = typeof window !== 'undefined' ? window.location.host : '';
-    return `${proto}//${host}/ws${fullQuery}`;
+  return `${base}/ws${q}`;
 };
+
 
 export function useWebRTC(gameId: string | null, isHost: boolean, user: User | null, isMonitor: boolean = false): UseWebRTCReturn {
     const [lastMessage, setLastMessage] = useState<NetMsg | null>(null);
@@ -123,7 +120,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (event.data === '{"type":"_ping"}') return;
             try {
                 const message = JSON.parse(event.data) as NetMsg;
-                console.log(`[useWebRTC - ${currentRole}] 📩 RX:`, message);
+                // console.log(`[useWebRTC - ${currentRole}] 📩 RX:`, message);
                 setLastMessage(message);
                 packetCountRef.current++;
                 byteCountRef.current += event.data.length;
@@ -175,7 +172,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                   from: selfIdRef.current,
                   payload: event.candidate
                 };
-                console.log(`[useWebRTC - ${currentRole}] 🧊 Sending ICE candidate:`, msg);
+                // console.log(`[useWebRTC - ${currentRole}] 🧊 Sending ICE candidate:`, msg);
                 signalingSocketRef.current.send(JSON.stringify(msg));
                 if (gid) logWebRTCEvent(gid, currentRole, 'PC_ICE_CANDIDATE', { candidate: event.candidate.candidate });
             }
@@ -251,7 +248,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                     const sendHello = () => {
                        if (ws.readyState === WebSocket.OPEN) {
                          const msg = { kind:'signal', type:'hello', from:selfIdRef.current };
-                         console.log(`[useWebRTC - ${currentRole}] 👋 Sending hello:`, msg);
+                        //  console.log(`[useWebRTC - ${currentRole}] 👋 Sending hello:`, msg);
                          ws.send(JSON.stringify(msg));
                        }
                     };
@@ -263,7 +260,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
-                console.log(`[useWebRTC - ${currentRole}] 📩 Signaling RX:`, msg);
+                // console.log(`[useWebRTC - ${currentRole}] 📩 Signaling RX:`, msg);
                 if(isMonitorRef.current || (msg.from && msg.from === selfIdRef.current)) return;
                 
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
@@ -408,8 +405,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         if (dc?.readyState === 'open' && dc.bufferedAmount < MAX_BUFFERED) {
             try {
                 const msgStr = JSON.stringify(message);
-                const role = isHostRef.current ? 'Host' : 'Client';
-                console.log(`[useWebRTC - ${role}] 📤 TX:`, message);
+                // const role = isHostRef.current ? 'Host' : 'Client';
+                // console.log(`[useWebRTC - ${role}] 📤 TX:`, message);
                 dc.send(msgStr);
                 packetCountRef.current++;
                 byteCountRef.current += msgStr.length;
@@ -419,5 +416,10 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         }
     }, []);
 
-    return { lastMessage, sendMessage, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize };
+    const sendActionRequest = useCallback((type: string, payload: any) => {
+        if (isHostRef.current || isMonitorRef.current) return;
+        sendMessage({ type, payload });
+    }, [sendMessage]);
+
+    return { lastMessage, sendMessage, sendActionRequest, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize };
 }

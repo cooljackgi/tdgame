@@ -12,7 +12,7 @@ import { useWebRTC } from '@/hooks/use-webrtc';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
-import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element, WorkerState } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element } from '@/lib/game-data/types';
 import { Loader2 } from "lucide-react";
 import { DeltaType } from "@/lib/game-data/types";
 import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from "@/lib/game-data/constants";
@@ -61,7 +61,10 @@ function CoopGame() {
   const [hostBytesSentPerSecond, setHostBytesSentPerSecond] = useState(0);
   const [averagePacketSize, setAveragePacketSize] = useState(0);
 
-  const rtc = useWebRTC(gameId, isGameHost, user);
+  // Memoize the isGameHost value to provide a stable reference to useWebRTC
+  const memoizedIsGameHost = useMemo(() => isGameHost, [isGameHost]);
+  const rtc = useWebRTC(gameId, memoizedIsGameHost, user);
+
 
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -196,7 +199,6 @@ function CoopGame() {
       
       // Send to other players
       if(isGameHost) {
-         // console.log("[CoopGame] Host broadcasting deltas:", deltas);
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
       
@@ -294,7 +296,7 @@ function CoopGame() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, isGameHost]);
+  }, [user, gameId, router, toast]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -328,16 +330,8 @@ function CoopGame() {
     const { type, payload } = rtc.lastMessage;
     // console.log("[CoopGame] Received message from useWebRTC:", { type, payload });
 
-    const isActionRequest = (t: string): t is 'BUILD_TOWER_REQUEST' | 'UPGRADE_TOWER_REQUEST' | 'SELL_TOWER_REQUEST' => {
-        return t === 'BUILD_TOWER_REQUEST' || t === 'UPGRADE_TOWER_REQUEST' || t === 'SELL_TOWER_REQUEST';
-    };
-
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
-    } else if (isActionRequest(type) && isGameHost) {
-      // This is a client request for the host to process
-      console.log(`[CoopGame] Host received action request via WebRTC: ${type}`);
-      document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type: DeltaType[type], payload } }));
     }
   }, [rtc.lastMessage, applyDeltas, isGameHost]);
 
@@ -391,6 +385,7 @@ function CoopGame() {
       isGameHost={isGameHost}
       localPlayerId={localPlayerId}
       broadcastGameData={broadcastGameData}
+      sendActionRequest={rtc.sendActionRequest}
       applyDeltas={applyDeltas}
       onGameEnd={handleGameEnd}
       onExit={() => router.push('/')}
