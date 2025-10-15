@@ -259,18 +259,29 @@ export default function GameSession({
       return;
     }
     
-    let newStatus: GameStatus = gameStatus;
+    let stateUpdate: Partial<GameState & { gameStatus: GameStatus, isIntermission: boolean, waveStartCountdown: number }> = {};
+    
     if (gameStatus === 'playing') {
-        newStatus = 'paused';
+      stateUpdate = { gameStatus: 'paused' };
     } else if (gameStatus === 'paused' || gameStatus === 'waiting') {
-        newStatus = 'playing';
+      stateUpdate = {
+        gameStatus: 'playing',
+        isIntermission: isIntermission && gameStatus === 'paused', // Only stay in intermission if we were paused in it
+        waveStartCountdown: isIntermission ? waveStartCountdown : 0,
+      };
+      // If we are starting from 'waiting' or starting a paused wave, ensure intermission is false
+      if (gameStatus === 'waiting' || (gameStatus === 'paused' && isIntermission)) {
+          stateUpdate.isIntermission = false;
+          stateUpdate.waveStartCountdown = 0;
+      }
     } else {
-        return; // Don't do anything for gameover or picking-element
+      return;
     }
+    
+    broadcastGameData([[DeltaType.GAME_STATE_UPDATE, stateUpdate]]);
 
-    broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { gameStatus: newStatus }]]);
+  }, [gameStatus, isCoop, isGameHost, isIntermission, waveStartCountdown, toast, localPlayerId, broadcastGameData]);
 
-  }, [gameStatus, isCoop, isGameHost, toast, localPlayerId, broadcastGameData]);
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
     if (isCoop) {
@@ -304,8 +315,6 @@ export default function GameSession({
  const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id'], requestedTowerId?: string) => {
     const builderId = requestedByPlayerId || localPlayerId;
     
-    // Determine the tower to build. If it's a request from another player, find it by ID.
-    // Otherwise, use the locally selected tower.
     const towerToBuild = (isCoop && requestedByPlayerId)
       ? towers.find(t => t.id === requestedTowerId)
       : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild);
@@ -1195,6 +1204,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
 
 
