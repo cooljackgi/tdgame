@@ -120,8 +120,12 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (event.data === '{"type":"_ping"}') return;
             try {
                 const message = JSON.parse(event.data) as NetMsg;
-                // console.log(`[useWebRTC - ${currentRole}] 📩 RX:`, message);
-                setLastMessage(message);
+                // Client action requests are not set as lastMessage, but dispatched as events for the host.
+                if (isHostRef.current && message.type.endsWith('_REQUEST')) {
+                    document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: message }));
+                } else {
+                    setLastMessage(message);
+                }
                 packetCountRef.current++;
                 byteCountRef.current += event.data.length;
             } catch (error) {

@@ -303,7 +303,7 @@ export default function GameSession({
     if (isCoop && !isGameHost) {
         if (towerToBuild && sendActionRequest) {
             console.log(`[GameSession - Client] Requesting to build tower at ${row},${col}`);
-            sendActionRequest(DeltaType.BUILD_TOWER_REQUEST, { towerId: towerToBuild.id, row, col, playerId: builderId });
+            sendActionRequest(DeltaType.BUILD_TOWER_REQUEST.toString(), { towerId: towerToBuild.id, row, col, playerId: builderId });
         }
         // Client optimistically clears build selection, host will confirm with state update.
         if (isCoop) setSelectedTowerToBuild(null); else if (spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(null);
@@ -317,6 +317,7 @@ export default function GameSession({
     if (existingTower) {
         if (builderId === localPlayerId) { // only focus if the action is local
             onFocusTower(existingTower);
+            if (isCoop) setSelectedTowerToBuild(null); else if(spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(null);
         }
         return;
     }
@@ -360,11 +361,9 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    // In single player or if host is building, keep the tower selected for multi-build
-    if (!isCoop) {
-        if (spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(towerToBuild);
-    } else {
-        setSelectedTowerToBuild(towerToBuild);
+    // In single player or if host is building, do not clear the selected tower.
+    if (isCoop && builderId !== localPlayerId) {
+        setSelectedTowerToBuild(null);
     }
     
     // VFX only for the person who initiated the build
@@ -389,7 +388,7 @@ export default function GameSession({
     if (isCoop && !isGameHost) {
         if (sendActionRequest) {
             console.log(`[GameSession - Client] Requesting to upgrade tower at ${currentFocusedTower.position.row},${currentFocusedTower.position.col}`);
-            sendActionRequest(DeltaType.UPGRADE_TOWER_REQUEST, { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, upgradeId: upgradeId, playerId: localPlayerId });
+            sendActionRequest(DeltaType.UPGRADE_TOWER_REQUEST.toString(), { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, upgradeId: upgradeId, playerId: localPlayerId });
             cancelInteractions();
         }
         return;
@@ -458,7 +457,7 @@ export default function GameSession({
     if (isCoop && !isGameHost) {
         if(sendActionRequest) {
             console.log(`[GameSession - Client] Requesting to sell tower at ${currentFocusedTower.position.row},${currentFocusedTower.position.col}`);
-            sendActionRequest(DeltaType.SELL_TOWER_REQUEST, { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, playerId: localPlayerId });
+            sendActionRequest(DeltaType.SELL_TOWER_REQUEST.toString(), { row: currentFocusedTower.position.row, col: currentFocusedTower.position.col, playerId: localPlayerId });
             cancelInteractions();
         }
         return;
@@ -912,7 +911,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
         const { type, payload } = (ev as CustomEvent).detail;
         console.log(`[GameSession - Host] Handling event ${type} with payload:`, payload);
 
-        if (type === DeltaType.BUILD_TOWER_REQUEST) {
+        if (type === DeltaType.BUILD_TOWER_REQUEST.toString()) {
             const { towerId, row, col, playerId } = payload;
             const spec = towers.find(t => t.id === towerId);
             if (!spec) return;
@@ -922,16 +921,11 @@ const handleLoadAllTowersLayout = useCallback(() => {
             
             setTimeout(() => {
                 handlePlaceTower(row, col, playerId);
-                // Restore selection for host's own multi-build, but not client's
-                if (isCoop && playerId === localPlayerId) {
-                  setSelectedTowerToBuild(spec);
-                } else if(isCoop) {
-                  setSelectedTowerToBuild(original);
-                }
+                if (isCoop) setSelectedTowerToBuild(original);
             }, 0);
         }
 
-        if (type === DeltaType.UPGRADE_TOWER_REQUEST) {
+        if (type === DeltaType.UPGRADE_TOWER_REQUEST.toString()) {
             const { row, col, upgradeId } = payload;
             const cellKey = `${row}_${col}`;
             const t = towersByCell[cellKey];
@@ -946,7 +940,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             }, 0);
         }
 
-        if (type === DeltaType.SELL_TOWER_REQUEST) {
+        if (type === DeltaType.SELL_TOWER_REQUEST.toString()) {
             const { row, col } = payload;
             const cellKey = `${row}_${col}`;
             const t = towersByCell[cellKey];
@@ -1206,6 +1200,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
 
 

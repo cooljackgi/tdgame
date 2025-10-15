@@ -255,7 +255,7 @@ function CoopGame() {
                 setPlayers(normalized);
 
                 const currentIsHost = data.player1Id === user.uid;
-                if (currentIsHost !== isGameHost) {
+                if (currentIsHost !== memoizedIsGameHost) {
                    console.log(`[CoopGame] Host status changed to: ${currentIsHost}`);
                    setIsGameHost(currentIsHost);
                 }
@@ -296,7 +296,7 @@ function CoopGame() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast]);
+  }, [user, gameId, router, toast, isGameHost, memoizedIsGameHost]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
