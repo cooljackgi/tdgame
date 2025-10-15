@@ -214,6 +214,14 @@ export default function GameSession({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placedTowers, isGameHost, broadcastGameData, START_NODE.row, START_NODE.col, END_NODE.row, END_NODE.col]);
 
+  // This effect runs on the host to start the game when P2 joins.
+  useEffect(() => {
+    if (isGameHost && gameStatus === 'waiting' && players.length === 2 && players.every(p => p.id)) {
+        console.log("[GameSession - Host] Player 2 detected, starting game countdown.");
+        broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }]]);
+    }
+  }, [isGameHost, gameStatus, players, broadcastGameData]);
+
 
   const toggleMute = useCallback(() => {
     setIsMuted(prev => {
@@ -302,6 +310,7 @@ export default function GameSession({
     // If not host in a coop game, send a request to the host
     if (isCoop && !isGameHost) {
         if (towerToBuild && sendActionRequest) {
+            console.log(`[GameSession - Client] Requesting to build tower at ${row},${col}`);
             sendActionRequest(DeltaType.BUILD_TOWER_REQUEST.toString(), { towerId: towerToBuild.id, row, col, playerId: builderId });
         }
         // Client optimistically clears build selection, host will confirm with state update.
@@ -359,11 +368,6 @@ export default function GameSession({
         [DeltaType.TOWERS_UPDATE, newTowersByCell],
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
-    
-    // In single player or if host is building, do not clear the selected tower.
-    if (isCoop && builderId !== localPlayerId) {
-        setSelectedTowerToBuild(null);
-    }
     
     // VFX only for the person who initiated the build
     if(builderId === localPlayerId) {
@@ -1200,6 +1204,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
 
 

@@ -8,20 +8,6 @@ if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-// Connect to emulators if running in development/emulator environment
-if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV === 'development') {
-    console.log("Connecting Functions to Firestore and Auth emulators...");
-    // The Admin SDK automatically uses the Auth emulator if FIRESTORE_EMULATOR_HOST is set.
-    // However, for direct admin.firestore() calls, we might need to be explicit.
-    if(process.env.FIRESTORE_EMULATOR_HOST) {
-      admin.firestore().settings({
-          host: process.env.FIRESTORE_EMULATOR_HOST,
-          ssl: false,
-      });
-    }
-}
-
-
 const db = admin.firestore();
 
 // --- Zod Schemas for Input Validation ---
@@ -71,15 +57,13 @@ export const joinGame = functions.https.onCall(async (data, context) => {
          return; 
       }
       const resources = gameData?.players?.player1?.resources ?? 1250;
+      // The function now ONLY adds the player. The host will be responsible for starting the game.
       transaction.update(gameRef, { 
         player2Id: uid, 
         'members': { ...gameData?.members, [uid]: true },
         'players.player2': {
             id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
         },
-        gameStatus: 'playing', // Set game to playing now that P2 has joined
-        isIntermission: true,
-        waveStartCountdown: 15, // Start the actual intermission countdown
       });
     });
     return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };
