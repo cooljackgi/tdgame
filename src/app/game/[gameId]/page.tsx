@@ -196,7 +196,7 @@ function CoopGame() {
       
       // Send to other players
       if(isGameHost) {
-         console.log("[CoopGame] Host broadcasting deltas:", deltas);
+         // console.log("[CoopGame] Host broadcasting deltas:", deltas);
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
       
@@ -223,10 +223,9 @@ function CoopGame() {
             const gameData = gameSnap.data();
             let isPlayer1 = gameData.player1Id === uid;
             let isPlayer2 = gameData.player2Id === uid;
-            const isFull = !!gameData.player2Id;
 
             // If user is not in the game and it's not full, join them.
-            if (!isPlayer1 && !isPlayer2 && !isFull && !gameData.isTestGame) {
+            if (!isPlayer1 && !isPlayer2 && !gameData.player2Id && !gameData.isTestGame) {
                 console.log("[CoopGame] User not in game, attempting to join...");
                 const joinGameCallable = httpsCallable(functions, 'joinGame');
                 await joinGameCallable({ gameId });
@@ -324,17 +323,23 @@ function CoopGame() {
   
 
   useEffect(() => {
-    if (!rtc?.lastMessage) return;
+    if (!rtc.lastMessage) return;
+    
     const { type, payload } = rtc.lastMessage;
-    console.log("[CoopGame] Received message from useWebRTC:", { type, payload });
+    // console.log("[CoopGame] Received message from useWebRTC:", { type, payload });
+
+    const isActionRequest = (t: string): t is 'BUILD_TOWER_REQUEST' | 'UPGRADE_TOWER_REQUEST' | 'SELL_TOWER_REQUEST' => {
+        return t === 'BUILD_TOWER_REQUEST' || t === 'UPGRADE_TOWER_REQUEST' || t === 'SELL_TOWER_REQUEST';
+    };
 
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
-    } else {
-      // This handles single action requests from clients
-      applyDeltas([[type as any, payload]]);
+    } else if (isActionRequest(type) && isGameHost) {
+      // This is a client request for the host to process
+      console.log(`[CoopGame] Host received action request via WebRTC: ${type}`);
+      document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type: DeltaType[type], payload } }));
     }
-  }, [rtc.lastMessage, applyDeltas]);
+  }, [rtc.lastMessage, applyDeltas, isGameHost]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
