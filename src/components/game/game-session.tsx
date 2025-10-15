@@ -301,29 +301,30 @@ export default function GameSession({
     }
   }, [localPlayerId, selectedTowerToBuild, focusedTower, isCoop, spSelectedTowerToBuild, spFocusedTower, spHandleSelectTowerToBuild, spSetFocusedTower]);
 
- const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id']) => {
+ const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id'], requestedTowerId?: string) => {
     const builderId = requestedByPlayerId || localPlayerId;
-    const towerToBuild = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+    
+    // Determine the tower to build. If it's a request from another player, find it by ID.
+    // Otherwise, use the locally selected tower.
+    const towerToBuild = (isCoop && requestedByPlayerId)
+      ? towers.find(t => t.id === requestedTowerId)
+      : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild);
     
     if (builderId === 'spectator') return;
      
-    // If not host in a coop game, send a request to the host
     if (isCoop && !isGameHost) {
         if (towerToBuild && sendActionRequest) {
             console.log(`[GameSession - Client] Requesting to build tower at ${row},${col}`);
             sendActionRequest(DeltaType.BUILD_TOWER_REQUEST.toString(), { towerId: towerToBuild.id, row, col, playerId: builderId });
         }
-        // Client optimistically clears build selection, host will confirm with state update.
-        if (isCoop) setSelectedTowerToBuild(null); else if (spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(null);
         return;
     }
     
     const cellKey = `${row}_${col}`;
     const existingTower = towersByCell[cellKey];
 
-    // If trying to build on an existing tower, select it instead.
     if (existingTower) {
-        if (builderId === localPlayerId) { // only focus if the action is local
+        if (builderId === localPlayerId) {
             onFocusTower(existingTower);
             if (isCoop) setSelectedTowerToBuild(null); else if(spHandleSelectTowerToBuild) spHandleSelectTowerToBuild(null);
         }
@@ -334,7 +335,7 @@ export default function GameSession({
     
     if (!towerToBuild || !builderPlayer) {
        if(builderId === localPlayerId) {
-            toast({ title: "Bau nicht möglich", description: "Kein Turm ausgewählt oder du bist Zuschauer.", variant: "destructive" });
+            toast({ title: "Bau nicht möglich", description: !towerToBuild ? "Kein Turm zum Bauen ausgewählt." : "Bauender Spieler nicht gefunden.", variant: "destructive" });
         }
        return;
     }
@@ -369,13 +370,12 @@ export default function GameSession({
         [DeltaType.PLAYER_UPDATE, playerUpdates]
     ]);
     
-    // VFX only for the person who initiated the build
     if(builderId === localPlayerId) {
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
         audioManager.playSfx('build_tower');
     }
-}, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, players, towersByCell, toast, START_NODE, END_NODE, onFocusTower, sendActionRequest, spHandleSelectTowerToBuild]);
+}, [localPlayerId, isCoop, isGameHost, selectedTowerToBuild, spSelectedTowerToBuild, broadcastGameData, players, towersByCell, toast, START_NODE, END_NODE, onFocusTower, sendActionRequest, spHandleSelectTowerToBuild, towers]);
 
   
   const handleUpgradeTower = useCallback(async (upgradeId: string, requestedByPlayerId?: Player['id']) => {
@@ -917,20 +917,11 @@ const handleLoadAllTowersLayout = useCallback(() => {
     const onHostAction = (ev: Event) => {
         const { type, payload } = (ev as CustomEvent).detail;
         console.log(`[GameSession - Host] Handling event ${type} with payload:`, payload);
-        const { row, col, playerId, upgradeId } = payload;
+        const { row, col, playerId, upgradeId, towerId } = payload;
 
         switch (String(type)) {
             case DeltaType.BUILD_TOWER_REQUEST.toString():
-                const spec = towers.find(t => t.id === payload.towerId);
-                if (!spec) return;
-
-                const original = selectedTowerToBuild;
-                setSelectedTowerToBuild(spec);
-                // Use timeout to ensure state update has propagated before calling handler
-                setTimeout(() => {
-                    handlePlaceTower(row, col, playerId);
-                    setSelectedTowerToBuild(original);
-                }, 0);
+                handlePlaceTower(row, col, playerId, towerId);
                 break;
 
             case DeltaType.UPGRADE_TOWER_REQUEST.toString():
@@ -961,7 +952,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
     document.addEventListener('hostActionRequest', onHostAction as EventListener);
     return () => document.removeEventListener('hostActionRequest', onHostAction as EventListener);
-  }, [isGameHost, towers, towersByCell, handlePlaceTower, handleUpgradeTower, handleSellTower, selectedTowerToBuild, focusedTower]);
+  }, [isGameHost, towers, towersByCell, handlePlaceTower, handleUpgradeTower, handleSellTower, focusedTower]);
 
 
   useEffect(() => {
@@ -1204,6 +1195,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
 
 
