@@ -11,7 +11,7 @@
     {
       "target": "nextn",
       "source": ".",
-      "frameworksBackend": {
+      "apphosting": {
         "region": "us-central1"
       }
     }
