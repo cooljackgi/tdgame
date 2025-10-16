@@ -288,7 +288,7 @@ export default function SinglePlayerGame({
             const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
             // Only update if the new index is valid and different, to prevent unnecessary updates
             if (newPathIndex !== enemy.pathIndex) {
-                 deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex]);
+                 deltas.push([DeltaType.ENEMY_PATH_UPDATE, currentPath, newPathIndex]);
             }
         });
 
@@ -488,6 +488,7 @@ export default function SinglePlayerGame({
             lastAttack: focusedTower.lastAttack,
             health: upgradeTowerSpec.maxHealth,
             ownerId: localPlayer.id,
+            isBase: upgradeTowerSpec.isBase,
         };
         newTowersByCell[cellKey] = upgradedTower;
         

@@ -186,6 +186,7 @@ export default function GameSession({
   const gameLoopRef = useRef<ReturnType<typeof setInterval> | undefined>();
   const lastRafTimeRef = useRef(performance.now());
   const simAccumulatorRef = useRef(0);
+  const simulateRef = useRef<() => void>();
   
   const difficultyMod = difficultyModifiers[difficulty];
   const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
@@ -639,7 +640,8 @@ const handleLoadAllTowersLayout = useCallback(() => {
     ]);
   };
   
- const simulate = useCallback(async () => {
+ const simulate = useCallback(() => {
+    if (!isGameHost) return;
     const now = performance.now();
     const deltas: GameDelta[] = [];
     let enemiesMap = new Map(enemies.map(e => [e.id, { ...e }]));
@@ -734,7 +736,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                   const dy = otherEnemy.position.row - enemy.position.row;
                   if (dx * dx + dy * dy <= (tower.effect!.radius! * tower.effect!.radius!)) {
                       if (!damageToApply.has(otherEnemy.id)) damageToApply.set(otherEnemy.id, { totalDamage: 0, sources: [] });
-                      damageToApply.get(otherEnemy.id)!.totalDamage += damage * (tower.effect.potency ?? 1);
+                      damageToApply.get(otherEnemy.id)!.totalDamage += damage * (tower.effect.potency ?? 0.8);
                   }
               });
           }
@@ -908,54 +910,10 @@ const handleLoadAllTowersLayout = useCallback(() => {
     }
 
     if (deltas.length > 0) {
-      broadcastGameData(deltas);
+      applyDeltas(deltas);
     }
-  }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
-
-  useEffect(() => {
-    if (!isGameHost) return;
-
-    const onHostAction = (ev: Event) => {
-        const { type, payload } = (ev as CustomEvent).detail;
-        const { row, col, playerId, upgradeId, towerId } = payload;
-
-        switch (String(type)) {
-            case DeltaType.BUILD_TOWER_REQUEST.toString():
-                handlePlaceTower(row, col, playerId, towerId);
-                break;
-            case DeltaType.UPGRADE_TOWER_REQUEST.toString():
-                const towerToUpgrade = towersByCell[`${row}_${col}`];
-                if (!towerToUpgrade) return;
-                const originalFocusUpgrade = focusedTower;
-                setFocusedTower(towerToUpgrade);
-                setTimeout(() => {
-                    handleUpgradeTower(upgradeId, playerId);
-                    setFocusedTower(originalFocusUpgrade);
-                }, 0);
-                break;
-            case DeltaType.SELL_TOWER_REQUEST.toString():
-                const towerToSell = towersByCell[`${row}_${col}`];
-                if (!towerToSell) return;
-                const originalFocusSell = focusedTower;
-                setFocusedTower(towerToSell);
-                setTimeout(() => {
-                    handleSellTower(playerId);
-                    setFocusedTower(originalFocusSell);
-                }, 0);
-                break;
-        }
-    };
-
-    document.addEventListener('hostActionRequest', onHostAction as EventListener);
-    return () => document.removeEventListener('hostActionRequest', onHostAction as EventListener);
-  }, [isGameHost, towers, towersByCell, handlePlaceTower, handleUpgradeTower, handleSellTower, focusedTower]);
-
-
-  useEffect(() => {
-    if (hasInteracted) {
-      // Music logic is handled by wave start/stop
-    }
-  }, [hasInteracted]);
+  }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers, applyDeltas]);
+  useEffect(() => { simulateRef.current = simulate; }, [simulate]);
   
   const frameCountRef = useRef(0);
   const lastFpsUpdateTimeRef = useRef(performance.now());
@@ -963,7 +921,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
   useEffect(() => {
     let isTabVisible = true;
 
-    if (!isGameHost || gameStatus !== 'playing') {
+    if (isCoop || gameStatus !== 'playing') {
       if (gameLoopRef.current) {
         if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
         else clearInterval(gameLoopRef.current);
@@ -986,7 +944,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
         let steps = 0;
         while (simAccumulatorRef.current >= FIXED_DT_MS && steps < MAX_SIM_STEPS) {
-            simulate();
+            simulateRef.current?.();
             simAccumulatorRef.current -= FIXED_DT_MS;
             steps++;
         }
@@ -1008,7 +966,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
         simAccumulatorRef.current += frameTime;
         
         while(simAccumulatorRef.current >= FIXED_DT_MS) {
-            simulate();
+            simulateRef.current?.();
             simAccumulatorRef.current -= FIXED_DT_MS;
         }
     };
@@ -1018,18 +976,16 @@ const handleLoadAllTowersLayout = useCallback(() => {
       if (isVisible === isTabVisible) return;
       isTabVisible = isVisible;
       
-      if (isCoop) {
-        if (gameLoopRef.current) {
-            if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
-            else clearInterval(gameLoopRef.current);
-        }
+      if (gameLoopRef.current) {
+          if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
+          else clearInterval(gameLoopRef.current);
+      }
 
-        if (isVisible) {
-            lastRafTimeRef.current = performance.now();
-            gameLoopRef.current = requestAnimationFrame(rafLoop);
-        } else {
-            gameLoopRef.current = setInterval(intervalLoop, FIXED_DT_MS);
-        }
+      if (isVisible) {
+          lastRafTimeRef.current = performance.now();
+          gameLoopRef.current = requestAnimationFrame(rafLoop);
+      } else {
+          gameLoopRef.current = setInterval(intervalLoop, FIXED_DT_MS);
       }
     };
 
@@ -1044,7 +1000,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             else clearInterval(gameLoopRef.current);
         }
     }
-  }, [gameStatus, isGameHost, simulate, isCoop, setFps]);
+  }, [gameStatus, isCoop, setFps]);
 
   const applyEffectToEnemy = (enemy: Enemy, effect: TowerEffect, now: number): [Enemy, GameDelta | null] => {
     const newEffects = [...enemy.effects];
@@ -1190,3 +1146,4 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
