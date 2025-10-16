@@ -79,6 +79,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     try {
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
+      // The joinGame function now sets the state, we can navigate directly
       router.push(`/game/${gameId}`);
     } catch (error: any) {
       console.error("Failed to join game:", error);
@@ -93,11 +94,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   const handleStartGame = async (gameId: string) => {
     try {
-        const gameRef = doc(db, 'games', gameId);
-        await updateDoc(gameRef, {
-            isIntermission: true, // Should already be set by joinGame, but good to be sure
-            waveStartCountdown: INTERMISSION_TIME
-        });
+        // No need to update the doc here anymore, as joinGame handles the state transition.
+        // We just navigate. Add a small delay to prevent race conditions.
+        await new Promise(resolve => setTimeout(resolve, 250));
         router.push(`/game/${gameId}`);
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
@@ -147,6 +146,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               const isFull = !!player2;
               const isCreator = game.player1Id === currentUser.uid;
               const isJoiningThisGame = joiningGameId === game.id;
+              const isPlaying = game.gameStatus === 'playing';
 
               return (
                 <li key={game.id} className="flex items-center justify-between p-3 bg-background/50 rounded-md border border-white/5">
@@ -156,14 +156,14 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
                       {player1?.avatarUrl && <img src={player1.avatarUrl} alt="P1" className="h-5 w-5 rounded-full mr-1"/>}
                       {player1?.name || 'Spieler 1'} vs.
                       {player2 ? <>{player2.avatarUrl && <img src={player2.avatarUrl} alt="P2" className="h-5 w-5 rounded-full ml-1 mr-1"/>} {player2.name}</> : ' Wartet...'}
-                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${game.gameStatus === 'waiting' ? 'bg-amber-500/20 text-amber-400' : 'bg-primary/20 text-primary'}`}>
-                        {game.gameStatus === 'waiting' ? 'Wartet' : 'Läuft'}
+                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isPlaying ? 'bg-primary/20 text-primary' : 'bg-amber-500/20 text-amber-400'}`}>
+                        {isPlaying ? 'Läuft' : 'Wartet'}
                       </span>
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {game.gameStatus === 'playing' ? (
-                        isCreator ? (
+                    {isPlaying ? (
+                        (isCreator || (player2 && player2.id === currentUser.uid)) ? (
                             <Button onClick={() => router.push(`/game/${game.id}`)} variant="outline">
                                 <Play className="mr-2" /> Zurück zum Spiel
                             </Button>

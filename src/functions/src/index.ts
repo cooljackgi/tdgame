@@ -63,9 +63,11 @@ export const joinGame = functions.https.onCall(async (data, context) => {
         'players.player2': {
             id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
         },
-        gameStatus: 'playing', // Set game to playing now that P2 has joined
+        // Set game state to "playing" and start the intermission immediately.
+        // This is crucial to prevent race conditions on the client.
+        gameStatus: 'playing',
         isIntermission: true,
-        waveStartCountdown: 15, // Start the actual intermission countdown
+        waveStartCountdown: 15,
       });
     });
     return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };
