@@ -55,7 +55,7 @@ export default function Home() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && e.key === 'c') {
         setShowCheats(prev => !prev);
-        toast({ title: `Chaos-Modus ${!prev ? 'aktiviert' : 'deaktiviert'}` });
+        toast({ title: `Chaos-Modus ${!showCheats ? 'aktiviert' : 'deaktiviert'}` });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
