@@ -16,7 +16,7 @@ import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 
 import type { Player, GameState, GameStatus } from './game-session';
-import { towers as initialTowers } from '@/lib/game-data/towers';
+import { towers as initialTowers } from '@/lib/game-data/enemies'; // This should be towers.ts
 import { waves } from '@/lib/game-data/enemies';
 import { DeltaType, GameDelta } from '@/lib/game-data/types';
 
@@ -103,7 +103,7 @@ export default function SinglePlayerGame({
                 setFinalGameResult(result);
             }
         }
-    }, [saveGameState, user, isCheating, difficulty, gameStatus]);
+    }, [saveGameState, user, isCheating, gameStatus]);
 
     useEffect(() => {
         window.addEventListener('beforeunload', saveGameState);
@@ -318,22 +318,78 @@ export default function SinglePlayerGame({
         const type = delta[0];
         const payload = delta[1];
         switch (type) {
-          case DeltaType.ENEMY_SPAWN: setEnemies(prev => [...prev, payload]); break;
-          case DeltaType.ENEMY_MOVE:
-            const [id, pathIndex, now] = delta.slice(1);
-            setEnemies(prev => prev.map(e => e.id === id ? { ...e, pathIndex, lastMove: now } : e));
-            break;
-          case DeltaType.ENEMY_REACH_END:
-            setEnemies(prev => prev.filter(e => e.id !== payload));
-            break;
-          case DeltaType.GAME_STATE_UPDATE:
-            if(payload.lives !== undefined) setGameState(g => ({...g, lives: payload.lives}));
-            if(payload.spawnedThisWave !== undefined) setSpawnedThisWave(payload.spawnedThisWave);
-            break;
-          // Other delta types for single player can be added here if needed
+            case DeltaType.ENEMY_SPAWN: setEnemies(prev => [...prev, payload]); break;
+            case DeltaType.ENEMY_MOVE: {
+                const [id, pathIndex, now] = delta.slice(1);
+                setEnemies(prev => prev.map(e => e.id === id ? { ...e, pathIndex, lastMove: now } : e));
+                break;
+            }
+            case DeltaType.ENEMY_REACH_END:
+                setEnemies(prev => prev.filter(e => e.id !== payload));
+                setTotalLeaked(l => l + 1);
+                break;
+            case DeltaType.ENEMY_DIE:
+                setEnemies(prev => prev.filter(e => e.id !== payload));
+                setTotalKilled(k => k + 1);
+                break;
+            case DeltaType.ENEMY_DAMAGE: {
+                const [id, damage] = delta.slice(1);
+                setEnemies(prev => prev.map(e => e.id === id ? { ...e, health: e.health - (damage as number), wasHit: true } : e));
+                setTimeout(() => setEnemies(prev => prev.map(e => e.id === id ? { ...e, wasHit: false } : e)), 150);
+                break;
+            }
+             case DeltaType.ENEMY_ADD_EFFECT: {
+                const [id, effect] = delta.slice(1) as [string, EnemyStatusEffect];
+                setEnemies(prev => prev.map(e => {
+                    if (e.id === id) {
+                        const newEffects = e.effects.filter(ef => ef.type !== effect.type);
+                        newEffects.push(effect);
+                        return { ...e, effects: newEffects };
+                    }
+                    return e;
+                }));
+                break;
+            }
+            case DeltaType.ENEMY_REMOVE_EFFECT: {
+                const [id, effectType] = delta.slice(1);
+                setEnemies(prev => prev.map(e =>
+                  e.id === id ? { ...e, effects: e.effects.filter(ef => ef.type !== effectType) } : e
+                ));
+                break;
+            }
+            case DeltaType.GAME_STATE_UPDATE:
+                if (payload.lives !== undefined) setGameState(g => ({ ...g, lives: payload.lives }));
+                if (payload.spawnedThisWave !== undefined) setSpawnedThisWave(payload.spawnedThisWave);
+                if (payload.isIntermission !== undefined) setIsIntermission(payload.isIntermission);
+                if (payload.waveStartCountdown !== undefined) setWaveStartCountdown(payload.waveStartCountdown);
+                if (payload.currentWave !== undefined) setCurrentWave(payload.currentWave);
+                if (payload.gameStatus !== undefined) setGameStatus(payload.gameStatus);
+                break;
+            case DeltaType.PLAYER_UPDATE:
+                setPlayers(prev => prev.map(p => payload[p.id] ? { ...p, ...payload[p.id] } : p));
+                break;
+            case DeltaType.TOWERS_UPDATE:
+                setTowersByCell(payload);
+                break;
+            case DeltaType.TOWER_ATTACK:
+                setAttacks(prev => [...prev.slice(-200), payload]);
+                audioManager.playSfx('shoot', 0.3);
+                setFiringTowerIds(prev => new Set(prev).add((payload as Attack).towerId));
+                setTimeout(() => setFiringTowerIds(prev => {
+                    const s = new Set(prev);
+                    s.delete((payload as Attack).towerId);
+                    return s;
+                }), 150);
+                break;
+            case DeltaType.VFX_DAMAGE_NUMBER:
+                setDamageNumbers(prev => [...prev.slice(-100), payload]);
+                break;
+            case DeltaType.VFX_SPLASH:
+                setSplashRings(prev => [...prev.slice(-50), payload]);
+                break;
         }
       });
-    }, []);
+    }, [setTotalKilled, setTotalLeaked]);
 
     if (players.length === 0) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>
