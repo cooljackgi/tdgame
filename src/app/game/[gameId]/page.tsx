@@ -300,9 +300,12 @@ function CoopGame() {
     }
   }, [gameId, isGameHost, gameStatus, broadcastGameData]);
   
-  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id']) => {
-    const selectedTowerToBuild = allTowersData.find(t => t.id === (document as any).__SELECTED_TOWER_ID);
-    if (!selectedTowerToBuild) return;
+  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id'], towerId?: string) => {
+    const selectedTowerToBuild = allTowersData.find(t => t.id === towerId);
+    if (!selectedTowerToBuild) {
+        console.error(`[HOST] Build failed: towerId ${towerId} not found.`);
+        return;
+    }
 
     const cellKey = `${row}_${col}`;
     if (towersByCellRef.current[cellKey]) return;
@@ -384,7 +387,7 @@ function CoopGame() {
            console.log('[HOST-RECV-ACTION]', { type, payload });
           switch (type) {
               case String(DeltaType.BUILD_TOWER_REQUEST):
-                  handlePlaceTower(payload.row, payload.col, payload.playerId);
+                  handlePlaceTower(payload.row, payload.col, payload.playerId, payload.towerId);
                   break;
               case String(DeltaType.UPGRADE_TOWER_REQUEST):
                   handleUpgradeTower(payload.row, payload.col, payload.upgradeId, payload.playerId);
@@ -402,26 +405,20 @@ function CoopGame() {
   const handleLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
     if (localPlayerId === 'spectator') return;
 
-    if (action === 'build' && payload.tower) {
-      (document as any).__SELECTED_TOWER_ID = payload.tower.id;
-    }
+    const towerId = (document as any).__SELECTED_TOWER_ID;
 
     if (isGameHost) {
       switch(action) {
-        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId!); break;
+        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId!, towerId); break;
         case 'upgrade': handleUpgradeTower(payload.row, payload.col, payload.upgradeId, localPlayerId!); break;
         case 'sell': handleSellTower(payload.row, payload.col, localPlayerId!); break;
       }
     } else {
       switch(action) {
-        case 'build': rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { row: payload.row, col: payload.col, playerId: localPlayerId! }); break;
+        case 'build': rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { row: payload.row, col: payload.col, towerId: towerId, playerId: localPlayerId! }); break;
         case 'upgrade': rtc.sendActionRequest(String(DeltaType.UPGRADE_TOWER_REQUEST), { row: payload.row, col: payload.col, upgradeId: payload.upgradeId, playerId: localPlayerId! }); break;
         case 'sell': rtc.sendActionRequest(String(DeltaType.SELL_TOWER_REQUEST), { row: payload.row, col: payload.col, playerId: localPlayerId! }); break;
       }
-    }
-
-    if (action === 'build') {
-      (document as any).__SELECTED_TOWER_ID = null;
     }
   }, [localPlayerId, isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower, rtc]);
 
@@ -487,7 +484,7 @@ function CoopGame() {
                 
                 if (targets.length > 0) {
                     const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
-                    tower.lastAttack = now;
+                    newTowersByCell[tower.id] = { ...tower, lastAttack: now };
                     towersMutated = true;
 
                     deltas.push([DeltaType.TOWER_ATTACK, { id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: 'beam' }]);
@@ -630,9 +627,3 @@ function CoopGame() {
 }
 
 export default CoopGame;
-
-    
-
-    
-
-

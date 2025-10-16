@@ -127,7 +127,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             try {
                 const message = JSON.parse(event.data) as NetMsg;
                 // Client action requests are not set as lastMessage, but dispatched as events for the host.
-                if (isHostRef.current && !message.type.endsWith('_batch')) {
+                if (isHostRef.current && message.type.endsWith('_REQUEST')) {
                     document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: message }));
                 } else {
                     setLastMessage(message);
