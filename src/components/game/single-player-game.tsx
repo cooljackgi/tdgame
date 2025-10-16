@@ -530,7 +530,13 @@ export default function SinglePlayerGame({
             isCoop={false}
             isGameHost={true}
             localPlayerId="player1"
-            broadcastGameData={() => {}}
+            broadcastGameData={(deltas) => {
+                 // For single player, we can apply deltas directly, but this structure allows for coop conversion
+                 // In a real coop scenario, this would send deltas over the network.
+                 // Here, we just log them for debugging.
+                 // console.log("Broadcasting deltas (local):", deltas);
+                 // The game loop already handles state changes, so we don't need to apply them again.
+            }}
             applyDeltas={() => {}}
             onGameEnd={handleGameEnd}
             onExit={() => { saveGameState(); onExit(); }}
