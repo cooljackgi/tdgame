@@ -71,6 +71,7 @@ type GameSessionProps = {
     onGameEnd: (result: GameResult) => void;
     onWaveComplete?: () => void;
     onExit: () => void;
+    startWave?: () => void; // Optional wave start function from Coop parent
     
     // --- VFX ---
     attacks: Attack[];
@@ -141,6 +142,7 @@ export default function GameSession({
     // Control
     isCoop, isGameHost, localPlayerId,
     broadcastGameData, sendActionRequest, applyDeltas, onGameEnd, onWaveComplete, onExit,
+    startWave: coopStartWave,
 
     // Single Player Passthrough
     handleSelectTowerToBuild: spHandleSelectTowerToBuild,
@@ -202,6 +204,18 @@ export default function GameSession({
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   
+  // Trigger wave start if conditions are met. This is a crucial link.
+  useEffect(() => {
+    if (isGameHost && gameStatus === 'playing' && !isIntermission) {
+      if(isCoop && coopStartWave) {
+        coopStartWave();
+      } else if (!isCoop && !coopStartWave) {
+        // The single-player game's gameLoop handles this, but we could also trigger it from here if we wanted.
+        // For now, only coop needs this explicit trigger from game-session
+      }
+    }
+  }, [isGameHost, gameStatus, isIntermission, isCoop, coopStartWave]);
+
   useEffect(() => {
     if (isGameHost && gameStatus === 'waiting' && players.length === 2 && players.every(p => p.id !== 'spectator')) {
         broadcastGameData([[DeltaType.GAME_STATE_UPDATE, {

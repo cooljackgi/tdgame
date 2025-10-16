@@ -197,8 +197,10 @@ function CoopGame() {
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
 
-  // Wave Spawning Logic (HOST ONLY)
+  // Wave Spawning Logic (HOST ONLY) - Now triggered from game-session
   const startWave = useCallback(() => {
+    if (!isGameHost) return;
+    
     if (currentWave >= waves.length || waveInProgressRef.current) return;
     
     waveInProgressRef.current = true;
@@ -206,19 +208,15 @@ function CoopGame() {
     spawnerRef.current = undefined;
 
     setSpawnedThisWave(0);
-    // Only host plays music
-    if (isGameHost) {
-      audioManager.playWaveMusic();
-    }
-  
+
     const waveData = waves[currentWave];
     let spawnedCount = 0;
   
     const spawnEnemy = () => {
-      if (gameStatus !== 'playing' || isIntermission) {
+      if (gameStatus !== 'playing') {
         if (spawnerRef.current) clearTimeout(spawnerRef.current);
         spawnerRef.current = undefined;
-        waveInProgressRef.current = false; // Stop if game state changes
+        waveInProgressRef.current = false;
         return;
       }
       if (spawnedCount >= waveData.enemies.count) {
@@ -253,23 +251,7 @@ function CoopGame() {
     };
 
     spawnEnemy();
-  }, [currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE, isGameHost]);
-
-  // Effect to trigger wave start on host
-  useEffect(() => {
-      if (isGameHost && gameStatus === 'playing' && !isIntermission && !waveInProgressRef.current) {
-          console.log(`[Host] Wave ${currentWave} starting...`);
-          startWave();
-      }
-      // Cleanup spawner if game state changes
-      return () => {
-          if (spawnerRef.current) {
-              clearTimeout(spawnerRef.current);
-              waveInProgressRef.current = false;
-          }
-      };
-  }, [isGameHost, gameStatus, isIntermission, startWave, currentWave]);
-
+  }, [isGameHost, currentWave, gameStatus, difficulty, broadcastGameData, START_NODE, END_NODE]);
 
   useEffect(() => {
     if (!user || !gameId) {
@@ -473,6 +455,7 @@ function CoopGame() {
       clientBytesReceivedPerSecond={rtc.bytesPerSecond} // Note: This is an approximation from client perspective
       averagePacketSize={rtc.averagePacketSize}
       finalGameResult={finalGameResult}
+      startWave={startWave} // Pass down the wave start function
     />
   );
 }
