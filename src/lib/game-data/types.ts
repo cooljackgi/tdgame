@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 
 export type Element = 'fire' | 'water' | 'earth' | 'air' | 'nature' | 'light' | 'dark' | 'neutral';
-export type Difficulty = 'Einfach' | 'Normal' | 'Schwer';
+export type Difficulty = 'Einfach' | 'Normal' | 'Schwer' | 'Chaos';
 
 export type Node = {
   row: number;
@@ -193,5 +193,3 @@ export type Wave = {
   waveNumber: number;
   enemies: WaveEnemyData;
 };
-
-    

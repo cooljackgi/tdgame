@@ -16,7 +16,6 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
 
-// Lazy-loaded components
 const SinglePlayerGame = lazy(() => import('@/components/game/single-player-game'));
 const Lobby = lazy(() => import('@/components/game/lobby'));
 
@@ -26,8 +25,6 @@ export default function Home() {
   const [activeGame, setActiveGame] = useState<"singleplayer" | "coop" | null>(null);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
-  const [showCheats, setShowCheats] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false);
   const [loadSavedGame, setLoadSavedGame] = useState(false);
   
   const { toast } = useToast();
@@ -51,27 +48,16 @@ export default function Home() {
     });
     return () => unsubscribe();
   }, []);
-  
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.altKey && e.key === 'c') {
-        setShowCheats(prev => !prev);
-        toast({ title: `Chaos-Modus ${!showCheats ? 'aktiviert' : 'deaktiviert'}` });
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCheats, toast]);
 
   const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false) => {
     setLoadSavedGame(shouldLoadSaved);
     setActiveGame(mode);
-    setShowTutorial(false);
   }, []);
   
   const startTutorial = useCallback(() => {
+    // We can just set a normal difficulty for the tutorial
+    setDifficulty('Einfach');
     setActiveGame('singleplayer');
-    setShowTutorial(true);
   }, []);
 
   const handleNewCoopGame = useCallback(async () => {
@@ -101,10 +87,10 @@ export default function Home() {
             player2: null
         },
         gameState: { lives: difficultyMod.startLives },
-        gameStatus: 'waiting', // The game starts in 'waiting'
+        gameStatus: 'waiting',
         currentWave: 0,
         isIntermission: true,
-        waveStartCountdown: 999, // A high number to indicate waiting for players
+        waveStartCountdown: 999,
         createdAt: serverTimestamp(),
         towersByCell: {},
         lastDeltaTimestamp: null,
@@ -112,7 +98,6 @@ export default function Home() {
       });
       
       setActiveGame('coop');
-      // Directly navigate to the new game page
       window.location.href = `/game/${gameDocRef.id}`;
 
     } catch (error: any) {
@@ -144,8 +129,8 @@ export default function Home() {
             difficulty={difficulty}
             onExit={() => setActiveGame(null)}
             initialSavedGame={loadSavedGame ? savedGame : null}
-            isCheating={showCheats}
-            startWithTutorial={showTutorial}
+            isCheating={difficulty === 'Chaos'}
+            startWithTutorial={false}
             user={user}
           />
         </Suspense>
@@ -171,7 +156,6 @@ export default function Home() {
       );
     }
     
-    // Main Menu
     return (
         <div className="w-full max-w-6xl mx-auto space-y-8">
             <div className="text-center space-y-2">
@@ -185,7 +169,6 @@ export default function Home() {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
-                {/* Einzelspieler */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Einzelspieler</CardTitle>
@@ -220,7 +203,6 @@ export default function Home() {
                     </CardContent>
                 </Card>
                 
-                {/* Multiplayer & Tools */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Multiplayer & Tools</CardTitle>
@@ -237,9 +219,6 @@ export default function Home() {
                             Anmelden für Multiplayer
                           </Button>
                         )}
-                        <Button onClick={() => {setShowCheats(true); startGame('singleplayer');}} variant="secondary" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
-                            <Crown className="mr-2" /> Chaos-Modus
-                        </Button>
                         <Separator className="my-2" />
                         <Link href="/admin/coop-test" className="w-full block">
                             <Button variant="outline" className="w-full"><TestTube2 className="mr-2" /> Koop-Test</Button>
@@ -256,7 +235,6 @@ export default function Home() {
                     </CardContent>
                 </Card>
                 
-                {/* Anleitung */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Spielanleitung</CardTitle>

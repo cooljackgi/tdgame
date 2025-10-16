@@ -36,6 +36,11 @@ export const difficultyModifiers = {
     startResources: 1000,
     enemyHealth: 1.25,
   },
+  Chaos: {
+    startLives: 999,
+    startResources: 99999,
+    enemyHealth: 0.5,
+  }
 };
 
 export const elementIcons: Record<Element, React.FC<any>> = {
