@@ -1146,4 +1146,3 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
-

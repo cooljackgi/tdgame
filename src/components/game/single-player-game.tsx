@@ -287,15 +287,13 @@ export default function SinglePlayerGame({
         enemies.forEach(enemy => {
             const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
             // Only update if the new index is valid and different, to prevent unnecessary updates
-            if (newPathIndex !== enemy.pathIndex) {
-                 deltas.push([DeltaType.ENEMY_PATH_UPDATE, currentPath, newPathIndex]);
-            }
+            deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex]);
         });
 
         if (deltas.length > 0) {
             applyDeltas(deltas);
         }
-    }, [currentPath, enemies, applyDeltas]);
+    }, [currentPath]); // Only depends on currentPath
 
     useEffect(() => {
         const tutorialCompleted = localStorage.getItem(TUTORIAL_COMPLETED_KEY) === 'true';
@@ -526,6 +524,11 @@ export default function SinglePlayerGame({
         audioManager.playSfx('build_tower');
     }, [players, focusedTower, difficulty, towersByCell, applyDeltas]);
 
+    // This is the simulation loop for single player
+    const simulate = useCallback(() => {
+      // This is now handled by the useEffect for the simulation loop in GameSession
+    }, []);
+
 
     if (players.length === 0) {
         return (
@@ -577,5 +580,3 @@ export default function SinglePlayerGame({
         />
     )
 }
-
-    
