@@ -26,8 +26,6 @@ function CoopGame() {
   const router = useRouter();
   const { toast } = useToast();
   
-  console.log(`[CoopGame] Component Rendering for game: ${gameId}`);
-
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -54,20 +52,15 @@ function CoopGame() {
   const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
+  const [totalKilled, setTotalKilled] = useState(0);
+  const [totalLeaked, setTotalLeaked] = useState(0);
   
   // --- Stats State ---
   const [fps, setFps] = useState(0);
   
   const rtc = useWebRTC(gameId, isGameHost, user);
 
-  // Refs for wave spawning logic
-  const spawnerRef = useRef<NodeJS.Timeout>();
-  const waveInProgressRef = useRef(false);
-  const enemyIdCounter = useRef(0);
-
-  const START_NODE = { row: 1, col: 1 };
-  const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
-  const currentPath = useMemo(() => findPath(START_NODE, END_NODE, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
+  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
 
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
     if (deltas.length > 0) {
@@ -103,15 +96,16 @@ function CoopGame() {
                 setTimeout(() => setEnemies(prev => prev.map(e => e.id === id ? { ...e, wasHit: false } : e)), 150);
                 break;
             }
-            case DeltaType.ENEMY_DIE: {
+             case DeltaType.ENEMY_DIE: {
                 const id = payload;
                 setEnemies(prev => prev.filter(e => e.id !== id));
+                setTotalKilled(k => k + 1);
                 break;
             }
             case DeltaType.ENEMY_REACH_END: {
                 const id = payload;
                 setEnemies(prev => prev.filter(e => e.id !== id));
-                setGameState(s => ({ ...s, lives: Math.max(0, s.lives - 1) }));
+                setTotalLeaked(l => l + 1);
                 break;
             }
             case DeltaType.ENEMY_ADD_EFFECT: {
@@ -184,7 +178,6 @@ function CoopGame() {
             case DeltaType.UPGRADE_TOWER_REQUEST:
             case DeltaType.SELL_TOWER_REQUEST:
                  if (isGameHost) {
-                    console.log("[CoopGame] Host received action request, dispatching event:", { type, payload });
                     document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type, payload } }));
                 }
                 break;
@@ -194,83 +187,19 @@ function CoopGame() {
 
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
       if (deltas.length === 0) return;
+      
+      console.log('[HOST-SEND]', deltas);
       if (isGameHost) {
-         console.log('[HOST-SEND]', deltas);
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
-      // The host also applies the deltas to its own state immediately
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
     
-
-  // Wave Spawning Logic (HOST ONLY) - Now triggered from game-session
-  const startWave = useCallback(() => {
-    if (!isGameHost) return;
-    
-    if (currentWave >= waves.length || waveInProgressRef.current) return;
-    
-    waveInProgressRef.current = true;
-    if (spawnerRef.current) clearTimeout(spawnerRef.current);
-    spawnerRef.current = undefined;
-
-    setSpawnedThisWave(0);
-
-    const waveData = waves[currentWave];
-    let spawnedCount = 0;
-  
-    const spawnEnemy = () => {
-      if (gameStatus !== 'playing') {
-        if (spawnerRef.current) clearTimeout(spawnerRef.current);
-        spawnerRef.current = undefined;
-        waveInProgressRef.current = false;
-        return;
-      }
-      if (spawnedCount >= waveData.enemies.count) {
-        if (spawnerRef.current) clearTimeout(spawnerRef.current);
-        spawnerRef.current = undefined;
-        return;
-      }
-  
-      const difficultyMod = difficultyModifiers[difficulty];
-      const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
-      
-      let movementPattern: MovementPattern;
-      switch(waveData.enemies.type) {
-        case 'schnell': movementPattern = 'zigzag'; break;
-        case 'gepanzert': case 'boss': movementPattern = 'straight'; break;
-        default: movementPattern = 'wobble'; break;
-      }
-
-      const enemyId = `enemy-${enemyIdCounter.current++}`;
-      const newEnemy: Enemy = {
-        id: enemyId, ...waveData.enemies, health, maxHealth: health,
-        pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
-        lastMove: performance.now(), wasHit: false, targetNode: END_NODE,
-        movementPattern: movementPattern, path: [], // Path is added in the broadcast delta
-      };
-      
-      broadcastGameData([[DeltaType.ENEMY_SPAWN, { ...newEnemy, path: currentPath }]]);
-      
-      spawnedCount++;
-      setSpawnedThisWave(c => c + 1); // Local update for host UI
-      spawnerRef.current = setTimeout(spawnEnemy, waveData.enemies.spawnDelay);
-    };
-
-    spawnEnemy();
-  }, [isGameHost, currentWave, gameStatus, difficulty, broadcastGameData, START_NODE, END_NODE, currentPath]);
-
   useEffect(() => {
-    if (!user || !gameId) {
-      console.log("[CoopGame] Waiting for user and gameId...", { user, gameId });
-      return;
-    }
-
-    let gameUnsubscribe: Unsubscribe;
-    console.log(`[CoopGame] Setting up listeners for user ${user.uid} and game ${gameId}`);
-
+    let gameUnsubscribe: Unsubscribe | undefined;
+    
     const setupListeners = async (uid: string) => {
         try {
-            console.log("[CoopGame] Getting initial game document...");
             const gameDocRef = doc(db, 'games', gameId);
             const gameSnap = await getDoc(gameDocRef);
             if (!gameSnap.exists()) {
@@ -279,28 +208,22 @@ function CoopGame() {
                  return;
             }
             
-            console.log("[CoopGame] Initial game data found:", gameSnap.data());
             const gameData = gameSnap.data();
             let isPlayer1 = gameData.player1Id === uid;
             let isPlayer2 = gameData.player2Id === uid;
 
             if (!isPlayer1 && !isPlayer2 && !gameData.player2Id && !gameData.isTestGame) {
-                console.log("[CoopGame] User is not a player, attempting to join...");
                 const joinGameCallable = httpsCallable(functions, 'joinGame');
                 await joinGameCallable({ gameId });
                 isPlayer2 = true;
                 toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
-                console.log("[CoopGame] Successfully joined as Player 2.");
             }
 
             const currentRole = isPlayer1 ? 'player1' : (isPlayer2 ? 'player2' : 'spectator');
             setLocalPlayerId(currentRole);
-            console.log(`[CoopGame] User role set to: ${currentRole}`);
 
-            console.log("[CoopGame] Subscribing to Firestore updates...");
             gameUnsubscribe = onSnapshot(gameDocRef, (snap) => {
                 if (!snap.exists()) {
-                    console.error("[CoopGame] Game document no longer exists.");
                     toast({ title: "Spiel nicht mehr vorhanden", variant: 'destructive'});
                     router.push('/');
                     return;
@@ -308,14 +231,14 @@ function CoopGame() {
                 const data = snap.data();
                 if (!data) return;
 
-                console.log("[CoopGame] Firestore data received:", data);
-
                 const normalized = normalizePlayers(data.players);
                 setPlayers(normalized);
 
-                const currentIsHost = data.player1Id === user.uid;
-                setLocalPlayerId(currentIsHost ? 'player1' : (data.player2Id === user.uid ? 'player2' : 'spectator'));
+                const currentIsHost = data.player1Id === user?.uid;
+                setLocalPlayerId(currentIsHost ? 'player1' : (data.player2Id === user?.uid ? 'player2' : 'spectator'));
 
+                if(isGameHost) return; // Host steuert sein Spiel selbst, Client nimmt Daten aus Deltas
+                
                 setGameState(data.gameState || { lives: 20 });
                 setDifficulty(data.difficulty || 'Normal');
                 setGameStatus(data.gameStatus || 'waiting');
@@ -323,10 +246,7 @@ function CoopGame() {
                 setIsIntermission(data.isIntermission ?? true);
                 setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                 setTowersByCell(data.towersByCell || {});
-                setSpawnedThisWave(data.spawnedThisWave || 0);
                 
-                console.log(`[CoopGame] State updated: status=${data.gameStatus}, wave=${data.currentWave}, intermission=${data.isIntermission}`);
-
                 if (data.lastUpgradedTowerId) {
                   setLastUpgradedTowerId(data.lastUpgradedTowerId);
                   setTimeout(() => setLastUpgradedTowerId(null), 1000);
@@ -346,13 +266,12 @@ function CoopGame() {
         }
     };
 
-    setupListeners(user.uid);
+    if (user && gameId) {
+        setupListeners(user.uid);
+    }
 
     return () => {
-        if (gameUnsubscribe) {
-            console.log("[CoopGame] Unsubscribing from Firestore listener.");
-            gameUnsubscribe();
-        }
+        if (gameUnsubscribe) gameUnsubscribe();
     };
   }, [user, gameId, router, toast, isGameHost]);
 
@@ -377,6 +296,7 @@ function CoopGame() {
       } else {
         setUser(currentUser);
       }
+      setLoading(false);
     });
     return () => authUnsubscribe();
   }, [router, toast]);
@@ -390,7 +310,7 @@ function CoopGame() {
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
     }
-  }, [rtc.lastMessage, applyDeltas, isGameHost]);
+  }, [rtc.lastMessage, applyDeltas]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
@@ -409,9 +329,9 @@ function CoopGame() {
           fps,
       };
       await addDoc(collection(db, `games/${gameId}/game_logs`), logData);
-      await updateDoc(doc(db, 'games', gameId), { gameStatus: 'gameover' });
+      broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { gameStatus: 'gameover' }]]);
     }
-  }, [gameId, isGameHost, gameStatus, enemies.length, Object.keys(towersByCell).length, fps, rtc.packetsPerSecond, rtc.bytesPerSecond, rtc.averagePacketSize]);
+  }, [gameId, isGameHost, gameStatus, enemies.length, Object.keys(towersByCell).length, fps, rtc.packetsPerSecond, rtc.bytesPerSecond, rtc.averagePacketSize, broadcastGameData]);
   
   if (loading || !localPlayerId) {
     return (
@@ -461,7 +381,8 @@ function CoopGame() {
       clientBytesReceivedPerSecond={rtc.bytesPerSecond} // Note: This is an approximation from client perspective
       averagePacketSize={rtc.averagePacketSize}
       finalGameResult={finalGameResult}
-      startWave={startWave} // Pass down the wave start function
+      totalKilled={totalKilled} setTotalKilled={setTotalKilled}
+      totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
     />
   );
 }

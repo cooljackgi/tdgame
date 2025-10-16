@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Header from '@/components/game/header';
-import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, TowerEffect, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -116,8 +116,10 @@ type GameSessionProps = {
     clientBytesReceivedPerSecond?: number;
     averagePacketSize?: number;
     finalGameResult?: GameResult | null;
-    totalKilled?: number;
-    totalLeaked?: number;
+    totalKilled: number;
+    setTotalKilled: (value: number | ((prev: number) => number)) => void;
+    totalLeaked: number;
+    setTotalLeaked: (value: number | ((prev: number) => number)) => void;
 }
 
 const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): PlacedTower[] => {
@@ -174,14 +176,12 @@ export default function GameSession({
     fps, setFps,
     isWsConnected, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize,
     finalGameResult,
-    totalKilled,
-    totalLeaked
+    totalKilled, setTotalKilled,
+    totalLeaked, setTotalLeaked,
 }: GameSessionProps) {
   
   const { toast } = useToast();
   const isMobile = useIsMobile();
-  
-  console.log('[GameSession] Rendering with props:', { gameStatus, isIntermission, currentWave });
   
   // --- Global Static Data ---
   const allTowers = useMemo(() => spAllTowers ?? initialTowers.map(t => ({...t})), [spAllTowers]);
@@ -196,37 +196,17 @@ export default function GameSession({
   const [justPlacedTowerId, setJustPlacedTowerId] = useState<string|null>(null);
   
   // Simulation
-  const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>();
-  
+  const gameLoopRef = useRef<number>();
+  const lastTickRef = useRef(performance.now());
+  const enemyIdCounter = useRef(0);
+  const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
+
   const difficultyMod = difficultyModifiers[difficulty];
   const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
 
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   
-  // Trigger wave start if conditions are met. This is a crucial link.
-  useEffect(() => {
-    if (isGameHost && gameStatus === 'playing' && !isIntermission) {
-      if(isCoop && coopStartWave) {
-        coopStartWave();
-      } else if (!isCoop && !coopStartWave) {
-        // The single-player game's gameLoop handles this, but we could also trigger it from here if we wanted.
-        // For now, only coop needs this explicit trigger from game-session
-      }
-    }
-  }, [isGameHost, gameStatus, isIntermission, isCoop, coopStartWave]);
-
-  useEffect(() => {
-    if (isGameHost && gameStatus === 'waiting' && players.length === 2 && players.every(p => p.id !== 'spectator')) {
-        broadcastGameData([[DeltaType.GAME_STATE_UPDATE, {
-          gameStatus: 'playing',
-          isIntermission: true,
-          waveStartCountdown: INTERMISSION_TIME 
-        }]]);
-    }
-  }, [isGameHost, gameStatus, players, broadcastGameData]);
-
-
   const toggleMute = useCallback(() => {
     setIsMuted(prev => {
         const newMutedState = !prev;
@@ -254,13 +234,6 @@ export default function GameSession({
     onExit();
   }, [onExit]);
 
-  // Play music only on host when wave starts
-  useEffect(() => {
-      if (isGameHost && gameStatus === 'playing' && !isIntermission) {
-          audioManager.playWaveMusic();
-      }
-  }, [isGameHost, gameStatus, isIntermission]);
-  
   const handleGameControl = useCallback(() => {
     if (!isCoop) {
         spHandleGameControl?.();
@@ -298,7 +271,6 @@ export default function GameSession({
         return;
     }
     if (isIntermission && gameStatus === 'playing' && (!isCoop || isGameHost)) {
-        if(countdownRef.current) clearInterval(countdownRef.current);
         broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { isIntermission: false, waveStartCountdown: 0 }]]);
     }
   }, [isIntermission, gameStatus, isCoop, isGameHost, broadcastGameData, spHandleStartNextWaveNow]);
@@ -562,6 +534,125 @@ export default function GameSession({
     }
   };
   
+    useEffect(() => {
+        let isTabVisible = true;
+        const handleVisibilityChange = () => { isTabVisible = document.visibilityState === 'visible'; };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+
+        let lastCountdownUpdateTime = 0;
+        let countdownInterval: ReturnType<typeof setInterval>;
+        
+        if (isGameHost) {
+            countdownInterval = setInterval(() => {
+                if (gameStatus !== 'playing' || !isIntermission || !isTabVisible) return;
+                
+                const newTime = Math.max(0, waveStartCountdown - 1);
+                const stateUpdate: Partial<any> = { waveStartCountdown: newTime };
+                if (newTime <= 0) {
+                   stateUpdate.isIntermission = false;
+                }
+                broadcastGameData([[DeltaType.GAME_STATE_UPDATE, stateUpdate]]);
+            }, 1000);
+        }
+
+        const gameLoop = (now: number) => {
+            gameLoopRef.current = requestAnimationFrame(gameLoop);
+            
+            if (gameStatus !== 'playing' || isIntermission || !isGameHost || !isTabVisible) {
+                lastTickRef.current = now;
+                return;
+            }
+            
+            const delta = now - lastTickRef.current;
+            if (delta < 1000 / 65) return;
+            lastTickRef.current = now;
+            setFps(Math.round(1000 / delta));
+        
+            const deltas: GameDelta[] = [];
+            
+            if (!spawnerStateRef.current) {
+                const waveData = waves[currentWave];
+                if (!waveData || currentPath.length === 0) return;
+                spawnerStateRef.current = { count: 0, timer: 0, waveData: waveData.enemies };
+                deltas.push([DeltaType.GAME_STATE_UPDATE, { spawnedThisWave: 0 }]);
+            }
+            
+            if (spawnerStateRef.current && currentPath.length > 0) {
+                spawnerStateRef.current.timer += delta;
+                if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
+                    if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
+                        spawnerStateRef.current.timer = 0;
+                        const difficultyMod = difficultyModifiers[difficulty];
+                        const health = isCheating ? spawnerStateRef.current.waveData.health : Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
+                        const movementPattern: Enemy['movementPattern'] = spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : ((spawnerStateRef.current.waveData.type === 'gepanzert' || spawnerStateRef.current.waveData.type === 'boss') ? 'straight' : 'wobble');
+                        
+                        const newEnemy: Enemy = {
+                            id: `enemy-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData, health, maxHealth: health,
+                            path: currentPath, pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
+                            lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern
+                        };
+                        deltas.push([DeltaType.ENEMY_SPAWN, newEnemy]);
+                        deltas.push([DeltaType.GAME_STATE_UPDATE, { spawnedThisWave: spawnerStateRef.current.count + 1 }]);
+                        spawnerStateRef.current.count++;
+                    }
+                }
+            }
+            
+            const newEnemies = [...enemies];
+            enemies.forEach(enemy => {
+                 let updatedEnemy = newEnemies.find(e => e.id === enemy.id);
+                 if (!updatedEnemy) return;
+
+                 const isStunned = updatedEnemy.effects.some(e => e.type === 'stun' && e.expires > now);
+                 if (!isStunned) {
+                    const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
+                    const effectiveSpeed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+                    const timeSinceMove = now - updatedEnemy.lastMove;
+                    
+                    if (timeSinceMove / (1000 / effectiveSpeed) >= 1) {
+                         if (updatedEnemy.pathIndex < currentPath.length - 1) {
+                            const newPathIndex = updatedEnemy.pathIndex + 1;
+                            deltas.push([DeltaType.ENEMY_MOVE, updatedEnemy.id, newPathIndex, now]);
+                        } else {
+                            deltas.push([DeltaType.ENEMY_REACH_END, updatedEnemy.id]);
+                            deltas.push([DeltaType.GAME_STATE_UPDATE, { lives: gameState.lives - 1 }]);
+                            setTotalLeaked(l => l + 1);
+                        }
+                    }
+                 }
+            });
+
+            // Rest of game logic (tower attacks, etc) would go here
+            // ...
+            
+            if (deltas.length > 0) {
+              broadcastGameData(deltas);
+            }
+        };
+
+        if (isGameHost) {
+          gameLoopRef.current = requestAnimationFrame(gameLoop);
+        }
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+            if (countdownInterval) clearInterval(countdownInterval);
+        };
+    }, [isGameHost, gameStatus, isIntermission, broadcastGameData, currentPath, currentWave, difficulty, isCheating, enemies, gameState.lives, setTotalLeaked, waveStartCountdown]);
+
+  useEffect(() => {
+    if (gameState.lives <= 0 && isGameHost) {
+        onGameEnd({ playerName: players[0].name, playerUid: players[0].id, date: new Date().toISOString(), difficulty, wave: currentWave, won: false, finalTowers: towersByCell });
+    }
+  }, [gameState.lives, players, onGameEnd, difficulty, currentWave, towersByCell, isGameHost]);
+
+  useEffect(() => {
+      if (isGameHost && gameStatus === 'playing' && !isIntermission) {
+          audioManager.playWaveMusic();
+      }
+  }, [isGameHost, gameStatus, isIntermission]);
+  
   const isSpectator = localPlayerId === 'spectator';
   const canStartWave = !isSpectator && (!isCoop || isGameHost);
 
@@ -578,7 +669,6 @@ export default function GameSession({
   const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
   const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
 
-  // Listen for client actions if we are the host
   useEffect(() => {
     if (!isGameHost) return;
 
@@ -658,8 +748,8 @@ export default function GameSession({
             setFocusedTower={isCoop ? setFocusedTower : spSetFocusedTower!}
             spawnedThisWave={spawnedThisWave}
             totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
-            totalKilled={totalKilled || 0}
-            totalLeaked={totalLeaked || 0}
+            totalKilled={totalKilled}
+            totalLeaked={totalLeaked}
             isIntermission={isIntermission}
             waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME}

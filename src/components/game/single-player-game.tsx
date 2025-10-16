@@ -18,6 +18,7 @@ import { findPath } from '@/lib/pathfinding';
 import type { Player, GameState, GameStatus } from './game-session';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
+import { DeltaType, GameDelta } from '@/lib/game-data/types';
 
 export default function SinglePlayerGame({
     difficulty: initialDifficulty,
@@ -59,18 +60,12 @@ export default function SinglePlayerGame({
 
 
     // --- VFX State ---
-    const [localAttacks, setLocalAttacks] = useState<Attack[]>([]);
+    const [attacks, setAttacks] = useState<Attack[]>([]);
     const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
-
-    // --- Game Loop Refs ---
-    const gameLoopRef = useRef<number>();
-    const lastTickRef = useRef(performance.now());
-    const enemyIdCounter = useRef(0);
-    const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
     
     const START_NODE = { row: 1, col: 1 };
     const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -92,7 +87,6 @@ export default function SinglePlayerGame({
     
     const handleGameEnd = useCallback(async (result: GameResult) => {
         if (gameStatus !== 'gameover') {
-            if(gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
             setGameStatus('gameover');
             if (!isCheating) saveGameState();
             if (user && !isCheating) {
@@ -112,6 +106,7 @@ export default function SinglePlayerGame({
     }, [saveGameState, user, isCheating, difficulty, gameStatus]);
 
     useEffect(() => {
+        window.addEventListener('beforeunload', saveGameState);
         if (initialSavedGame && !isCheating) {
             setPlayers(normalizePlayers(initialSavedGame.players));
             setGameState(initialSavedGame.gameState);
@@ -132,7 +127,12 @@ export default function SinglePlayerGame({
         setIsIntermission(true);
         setGameStatus('playing');
         setWaveStartCountdown(INTERMISSION_TIME);
-    }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user, difficulty]);
+
+        return () => {
+            window.removeEventListener('beforeunload', saveGameState);
+        }
+
+    }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user, difficulty, saveGameState]);
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild) {
@@ -243,17 +243,12 @@ export default function SinglePlayerGame({
         setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing');
     }, []);
 
-    const startWave = useCallback(() => {
-        setIsIntermission(false);
-        audioManager.playWaveMusic();
-    }, []);
-
     const handleStartNextWaveNow = useCallback(() => {
         if (isIntermission && gameStatus === 'playing') {
-            startWave();
+            setIsIntermission(false);
             setWaveStartCountdown(0);
         }
-    }, [isIntermission, startWave, gameStatus]);
+    }, [isIntermission, gameStatus]);
 
     const cancelInteractions = useCallback(() => {
         setSelectedTowerToBuild(null);
@@ -317,198 +312,28 @@ export default function SinglePlayerGame({
 
     const handleLoadTestLayout = useCallback(() => handleLoadMazetLayout(false), [handleLoadMazetLayout]);
     const handleLoadAllTowersLayout = useCallback(() => handleLoadMazetLayout(true), [handleLoadMazetLayout]);
-
-    useEffect(() => {
-        let isTabVisible = true;
-        const handleVisibilityChange = () => { isTabVisible = document.visibilityState === 'visible'; };
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-        window.addEventListener('beforeunload', saveGameState);
-
-        let lastCountdownUpdateTime = 0;
-
-        const gameLoop = (now: number) => {
-            gameLoopRef.current = requestAnimationFrame(gameLoop);
-            
-            if (gameStatus !== 'playing' || !isTabVisible) {
-                lastTickRef.current = now;
-                return;
-            }
-            
-            const delta = now - lastTickRef.current;
-            if (delta < 1000 / 65) return;
-            lastTickRef.current = now;
-            setFps(Math.round(1000 / delta));
-        
-            if (isIntermission) {
-                if (now - lastCountdownUpdateTime > 1000) {
-                    lastCountdownUpdateTime = now;
-                    setWaveStartCountdown(prev => {
-                        const newTime = Math.max(0, prev - 1);
-                        if (newTime <= 0) {
-                           startWave();
-                        }
-                        return newTime;
-                    });
-                }
-                return;
-            }
-
-            if (!spawnerStateRef.current) {
-                const waveData = waves[currentWave];
-                if (!waveData || currentPath.length === 0) return;
-                spawnerStateRef.current = {
-                    count: 0,
-                    timer: 0,
-                    waveData: waveData.enemies,
-                };
-                setSpawnedThisWave(0);
-            }
-            
-            const newEnemiesThisFrame: Enemy[] = [];
-            if (spawnerStateRef.current && currentPath.length > 0) {
-                spawnerStateRef.current.timer += delta;
-                if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
-                    if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
-                        spawnerStateRef.current.timer = 0;
-                        const difficultyMod = difficultyModifiers[difficulty];
-                        const health = isCheating ? spawnerStateRef.current.waveData.health : Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
-                        const movementPattern: MovementPattern = spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : ((spawnerStateRef.current.waveData.type === 'gepanzert' || spawnerStateRef.current.waveData.type === 'boss') ? 'straight' : 'wobble');
-                        
-                        newEnemiesThisFrame.push({
-                            id: `enemy-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData, health, maxHealth: health,
-                            pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
-                            lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern, path: []
-                        });
-                        setSpawnedThisWave(c => c + 1);
-                        spawnerStateRef.current.count++;
-                    }
-                }
-            }
-            
-            if (newEnemiesThisFrame.length > 0) {
-              setEnemies(prevEnemies => [...prevEnemies, ...newEnemiesThisFrame]);
-            }
-
-            const newLocalAttacks: Attack[] = [];
-            const newDamageNumbers: DamageNumber[] = [];
-            const newSplashRings: SplashRing[] = [];
-            const newFiringTowerIds = new Set<string>();
-
-            const currentTowers = Object.values(towersByCell);
-            
-            setEnemies(prevEnemies => {
-                let enemiesThatReachedEnd = 0;
-                
-                const updatedEnemies = prevEnemies.map(enemy => {
-                    let updatedEnemy = { ...enemy, wasHit: false, path: currentPath };
-                    
-                    const isStunned = updatedEnemy.effects.some(e => e.type === 'stun' && e.expires > now);
-                    if (!isStunned) {
-                        const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
-                        const effectiveSpeed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
-                        const timeSinceMove = now - updatedEnemy.lastMove;
-                        if (timeSinceMove / (1000 / effectiveSpeed) >= 1) {
-                             if (updatedEnemy.pathIndex < currentPath.length - 1) {
-                                updatedEnemy.pathIndex++;
-                                updatedEnemy.position = currentPath[updatedEnemy.pathIndex];
-                                updatedEnemy.lastMove = now;
-                            } else {
-                                enemiesThatReachedEnd++;
-                                return null;
-                            }
-                        }
-                    }
-                    return updatedEnemy;
-                }).filter(e => e !== null) as Enemy[];
-
-                if (enemiesThatReachedEnd > 0) {
-                    setGameState(g => ({...g, lives: Math.max(0, g.lives - enemiesThatReachedEnd)}));
-                    setTotalLeaked(c => c + enemiesThatReachedEnd);
-                }
-
-                currentTowers.forEach(tower => {
-                    if (now - tower.lastAttack > tower.attackSpeed) {
-                       const enemiesInRange = updatedEnemies.filter(e => {
-                           const enemyPos = e.position;
-                           const towerPos = tower.position;
-                           const distanceSq = Math.pow(enemyPos.col - towerPos.col, 2) + Math.pow(enemyPos.row - towerPos.row, 2);
-                           return distanceSq <= tower.range * tower.range;
-                       });
-
-                        if (enemiesInRange.length > 0) {
-                            const mainTarget = enemiesInRange[0]; 
-                            const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
-                            newLocalAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType });
-                            
-                            let damage = tower.damage;
-                            mainTarget.health -= damage;
-                            mainTarget.wasHit = true;
-
-                            const primaryElement = tower.elements?.[0] ?? 'neutral';
-                            newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, amount: damage, position: mainTarget.position, color: elementProjectileColors[primaryElement], targetId: mainTarget.id });
-                            
-                            tower.lastAttack = now;
-                            newFiringTowerIds.add(tower.id);
-                        }
-                    }
-                });
-
-                if (newLocalAttacks.length > 0) setLocalAttacks(prev => [...prev.slice(-200), ...newLocalAttacks]);
-                if (newDamageNumbers.length > 0) setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
-                if (newSplashRings.length > 0) setSplashRings(prev => [...prev.slice(-50), ...newSplashRings]);
-                if (newFiringTowerIds.size > 0) {
-                    setFiringTowerIds(prev => { const next = new Set(prev); newFiringTowerIds.forEach(id => next.add(id)); return next; });
-                    setTimeout(() => setFiringTowerIds(prev => { const next = new Set(prev); newFiringTowerIds.forEach(id => next.delete(id)); return next; }), 150);
-                }
-                
-                const finalEnemies = updatedEnemies.filter(enemy => {
-                  if(enemy.health <= 0) {
-                    setTotalKilled(k => k + 1);
-                    setPlayers(prev => prev.map(p => ({...p, resources: p.resources + enemy.bounty})));
-                    return false;
-                  }
-                  return true;
-                });
-                
-                const waveData = waves[currentWave];
-                const allEnemiesSpawned = spawnerStateRef.current ? spawnerStateRef.current.count >= waveData.enemies.count : false;
-                if (allEnemiesSpawned && finalEnemies.length === 0 && newEnemiesThisFrame.length === 0) {
-                    spawnerStateRef.current = null;
-                    const canPickElement = (currentWave + 1) > 0 && (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
-                    
-                    if (canPickElement && !isCheating) {
-                        setGameStatus('picking-element');
-                    } else {
-                        const nextWaveIdx = currentWave + 1;
-                        if (nextWaveIdx >= waves.length) {
-                             handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: nextWaveIdx, won: true, finalTowers: towersByCell });
-                        } else {
-                            setCurrentWave(nextWaveIdx);
-                            setIsIntermission(true);
-                            setWaveStartCountdown(INTERMISSION_TIME);
-                            lastCountdownUpdateTime = now;
-                        }
-                    }
-                }
-
-                return finalEnemies;
-            });
-
-        };
-
-        gameLoopRef.current = requestAnimationFrame(gameLoop);
-        return () => {
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
-            window.removeEventListener('beforeunload', saveGameState);
-            if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
-        };
-    }, [saveGameState, isIntermission, currentWave, difficulty, isCheating, user, handleGameEnd, startWave, towersByCell, currentPath, gameStatus, players]);
     
-    useEffect(() => {
-        if (gameState.lives <= 0) {
-            handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: currentWave, won: false, finalTowers: towersByCell });
+    const localApplyDeltas = useCallback((deltas: GameDelta[]) => {
+      deltas.forEach(delta => {
+        const type = delta[0];
+        const payload = delta[1];
+        switch (type) {
+          case DeltaType.ENEMY_SPAWN: setEnemies(prev => [...prev, payload]); break;
+          case DeltaType.ENEMY_MOVE:
+            const [id, pathIndex, now] = delta.slice(1);
+            setEnemies(prev => prev.map(e => e.id === id ? { ...e, pathIndex, lastMove: now } : e));
+            break;
+          case DeltaType.ENEMY_REACH_END:
+            setEnemies(prev => prev.filter(e => e.id !== payload));
+            break;
+          case DeltaType.GAME_STATE_UPDATE:
+            if(payload.lives !== undefined) setGameState(g => ({...g, lives: payload.lives}));
+            if(payload.spawnedThisWave !== undefined) setSpawnedThisWave(payload.spawnedThisWave);
+            break;
+          // Other delta types for single player can be added here if needed
         }
-    }, [gameState.lives, players, user, difficulty, currentWave, towersByCell, handleGameEnd]);
+      });
+    }, []);
 
     if (players.length === 0) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>
@@ -530,17 +355,11 @@ export default function SinglePlayerGame({
             isCoop={false}
             isGameHost={true}
             localPlayerId="player1"
-            broadcastGameData={(deltas) => {
-                 // For single player, we can apply deltas directly, but this structure allows for coop conversion
-                 // In a real coop scenario, this would send deltas over the network.
-                 // Here, we just log them for debugging.
-                 // console.log("Broadcasting deltas (local):", deltas);
-                 // The game loop already handles state changes, so we don't need to apply them again.
-            }}
-            applyDeltas={() => {}}
+            broadcastGameData={localApplyDeltas}
+            applyDeltas={localApplyDeltas}
             onGameEnd={handleGameEnd}
             onExit={() => { saveGameState(); onExit(); }}
-            attacks={localAttacks}
+            attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
             lastUpgradedTowerId={lastUpgradedTowerId}
@@ -567,8 +386,8 @@ export default function SinglePlayerGame({
             cheat_skipWaves={() => setCurrentWave(prev => Math.min(prev + 5, waves.length -1))}
             cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
             cheat_unlockAll={() => setPlayers(prev => prev.map(p => ({...p, unlockedElements: [...ALL_PICKABLE_ELEMENTS, 'neutral']})))}
-            totalKilled={totalKilled}
-            totalLeaked={totalLeaked}
+            totalKilled={totalKilled} setTotalKilled={setTotalKilled}
+            totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
             handleElementPick={handleElementPick}
         />
     )
