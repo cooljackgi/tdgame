@@ -50,6 +50,7 @@ export default function SinglePlayerGame({
     const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty);
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     const [spawnedThisWave, setSpawnedThisWave] = useState(0);
+    const [attacks, setAttacks] = useState<Attack[]>([]);
     const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
@@ -152,7 +153,7 @@ export default function SinglePlayerGame({
         const existingTower = towersByCell[cellKey];
         if (existingTower) {
             setFocusedTower(existingTower);
-setSelectedTowerToBuild(null);
+            setSelectedTowerToBuild(null);
             return;
         }
     
@@ -273,6 +274,57 @@ setSelectedTowerToBuild(null);
         };
     }, [currentWave]);
     
+    const handleLoadTestLayout = useCallback(() => {
+        const testLayout: Omit<PlacedTower, 'id' | 'lastAttack'>[] = [
+            {...initialTowers.find(t=>t.id==='neutral-0')!, specId: 'neutral-0', position: { row: 4, col: 4 }, health: 100, ownerId: 'player1'},
+            {...initialTowers.find(t=>t.id==='neutral-1a')!, specId: 'neutral-1a', position: { row: 6, col: 4 }, health: 120, ownerId: 'player1'},
+            {...initialTowers.find(t=>t.id==='fire-2a')!, specId: 'fire-2a', position: { row: 8, col: 4 }, health: 150, ownerId: 'player1'},
+            {...initialTowers.find(t=>t.id==='combo-fire-water')!, specId: 'combo-fire-water', position: { row: 6, col: 8 }, health: 320, ownerId: 'player1'},
+        ];
+
+        const newTowersByCell = testLayout.reduce((acc, tower) => {
+            const id = `tower-${tower.position.row}-${tower.position.col}-${Date.now()}-${Math.random()}`;
+            acc[`${tower.position.row}_${tower.position.col}`] = { ...tower, id, lastAttack: 0 };
+            return acc;
+        }, {} as Record<string, PlacedTower>);
+        
+        setTowersByCell(newTowersByCell);
+        setPlayers(prev => prev.map(p => ({...p, resources: 50000})));
+        toast({ title: "Test-Layout geladen", description: "Einige Türme wurden platziert und Ressourcen hinzugefügt." });
+    }, [toast]);
+    
+    const handleLoadAllTowersLayout = useCallback(() => {
+        const allTowerSpecs = initialTowers;
+        let row = 2;
+        let col = 2;
+        const newTowersByCell: Record<string, PlacedTower> = {};
+
+        for (const towerSpec of allTowerSpecs) {
+            if (col > GRID_COLS - 1) {
+                col = 2;
+                row++;
+            }
+            if (row > GRID_ROWS -1) break;
+
+            const newTower: PlacedTower = {
+                ...towerSpec,
+                id: `tower-${row}-${col}-${Date.now()}-${Math.random()}`,
+                specId: towerSpec.id,
+                position: { row, col },
+                lastAttack: 0,
+                health: towerSpec.maxHealth,
+                ownerId: 'player1',
+            };
+            newTowersByCell[`${row}_${col}`] = newTower;
+            col++;
+        }
+
+        setTowersByCell(newTowersByCell);
+        setPlayers(prev => prev.map(p => ({...p, resources: 99999})));
+        toast({ title: "Alle Türme geladen", description: "Jeder Turmtyp wurde einmal platziert." });
+
+    }, [toast]);
+
     useEffect(() => {
         let isTabVisible = true;
         const handleVisibilityChange = () => { isTabVisible = document.visibilityState === 'visible'; };
@@ -340,14 +392,13 @@ setSelectedTowerToBuild(null);
 
             currentTowers.forEach(tower => {
                 if (now - tower.lastAttack > tower.attackSpeed) {
-                    const towerWorldPos = interpolatedEnemyPositions.get(tower.id) ?? {x:0, y:0}; // This is a placeholder, needs real tower pos
-                    const towerPos = { x: (tower.position.col - 0.5) * 64, y: (tower.position.row - 0.5) * 64 };
+                    const towerPos = gridToPx(tower.position);
                     
                     const enemiesInRange = currentEnemies.filter(e => {
                         const enemyWorldPos = interpolatedEnemyPositions.get(e.id);
                         if (!enemyWorldPos) return false;
                         const distance = Math.hypot(enemyWorldPos.y - towerPos.y, enemyWorldPos.x - towerPos.x);
-                        return distance <= (tower.range + 0.5) * 64;
+                        return distance <= (tower.range + 0.5) * 64; // Add 0.5 for cell radius
                     });
 
                     if (enemiesInRange.length > 0) {
@@ -365,7 +416,7 @@ setSelectedTowerToBuild(null);
             });
 
             if (newLocalAttacks.length > 0) {
-                gameBoardRef.current?.queueAttacks(newLocalAttacks);
+                setAttacks(prev => [...prev, ...newLocalAttacks]);
             }
             
             let livesLost = 0;
@@ -475,7 +526,7 @@ setSelectedTowerToBuild(null);
             applyDeltas={() => {}}
             onGameEnd={handleGameEnd}
             onExit={() => { saveGameState(); onExit(); }}
-            attacks={[]}
+            attacks={attacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
             lastUpgradedTowerId={lastUpgradedTowerId}
@@ -496,6 +547,12 @@ setSelectedTowerToBuild(null);
             handlePlaceTower={handlePlaceTower}
             allTowers={initialTowers}
             cancelInteractions={cancelInteractions}
+            handleLoadTestLayout={handleLoadTestLayout}
+            handleLoadAllTowersLayout={handleLoadAllTowersLayout}
+            cheat_addResources={() => setPlayers(prev => prev.map(p => ({...p, resources: p.resources + 10000})))}
+            cheat_skipWaves={() => setCurrentWave(prev => Math.min(prev + 5, waves.length -1))}
+            cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
+            cheat_unlockAll={() => setPlayers(prev => prev.map(p => ({...p, unlockedElements: [...ALL_PICKABLE_ELEMENTS, 'neutral']})))}
         />
     )
 }
