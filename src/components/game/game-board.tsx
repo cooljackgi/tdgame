@@ -490,7 +490,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         const currentEnemyIds = new Set(enemies.map(e => e.id));
         
-        // This is the crucial cleanup logic for "ghost" enemies.
+        // Correct cleanup logic: remove interpolated positions for enemies that are no longer in the main `enemies` array.
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
                 interpolatedEnemyPositions.delete(id);
