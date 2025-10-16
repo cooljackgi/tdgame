@@ -237,6 +237,13 @@ export default function GameSession({
     audioManager.stopMusic();
     onExit();
   }, [onExit]);
+
+  // Play music only on host when wave starts
+  useEffect(() => {
+      if (isGameHost && gameStatus === 'playing' && !isIntermission) {
+          audioManager.playWaveMusic();
+      }
+  }, [isGameHost, gameStatus, isIntermission]);
   
   const handleGameControl = useCallback(() => {
     if (!isCoop) {
