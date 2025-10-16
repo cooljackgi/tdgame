@@ -275,22 +275,30 @@ export default function SinglePlayerGame({
     }, [currentWave]);
     
     const handleLoadTestLayout = useCallback(() => {
-        const testLayout: Omit<PlacedTower, 'id' | 'lastAttack'>[] = [
-            {...initialTowers.find(t=>t.id==='neutral-0')!, specId: 'neutral-0', position: { row: 4, col: 4 }, health: 100, ownerId: 'player1'},
-            {...initialTowers.find(t=>t.id==='neutral-1a')!, specId: 'neutral-1a', position: { row: 6, col: 4 }, health: 120, ownerId: 'player1'},
-            {...initialTowers.find(t=>t.id==='fire-2a')!, specId: 'fire-2a', position: { row: 8, col: 4 }, health: 150, ownerId: 'player1'},
-            {...initialTowers.find(t=>t.id==='combo-fire-water')!, specId: 'combo-fire-water', position: { row: 6, col: 8 }, health: 320, ownerId: 'player1'},
+        const longPathLayout: { row: number, col: number }[] = [
+            { row: 1, col: 3 }, { row: 2, col: 3 }, { row: 3, col: 3 }, { row: 4, col: 3 }, { row: 5, col: 3 },
+            { row: 7, col: 3 }, { row: 8, col: 3 }, { row: 9, col: 3 }, { row: 10, col: 3 }, { row: 11, col: 3 },
+
+            { row: 11, col: 5 }, { row: 10, col: 5 }, { row: 9, col: 5 }, { row: 8, col: 5 }, { row: 7, col: 5 },
+            { row: 5, col: 5 }, { row: 4, col: 5 }, { row: 3, col: 5 }, { row: 2, col: 5 }, { row: 1, col: 5 },
+            
+            { row: 1, col: 7 }, { row: 2, col: 7 }, { row: 3, col: 7 }, { row: 4, col: 7 }, { row: 5, col: 7 },
+            { row: 7, col: 7 }, { row: 8, col: 7 }, { row: 9, col: 7 }, { row: 10, col: 7 }, { row: 11, col: 7 },
+            
+            { row: 11, col: 9 }, { row: 10, col: 9 }, { row: 9, col: 9 }, { row: 8, col: 9 }, { row: 7, col: 9 },
+            { row: 5, col: 9 }, { row: 4, col: 9 }, { row: 3, col: 9 }, { row: 2, col: 9 }, { row: 1, col: 9 },
         ];
 
-        const newTowersByCell = testLayout.reduce((acc, tower) => {
-            const id = `tower-${tower.position.row}-${tower.position.col}-${Date.now()}-${Math.random()}`;
-            acc[`${tower.position.row}_${tower.position.col}`] = { ...tower, id, lastAttack: 0 };
+        const newTowersByCell = longPathLayout.reduce((acc, pos) => {
+            const towerSpec = initialTowers.find(t=>t.id==='neutral-0')!;
+            const id = `tower-${pos.row}-${pos.col}-${Date.now()}-${Math.random()}`;
+            acc[`${pos.row}_${pos.col}`] = { ...towerSpec, id, specId: towerSpec.id, position: pos, lastAttack: 0, health: towerSpec.maxHealth, ownerId: 'player1' };
             return acc;
         }, {} as Record<string, PlacedTower>);
         
         setTowersByCell(newTowersByCell);
         setPlayers(prev => prev.map(p => ({...p, resources: 50000})));
-        toast({ title: "Test-Layout geladen", description: "Einige Türme wurden platziert und Ressourcen hinzugefügt." });
+        toast({ title: "Test-Layout geladen", description: "Ein Labyrinth wurde gebaut und Ressourcen hinzugefügt." });
     }, [toast]);
     
     const handleLoadAllTowersLayout = useCallback(() => {
@@ -398,7 +406,7 @@ export default function SinglePlayerGame({
                         const enemyWorldPos = interpolatedEnemyPositions.get(e.id);
                         if (!enemyWorldPos) return false;
                         const distance = Math.hypot(enemyWorldPos.y - towerPos.y, enemyWorldPos.x - towerPos.x);
-                        return distance <= (tower.range + 0.5) * 64; // Add 0.5 for cell radius
+                        return distance <= (tower.range + 0.5) * 64;
                     });
 
                     if (enemiesInRange.length > 0) {
@@ -416,7 +424,7 @@ export default function SinglePlayerGame({
             });
 
             if (newLocalAttacks.length > 0) {
-                setAttacks(prev => [...prev, ...newLocalAttacks]);
+                gameBoardRef.current?.queueAttacks(newLocalAttacks);
             }
             
             let livesLost = 0;
