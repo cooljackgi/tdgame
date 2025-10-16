@@ -94,9 +94,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   const handleStartGame = async (gameId: string) => {
     try {
-        // This is a dummy update to ensure client-side state is synced before navigating.
-        // It helps prevent the React #185 error by giving Firestore's onSnapshot listener
-        // a moment to catch up with the changes triggered by joinGame.
+        // This dummy write acts as a synchronization point. It ensures the client
+        // has processed the state update from `joinGame` before navigating,
+        // preventing the React #185 error.
         const gameRef = doc(db, 'games', gameId);
         await updateDoc(gameRef, { hostReadyTimestamp: new Date() });
         router.push(`/game/${gameId}`);
