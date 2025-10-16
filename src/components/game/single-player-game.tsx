@@ -326,7 +326,7 @@ export default function SinglePlayerGame({
         const now = performance.now();
         const newLocalAttacks: Attack[] = [];
         const currentTowers = Object.values(towersByCell);
-        let currentEnemies = [...enemiesRef.current]; // Make a mutable copy
+        let currentEnemies = [...enemiesRef.current];
 
         currentTowers.forEach(tower => {
             if (now - tower.lastAttack > tower.attackSpeed) {
@@ -349,6 +349,12 @@ export default function SinglePlayerGame({
                     mainTarget.wasHit = true;
                     
                     tower.lastAttack = now;
+                    setFiringTowerIds(prev => new Set(prev).add(tower.id));
+                    setTimeout(() => setFiringTowerIds(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(tower.id);
+                        return newSet;
+                    }), 150);
                 }
             }
         });
@@ -357,7 +363,7 @@ export default function SinglePlayerGame({
         if (newLocalAttacks.length > 0) {
             gameBoardRef.current?.queueAttacks(newLocalAttacks);
         }
-    }, [enemiesRef, towersByCell]);
+    }, [towersByCell]);
 
 
     useEffect(() => {
