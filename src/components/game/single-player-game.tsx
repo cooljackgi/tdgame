@@ -179,7 +179,6 @@ export default function SinglePlayerGame({
             
             return prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources - newTower.cost } : p);
         });
-        setSelectedTowerToBuild(null);
     }, [selectedTowerToBuild, towersByCell, toast, START_NODE, END_NODE]);
     
     const handleUpgradeTower = useCallback((upgradeId: string) => {
