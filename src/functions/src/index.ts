@@ -57,13 +57,15 @@ export const joinGame = functions.https.onCall(async (data, context) => {
          return; 
       }
       const resources = gameData?.players?.player1?.resources ?? 1250;
-      // The function now ONLY adds the player. The host will be responsible for starting the game.
       transaction.update(gameRef, { 
         player2Id: uid, 
         'members': { ...gameData?.members, [uid]: true },
         'players.player2': {
             id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
         },
+        gameStatus: 'playing', // Set game to playing now that P2 has joined
+        isIntermission: true,
+        waveStartCountdown: 15, // Start the actual intermission countdown
       });
     });
     return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };
