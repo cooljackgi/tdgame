@@ -108,24 +108,6 @@ const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): P
     return Object.values(towersByCell);
 }
 
-// Function to find the closest path node to a given position
-function findClosestPathIndex(path: Node[], position: Node): number {
-    if (!path || path.length === 0) return 0;
-    let closestIndex = 0;
-    let minDistance = Infinity;
-
-    for (let i = 0; i < path.length; i++) {
-        const node = path[i];
-        const distSq = Math.pow(node.col - position.col, 2) + Math.pow(node.row - position.row, 2);
-        if (distSq < minDistance) {
-            minDistance = distSq;
-            closestIndex = i;
-        }
-    }
-    return closestIndex;
-}
-
-
 export default function GameSession({ 
     // Injected State
     players, setPlayers,
@@ -194,23 +176,6 @@ export default function GameSession({
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   
-  useEffect(() => {
-    if (!isGameHost || enemies.length === 0) return;
-    const deltas: GameDelta[] = [];
-    const newPath = findPath(START_NODE, END_NODE, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS);
-    
-    if (newPath) {
-        enemies.forEach(enemy => {
-            const newPathIndex = findClosestPathIndex(newPath, enemy.position);
-            deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, newPath, newPathIndex]);
-        });
-    }
-
-    if (deltas.length > 0) {
-      broadcastGameData(deltas);
-    }
-  }, [placedTowers, isGameHost, broadcastGameData, enemies, START_NODE, END_NODE]);
-
   useEffect(() => {
     if (isGameHost && gameStatus === 'waiting' && players.length === 2 && players.every(p => p.id)) {
         broadcastGameData([[DeltaType.GAME_STATE_UPDATE, {
@@ -640,388 +605,6 @@ const handleLoadAllTowersLayout = useCallback(() => {
     ]);
   };
   
- const simulate = useCallback(() => {
-    if (!isGameHost) return;
-    const now = performance.now();
-    const deltas: GameDelta[] = [];
-    let enemiesMap = new Map(enemies.map(e => [e.id, { ...e }]));
-    const deadIds = new Set<string>();
-    const leakedIds = new Set<string>();
-    
-    if (isGameHost) {
-      Object.values(towersByCell).forEach(tower => {
-        if ((now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
-
-        const enemiesInRange = Array.from(enemiesMap.values()).filter(enemy => {
-          if (!enemy || enemy.health <= 0) return false;
-          const dx = enemy.position.row - tower.position.row;
-          const dy = enemy.position.col - tower.position.col;
-          return (dx * dx + dy * dy) <= (tower.range * tower.range);
-        });
-
-        if (enemiesInRange.length > 0) {
-          const mainTarget = enemiesInRange[0]; 
-          
-          const mainAttack: Attack = {
-              id: `attack-${now}-${Math.random()}`,
-              towerId: tower.id,
-              targetId: mainTarget.id,
-              elements: tower.elements,
-              projectile: tower.id.includes('1a') || tower.id.includes('2a') ? 'arrow' : 'beam',
-          };
-          deltas.push([DeltaType.TOWER_ATTACK, mainAttack]);
-          
-          tower.lastAttack = now;
-
-          if (tower.effect?.type === 'chain' && tower.effect.bounces) {
-              let currentTarget = mainTarget;
-              let bounced = 0;
-              const hitTargets = new Set([mainTarget.id]);
-              
-              while (bounced < tower.effect.bounces) {
-                  const nextTarget = enemiesInRange.find(e => 
-                      !hitTargets.has(e.id) && 
-                      Math.hypot(e.position.row - currentTarget.position.row, e.position.col - currentTarget.position.col) < 3
-                  );
-                  if (!nextTarget) break;
-                  
-                  const chainAttack: Attack = {
-                      id: `attack-chain-${now}-${Math.random()}`,
-                      towerId: tower.id,
-                      targetId: nextTarget.id,
-                      elements: tower.elements,
-                      projectile: 'chain',
-                      isChain: true,
-                      chainSourceId: currentTarget.id,
-                  };
-                  deltas.push([DeltaType.TOWER_ATTACK, chainAttack]);
-                  
-                  hitTargets.add(nextTarget.id);
-                  currentTarget = nextTarget;
-                  bounced++;
-              }
-          }
-        }
-      });
-      
-      const damageToApply: Map<string, { totalDamage: number; sources: PlacedTower[] }> = new Map();
-      deltas.forEach(delta => {
-          if (delta[0] !== DeltaType.TOWER_ATTACK) return;
-          const attack = delta[1] as Attack;
-
-          const tower = Object.values(towersByCell).find(t => t.id === attack.towerId);
-          const enemy = enemiesMap.get(attack.targetId);
-          if (!tower || !enemy) return;
-
-          let damage = tower.damage;
-          let isCrit = false;
-
-          if (attack.isChain) damage *= (tower.effect?.potency ?? 0.5);
-          if (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0)) {
-              damage *= (tower.effect.potency ?? 1); isCrit = true;
-          }
-
-          if (!damageToApply.has(enemy.id)) damageToApply.set(enemy.id, { totalDamage: 0, sources: [] });
-          const damageData = damageToApply.get(enemy.id)!;
-          damageData.totalDamage += damage;
-          damageData.sources.push(tower);
-          
-          if (isCrit) deltas.push([DeltaType.VFX_DAMAGE_NUMBER, { id: `dn-crit-${now}`, amount: damage, position: enemy.position, color: '#fde047', isCrit: true }]);
-          
-          if (tower.effect?.type === 'splash' && tower.effect.radius) {
-              deltas.push([DeltaType.VFX_SPLASH, { id: `sr-${now}`, x: enemy.position.col, y: enemy.position.row, r: tower.effect.radius, color: elementProjectileColors[tower.elements[0]] || '#fff' }]);
-              enemiesMap.forEach(otherEnemy => {
-                  if (otherEnemy.id === enemy.id) return;
-                  const dx = otherEnemy.position.col - enemy.position.col;
-                  const dy = otherEnemy.position.row - enemy.position.row;
-                  if (dx * dx + dy * dy <= (tower.effect!.radius! * tower.effect!.radius!)) {
-                      if (!damageToApply.has(otherEnemy.id)) damageToApply.set(otherEnemy.id, { totalDamage: 0, sources: [] });
-                      damageToApply.get(otherEnemy.id)!.totalDamage += damage * (tower.effect.potency ?? 0.8);
-                  }
-              });
-          }
-        }
-      );
-
-      const resourcesGainedThisTick: Record<string, number> = {};
-
-      damageToApply.forEach(({ totalDamage, sources }, enemyId) => {
-          const enemy = enemiesMap.get(enemyId);
-          if (!enemy || enemy.health <= 0) return;
-          
-          let modifiedEnemy = { ...enemy };
-          sources.forEach(tower => {
-              if (tower.effect) {
-                  const [newEnemy, effectDelta] = applyEffectToEnemy(modifiedEnemy, tower.effect, now);
-                  modifiedEnemy = newEnemy;
-                  if(effectDelta) deltas.push(effectDelta);
-              }
-          });
-          
-          const vulnerabilityEffect = modifiedEnemy.effects.find(e => e.type === 'vulnerability');
-          const damageMultiplier = 1 + (vulnerabilityEffect ? vulnerabilityEffect.potency : 0);
-          const armorShredEffect = modifiedEnemy.effects.find(e => e.type === 'armor_shred');
-          const armorReduction = armorShredEffect ? armorShredEffect.potency! : 0;
-          const effectiveArmor = Math.max(0, (modifiedEnemy.armor || 0) * (1 - armorReduction));
-          const damageReduction = effectiveArmor / (effectiveArmor + 400);
-          const finalDamage = totalDamage * damageMultiplier * (1 - damageReduction);
-          
-          if (finalDamage > 0) {
-              const e = enemiesMap.get(enemy.id)!;
-              e.health = Math.max(0, e.health - finalDamage);
-              deltas.push([DeltaType.ENEMY_DAMAGE, enemy.id, finalDamage, sources[0]?.elements[0] ?? 'neutral']);
-              
-              if (e.health <= 0 && !deadIds.has(e.id)) {
-                  deadIds.add(e.id);
-                  deltas.push([DeltaType.ENEMY_DIE, e.id]);
-                  const killingBlowTower = sources[sources.length - 1];
-                  if (killingBlowTower) {
-                      const playerToRewardId = killingBlowTower.ownerId;
-                      resourcesGainedThisTick[playerToRewardId] = (resourcesGainedThisTick[playerToRewardId] || 0) + e.bounty;
-                      if (killingBlowTower.effect?.type === 'lifesteal' && Math.random() < (killingBlowTower.effect.chance ?? 0)) {
-                          resourcesGainedThisTick[playerToRewardId] += Math.round(finalDamage * (killingBlowTower.effect.potency ?? 0));
-                      }
-                  }
-              }
-          }
-      });
-
-      if (!isIntermission) {
-        enemiesMap.forEach(enemy => {
-            if(enemy.health <= 0 || leakedIds.has(enemy.id)) return;
-            
-            const newEffects: EnemyStatusEffect[] = [];
-            let isStunned = false;
-            
-            enemy.effects.forEach(effect => {
-                if (effect.expires > now) {
-                    newEffects.push(effect);
-                    if (effect.type === 'stun') isStunned = true;
-                    if (effect.type === 'burn' && now - (effect.lastTick || 0) > 1000) {
-                        effect.lastTick = now;
-                        const burnPotency = effect.potency || 0;
-                        const burnDamage = burnPotency <= 1 ? enemy.maxHealth * burnPotency : burnPotency;
-                        const armor = enemy.armor || 0;
-                        const damageReduction = armor / (armor + 400);
-                        const finalBurnDamage = burnDamage * (1 - damageReduction);
-                        if(finalBurnDamage > 0) deltas.push([DeltaType.ENEMY_DAMAGE, enemy.id, finalBurnDamage, 'fire']);
-                    }
-                } else {
-                    deltas.push([DeltaType.ENEMY_REMOVE_EFFECT, enemy.id, effect.type]);
-                }
-            });
-            enemy.effects = newEffects;
-
-            if (!isStunned && enemy.health > 0 && !leakedIds.has(enemy.id)) {
-                const slowEffect = newEffects.find(e => e.type === 'slow');
-                const effectiveSpeed = enemy.speed * (slowEffect ? (1 - slowEffect.potency!) : 1);
-                const stepMs = 1000 / Math.max(0.001, effectiveSpeed);
-
-                if (now - enemy.lastMove > stepMs) {
-                    if(enemy.pathIndex < (enemy.path || currentPath).length - 1) {
-                        deltas.push([DeltaType.ENEMY_MOVE, enemy.id, enemy.pathIndex + 1, now]);
-                    }
-                }
-                if (enemy.position.row === END_NODE.row && enemy.position.col === END_NODE.col) {
-                  if(!leakedIds.has(enemy.id)) {
-                    leakedIds.add(enemy.id);
-                    deltas.push([DeltaType.ENEMY_REACH_END, enemy.id]);
-                  }
-                }
-            }
-        });
-      }
-      
-      deadIds.forEach(id => enemiesMap.delete(id));
-      leakedIds.forEach(id => enemiesMap.delete(id));
-
-      if (Object.keys(resourcesGainedThisTick).length > 0) {
-        const playerUpdates: Record<string, Partial<Player>> = {};
-        players.forEach(p => {
-            const resourcesToAdd = resourcesGainedThisTick[p.id];
-            if (resourcesToAdd) {
-                playerUpdates[p.id] = { resources: p.resources + resourcesToAdd };
-            }
-        });
-        deltas.push([DeltaType.PLAYER_UPDATE, playerUpdates]);
-      }
-
-      setTotalKilled(k => k + deadIds.size);
-      if (leakedIds.size > 0) {
-          setTotalLeaked(l => l + leakedIds.size);
-          if (gameState.lives - leakedIds.size <= 0 && gameStatus !== 'gameover') {
-              const result: GameResult = {
-                  playerName: localPlayer?.name || 'Anonymer Spieler',
-                  playerUid: 'local',
-                  date: new Date().toISOString(),
-                  difficulty: difficulty,
-                  wave: currentWave + 1,
-                  won: false,
-                  finalTowers: towersByCell
-              };
-              onGameEnd(result);
-              deltas.push([DeltaType.GAME_STATE_UPDATE, { gameStatus: 'gameover' }]);
-          }
-      }
-      
-      const liveEnemyCount = enemiesMap.size;
-      const waveData = waves[currentWave];
-      const allSpawnedForWave = spawnedThisWave >= (waveData?.enemies.count || 0);
-
-      if (!isIntermission && allSpawnedForWave && liveEnemyCount === 0 && gameStatus !== 'gameover') {
-          audioManager.stopMusic();
-          onWaveComplete?.();
-
-          const nextWave = currentWave + 1;
-          let stateUpdate: GameDelta | null = null;
-
-          if (nextWave >= waves.length) {
-              const result: GameResult = {
-                  playerName: localPlayer?.name || 'Anonymer Spieler',
-                  playerUid: 'local',
-                  date: new Date().toISOString(),
-                  difficulty: difficulty,
-                  wave: currentWave + 1,
-                  won: true,
-                  finalTowers: towersByCell
-              };
-              onGameEnd(result);
-              stateUpdate = [DeltaType.GAME_STATE_UPDATE, { gameStatus: 'gameover' }];
-          } else {
-              const canPickElement = nextWave > 0 && nextWave % 5 === 0;
-              const hasAllElements = localPlayer && ALL_PICKABLE_ELEMENTS.every(el => localPlayer.unlockedElements.includes(el));
-
-              if (canPickElement && !hasAllElements) {
-                  stateUpdate = [DeltaType.GAME_STATE_UPDATE, { gameStatus: 'picking-element' }];
-              } else {
-                   stateUpdate = [DeltaType.GAME_STATE_UPDATE, {
-                      currentWave: nextWave,
-                      isIntermission: true,
-                      waveStartCountdown: INTERMISSION_TIME,
-                      spawnedThisWave: 0,
-                  }];
-              }
-          }
-          
-          if (stateUpdate) {
-              deltas.push(stateUpdate);
-          }
-      }
-    }
-
-    if (deltas.length > 0) {
-      applyDeltas(deltas);
-    }
-  }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers, applyDeltas]);
-  useEffect(() => { simulateRef.current = simulate; }, [simulate]);
-  
-  const frameCountRef = useRef(0);
-  const lastFpsUpdateTimeRef = useRef(performance.now());
-  
-  useEffect(() => {
-    let isTabVisible = true;
-
-    if (isCoop || gameStatus !== 'playing') {
-      if (gameLoopRef.current) {
-        if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
-        else clearInterval(gameLoopRef.current);
-        gameLoopRef.current = undefined;
-      }
-      return;
-    }
-
-    const FIXED_DT_MS = 50; 
-    const MAX_SIM_STEPS = 5; 
-
-    const rafLoop = (now: number) => {
-        if (!isTabVisible) {
-          gameLoopRef.current = requestAnimationFrame(rafLoop);
-          return;
-        };
-        let frameTime = now - lastRafTimeRef.current;
-        lastRafTimeRef.current = now;
-        simAccumulatorRef.current += frameTime;
-
-        let steps = 0;
-        while (simAccumulatorRef.current >= FIXED_DT_MS && steps < MAX_SIM_STEPS) {
-            simulateRef.current?.();
-            simAccumulatorRef.current -= FIXED_DT_MS;
-            steps++;
-        }
-
-        frameCountRef.current++;
-        if (now - lastFpsUpdateTimeRef.current >= 1000) {
-            setFps(frameCountRef.current);
-            frameCountRef.current = 0;
-            lastFpsUpdateTimeRef.current = now;
-        }
-        
-        gameLoopRef.current = requestAnimationFrame(rafLoop);
-    };
-    
-    const intervalLoop = () => {
-        const now = performance.now();
-        const frameTime = Math.min(now - lastRafTimeRef.current, FIXED_DT_MS * MAX_SIM_STEPS * 2);
-        lastRafTimeRef.current = now;
-        simAccumulatorRef.current += frameTime;
-        
-        while(simAccumulatorRef.current >= FIXED_DT_MS) {
-            simulateRef.current?.();
-            simAccumulatorRef.current -= FIXED_DT_MS;
-        }
-    };
-    
-    const handleVisibilityChange = () => {
-      const isVisible = document.visibilityState === 'visible';
-      if (isVisible === isTabVisible) return;
-      isTabVisible = isVisible;
-      
-      if (gameLoopRef.current) {
-          if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
-          else clearInterval(gameLoopRef.current);
-      }
-
-      if (isVisible) {
-          lastRafTimeRef.current = performance.now();
-          gameLoopRef.current = requestAnimationFrame(rafLoop);
-      } else {
-          gameLoopRef.current = setInterval(intervalLoop, FIXED_DT_MS);
-      }
-    };
-
-    lastRafTimeRef.current = performance.now();
-    gameLoopRef.current = requestAnimationFrame(rafLoop);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
-        if (gameLoopRef.current) {
-            if (typeof gameLoopRef.current === 'number') cancelAnimationFrame(gameLoopRef.current);
-            else clearInterval(gameLoopRef.current);
-        }
-    }
-  }, [gameStatus, isCoop, setFps]);
-
-  const applyEffectToEnemy = (enemy: Enemy, effect: TowerEffect, now: number): [Enemy, GameDelta | null] => {
-    const newEffects = [...enemy.effects];
-    const { type, duration, potency } = effect;
-
-    let delta: GameDelta | null = null;
-    const existingEffectIndex = newEffects.findIndex(e => e.type === type);
-    if (existingEffectIndex !== -1) {
-        if ((potency ?? 0) >= (newEffects[existingEffectIndex].potency ?? 0)) {
-            newEffects[existingEffectIndex] = { type, expires: now + (duration ?? 0), potency: potency ?? 0 };
-            delta = [DeltaType.ENEMY_ADD_EFFECT, enemy.id, newEffects[existingEffectIndex]];
-        }
-    } else {
-        const newEffect = { type, expires: now + (duration ?? 0), potency: potency ?? 0 };
-        newEffects.push(newEffect);
-        delta = [DeltaType.ENEMY_ADD_EFFECT, enemy.id, newEffect];
-    }
-    
-    return [{ ...enemy, effects: newEffects }, delta];
-  };
-
   const isSpectator = localPlayerId === 'spectator';
   const canStartWave = !isSpectator && (!isCoop || isGameHost);
 
@@ -1037,6 +620,42 @@ const handleLoadAllTowersLayout = useCallback(() => {
   
   const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
   const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
+
+  // Listen for client actions if we are the host
+  useEffect(() => {
+    if (!isGameHost) return;
+
+    const handleAction = (e: Event) => {
+        const { type, payload } = (e as CustomEvent).detail;
+        console.log(`[GameSession - Host] Handling event ${type} with payload:`, payload);
+        
+        switch (Number(type)) {
+            case DeltaType.BUILD_TOWER_REQUEST:
+                handlePlaceTower(payload.row, payload.col, payload.playerId, payload.towerId);
+                break;
+            case DeltaType.UPGRADE_TOWER_REQUEST:
+                // Need to set the focused tower temporarily for the upgrade logic
+                const towerToUpgrade = Object.values(towersByCell).find(t => t.position.row === payload.row && t.position.col === payload.col);
+                if (towerToUpgrade) {
+                    if(isCoop) setFocusedTower(towerToUpgrade); else spSetFocusedTower?.(towerToUpgrade);
+                    // Use a timeout to ensure the state update has propagated before calling the upgrade handler
+                    setTimeout(() => handleUpgradeTower(payload.upgradeId, payload.playerId), 0);
+                }
+                break;
+            case DeltaType.SELL_TOWER_REQUEST:
+                 const towerToSell = Object.values(towersByCell).find(t => t.position.row === payload.row && t.position.col === payload.col);
+                 if (towerToSell) {
+                    if(isCoop) setFocusedTower(towerToSell); else spSetFocusedTower?.(towerToSell);
+                    setTimeout(() => handleSellTower(payload.playerId), 0);
+                 }
+                break;
+        }
+    };
+    
+    document.addEventListener('hostActionRequest', handleAction);
+    return () => document.removeEventListener('hostActionRequest', handleAction);
+
+  }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower, towersByCell, isCoop, spSetFocusedTower]);
 
   if (!localPlayer && !isSpectator) return null;
 
