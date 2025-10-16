@@ -359,7 +359,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const [hoveredCell, setHoveredCell] = useState<Node|null>(null);
 
-  const enemiesRef = useRef(new Map<string, Enemy>());
   const towerCooldownsRef = useRef(new Map<string, number>());
   const lastKnownEnemyPosRef = useRef<Map<string, { x: number; y: number; expires: number }>>(new Map());
   
@@ -428,11 +427,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     return () => window.removeEventListener('resize', internalResetView);
   }, [internalResetView]);
 
-  
-  useEffect(() => { 
-    enemiesRef.current = new Map(enemies.map(e => [e.id, e])); 
-  }, [enemies]);
-  
   useEffect(() => {
     incomingAttacksRef.current.push(...attacks);
   }, [attacks]);
@@ -502,15 +496,16 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         ctx.translate(panRef.current.x, panRef.current.y);
         ctx.scale(zoomRef.current, zoomRef.current);
         
-        const currentEnemyIds = new Set(enemiesRef.current.keys());
+        const currentEnemyIds = new Set(enemies.map(e => e.id));
         
+        // This is the cleanup logic for "ghost" enemies.
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
                 interpolatedEnemyPositions.delete(id);
             }
         }
         
-        for (const enemy of enemiesRef.current.values()) {
+        for (const enemy of enemies) {
             const pos = getEnemyWorldPos(enemy, now, enemy.path || currentPath);
             lastKnownEnemyPosRef.current.set(enemy.id, { x: pos.x, y: pos.y, expires: now + 350 });
         }
@@ -633,7 +628,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -820,7 +815,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
       const mouseWorldY = (my - panRef.current.y) / zoomRef.current;
 
       const zoomFactor = 1.1;
-      const newZoom = e.deltaY < 0 ? zoomRef.current * zoomFactor : zoomRef.current / zoomRef.current;
+      const newZoom = e.deltaY < 0 ? zoomRef.current * zoomFactor : zoomRef.current / zoomFactor;
       
       zoomRef.current = clamp(newZoom, 0.6, 1.5);
 
@@ -903,7 +898,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
         >
-          {/* Layer 10: Game World (Enemies, Towers, Path) */}
+          {/* Layer 10: Game World (Grid, Path, Towers, Enemies) */}
           <div 
             className="absolute inset-0"
             style={{ zIndex: 10 }}
@@ -1120,16 +1115,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 <div ref={hoverOverlayRef} className="absolute transition-opacity duration-100 opacity-0 pointer-events-none border-2 border-white/25 bg-white/5" style={{width: CELL_SIZE, height: CELL_SIZE}} />
             </div>
           </div>
-          
-          {/* Layer 20: VFX Canvas */}
-          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
-            <canvas 
-                ref={fxCanvasRef} 
-                className="absolute inset-0" 
-                style={{ left: 0, top: 0, width: '100%', height: '100%' }}
-            />
-          </div>
         </div>
+        
+        {/* Layer 20: VFX Canvas, placed after the world div */}
+        <canvas 
+            ref={fxCanvasRef} 
+            className="absolute inset-0 pointer-events-none" 
+            style={{ zIndex: 20, left: 0, top: 0, width: '100%', height: '100%' }}
+        />
         
         <div 
           className="absolute bottom-2 right-2 z-50 bg-card/50 backdrop-blur-sm p-1 rounded-md flex items-center gap-1"
@@ -1149,5 +1142,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
 
     
