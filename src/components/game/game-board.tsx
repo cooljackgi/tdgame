@@ -13,7 +13,6 @@ import TowerComponent, { TOWER_MUZZLE_POINTS } from "@/components/game/Tower";
 import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
-import { enemyIconPaths } from '@/components/game/icons/enemy-icons';
 import TowerContextMenu from './TowerContextMenu';
 
 const CELL_SIZE = 64;
@@ -44,8 +43,7 @@ function gridToPx(node: Node) {
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
 const LERP_FACTOR = 1.0;
 
-function getEnemyWorldPos(enemy: Enemy, now: number): { x: number; y: number } {
-  const path = enemy.path || [];
+function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
   let targetPos: { x: number, y: number };
 
   if (path.length === 0) {
@@ -58,7 +56,7 @@ function getEnemyWorldPos(enemy: Enemy, now: number): { x: number; y: number } {
     if (!a) {
       targetPos = gridToPx(enemy.position);
     } else {
-      const slowEffect = enemy.effects.find(e => e.type === 'slow');
+      const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
       const speed = enemy.speed * (slowEffect ? (1 - slowEffect.potency) : 1);
       const stepMs = 1000 / Math.max(0.001, speed);
 
@@ -297,7 +295,7 @@ const MemoizedTower = React.memo(function GameCell({
           onTowerClick(e, tower);
       }}
       className={cn(
-        "flex items-center justify-center cursor-pointer z-10",
+        "flex items-center justify-center cursor-pointer",
         isFocused && "rounded-lg bg-primary/35",
       )}
     >
@@ -355,13 +353,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const incomingRingsRef = useRef<SplashRing[]>([]);
   const incomingDmgRef = useRef<DamageNumber[]>([]);
 
-  // This ref is for single-player to queue attacks without causing a re-render
-  const singlePlayerAttackQueue = useRef<Attack[]>([]);
-
-  const processedAttackCount = useRef(0);
-  const processedRingCount   = useRef(0);
-  const processedDmgCount    = useRef(0);
-  
   const attacksPoolRef = useRef(createPool<LiveAttack>(150));
   const splashRingsPoolRef = useRef(createPool<LiveSplashRing>(60));
   const damageNumbersPoolRef = useRef(createPool<LiveDamageNumber>(100));
@@ -370,7 +361,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const enemiesRef = useRef(new Map<string, Enemy>());
   const towerCooldownsRef = useRef(new Map<string, number>());
-  const enemyPositionsRef = useRef(new Map<string, { x: number; y: number }>());
   const lastKnownEnemyPosRef = useRef<Map<string, { x: number; y: number; expires: number }>>(new Map());
   
   const boardDimensions = useMemo(() => {
@@ -428,7 +418,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   useImperativeHandle(ref, () => ({
     resetView: internalResetView,
     queueAttacks: (attacksToQueue) => {
-        singlePlayerAttackQueue.current.push(...attacksToQueue);
+        incomingAttacksRef.current.push(...attacksToQueue);
     },
   }));
 
@@ -441,46 +431,18 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   
   useEffect(() => { 
     enemiesRef.current = new Map(enemies.map(e => [e.id, e])); 
-    
-    const currentEnemyIds = new Set(enemies.map(e => e.id));
-    for (const id of interpolatedEnemyPositions.keys()) {
-        if (!currentEnemyIds.has(id)) {
-            interpolatedEnemyPositions.delete(id);
-        }
-    }
   }, [enemies]);
   
-  // Coop attack handling
   useEffect(() => {
-    if (!isCoop) return;
-    const arr = attacks ?? [];
-    const dist = arr.length - processedAttackCount.current;
-    if (dist > 0) {
-      for (let i = processedAttackCount.current; i < arr.length; i++) {
-        incomingAttacksRef.current.push(arr[i]);
-      }
-      processedAttackCount.current = arr.length;
-    }
-  }, [attacks, isCoop]);
+    incomingAttacksRef.current.push(...attacks);
+  }, [attacks]);
   
   useEffect(() => {
-    const arr = splashRings ?? [];
-    if (arr.length > processedRingCount.current) {
-      for (let i = processedRingCount.current; i < arr.length; i++) {
-        incomingRingsRef.current.push(arr[i]);
-      }
-      processedRingCount.current = arr.length;
-    }
+    incomingRingsRef.current.push(...splashRings);
   }, [splashRings]);
   
   useEffect(() => {
-    const arr = damageNumbers ?? [];
-    if (arr.length > processedDmgCount.current) {
-      for (let i = processedDmgCount.current; i < arr.length; i++) {
-        incomingDmgRef.current.push(arr[i]);
-      }
-      processedDmgCount.current = arr.length;
-    }
+    incomingDmgRef.current.push(...damageNumbers);
   }, [damageNumbers]);
 
   const lastTsRef = useRef(0);
@@ -540,30 +502,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         ctx.translate(panRef.current.x, panRef.current.y);
         ctx.scale(zoomRef.current, zoomRef.current);
         
-        // Cleanup old positions first
-        const currentEnemyIds = enemiesRef.current.keys();
-        const activeEnemyIdSet = new Set(currentEnemyIds);
-        for(const id of enemyPositionsRef.current.keys()) {
-            if(!activeEnemyIdSet.has(id)) {
-                enemyPositionsRef.current.delete(id);
-                lastKnownEnemyPosRef.current.delete(id);
-            }
+        // --- NEW ---
+        // Cleanup and update all enemy positions in one go.
+        const currentEnemyIds = new Set(enemiesRef.current.keys());
+        const enemyPositions = new Map<string, {x:number, y:number}>();
+        interpolatedEnemyPositions.forEach((val, key) => {
+          if(currentEnemyIds.has(key)) {
+            enemyPositions.set(key, val);
+          }
+        });
+        interpolatedEnemyPositions.clear();
+        for(const [key, val] of enemyPositions.entries()) {
+          interpolatedEnemyPositions.set(key, val);
         }
+        // --- END NEW ---
 
         for (const enemy of enemiesRef.current.values()) {
-            const pos = getEnemyWorldPos(enemy, now);
-            enemyPositionsRef.current.set(enemy.id, pos);
+            const pos = getEnemyWorldPos(enemy, now, enemy.path || currentPath);
             lastKnownEnemyPosRef.current.set(enemy.id, { x: pos.x, y: pos.y, expires: now + 350 });
         }
         
         for (const [id, val] of lastKnownEnemyPosRef.current) {
             if (val.expires < now) lastKnownEnemyPosRef.current.delete(id);
-        }
-
-        // Combine single player queue with coop queue
-        if (singlePlayerAttackQueue.current.length > 0) {
-            incomingAttacksRef.current.push(...singlePlayerAttackQueue.current);
-            singlePlayerAttackQueue.current = [];
         }
 
         {
@@ -576,9 +536,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     const tower = towersMap.get(a.towerId);
                     if (!tower && !a.isChain) continue;
             
-                    let fromPx: {x: number, y: number} | null = null;
+                    let fromPx: {x:number, y:number} | null = null;
                     if (a.isChain && a.chainSourceId) {
-                        const liveSrc = enemyPositionsRef.current.get(a.chainSourceId);
+                        const liveSrc = interpolatedEnemyPositions.get(a.chainSourceId);
                         const lastKnownSrc = lastKnownEnemyPosRef.current.get(a.chainSourceId);
                         if (liveSrc || lastKnownSrc) fromPx = (liveSrc ?? lastKnownSrc)!;
                     } else if (tower) {
@@ -597,7 +557,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     }
                     if (!fromPx) continue;
                     
-                    const liveTarget = enemyPositionsRef.current.get(a.targetId);
+                    const liveTarget = interpolatedEnemyPositions.get(a.targetId);
                     const lastKnownTarget = lastKnownEnemyPosRef.current.get(a.targetId);
                     let toPx = liveTarget ?? lastKnownTarget ?? null;
             
@@ -643,7 +603,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const life = Math.max(1, attack._vfx.life || 1);
             const t = clamp((now - attack._vfx.start) / life, 0, 1);
             if (t >= 1) { attacksPoolRef.current.free(attack); return; }
-            drawProjectile(ctx, attack, t, enemyPositionsRef.current);
+            drawProjectile(ctx, attack, t, interpolatedEnemyPositions);
         });
 
         splashRingsPoolRef.current.forEachActive(r => {
@@ -679,7 +639,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers]);
+  }, [fpsCapMs, placedTowers, currentPath]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -951,12 +911,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           />
         <div 
           ref={worldRef}
-          className="absolute inset-0 z-0"
+          className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
         >
           <div 
             className="relative"
-            style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight }}
+            style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight, zIndex: 10 }}
           >
             <div className="absolute inset-0" style={{
                 backgroundColor: 'hsl(216 28% 12%)',
@@ -966,7 +926,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 `,
                 backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
             }} />
-            <div className="absolute inset-0 z-0 pointer-events-none">
+            <div className="absolute inset-0 pointer-events-none">
                 <svg width="100%" height="100%" className="overflow-visible">
                   <defs>
                     <filter id="pathGlow">
@@ -1009,24 +969,26 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 </svg>
               </div>
 
-              <div className="absolute inset-0 z-10">
+              <div className="absolute inset-0">
                   {enemies.map((enemy) => {
-                      const { x, y } = getEnemyWorldPos(enemy, performance.now());
-                      const isStunned = enemy.effects.some(e => e.type === 'stun');
+                      const pos = interpolatedEnemyPositions.get(enemy.id);
+                      if (!pos) return null;
+                      
+                      const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
 
                       return (
                           <div
                           key={enemy.id}
                           style={{
                               position: 'absolute',
-                              left: x,
-                              top: y,
+                              left: pos.x,
+                              top: pos.y,
                               width: CELL_SIZE,
                               height: CELL_SIZE,
                               transform: 'translate(-50%, -50%)',
                               willChange: 'left, top',
                           }}
-                          className="pointer-events-none z-10"
+                          className="pointer-events-none"
                           >
                           <EnemyComponent
                               type={enemy.type}
@@ -1127,10 +1089,11 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
               {focusedTower && (
                 <>
                 <div 
-                  className="absolute z-10 pointer-events-none"
+                  className="absolute pointer-events-none"
                   style={{
                     left: gridToPx(focusedTower.position).x,
                     top: gridToPx(focusedTower.position).y,
+                    zIndex: 15,
                   }}
                 >
                   <div
