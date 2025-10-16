@@ -94,9 +94,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   const handleStartGame = async (gameId: string) => {
     try {
-        // No need to update the doc here anymore, as joinGame handles the state transition.
-        // We just navigate. Add a small delay to prevent race conditions.
-        await new Promise(resolve => setTimeout(resolve, 250));
+        // This is a dummy update to ensure client-side state is synced before navigating.
+        // It helps prevent the React #185 error by giving Firestore's onSnapshot listener
+        // a moment to catch up with the changes triggered by joinGame.
+        const gameRef = doc(db, 'games', gameId);
+        await updateDoc(gameRef, { hostReadyTimestamp: new Date() });
         router.push(`/game/${gameId}`);
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
