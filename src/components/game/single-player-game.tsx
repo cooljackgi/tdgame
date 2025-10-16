@@ -307,11 +307,12 @@ export default function SinglePlayerGame({
     }, [toast]);
     
     const handleElementPick = (element: Element) => {
-        setPlayers(prev => prev.map(p => ({ ...p, unlockedElements: [...p.unlockedElements, element] })));
-        setGameStatus('playing');
-        setIsIntermission(true);
-        setWaveStartCountdown(INTERMISSION_TIME);
-        setCurrentWave(prev => prev + 1);
+      setPlayers(prev => prev.map(p => ({ ...p, unlockedElements: [...p.unlockedElements, element] })));
+      const nextWave = currentWave + 1;
+      setCurrentWave(nextWave);
+      setGameStatus('playing');
+      setIsIntermission(true);
+      setWaveStartCountdown(INTERMISSION_TIME);
     };
 
     const handleLoadTestLayout = useCallback(() => handleLoadMazetLayout(false), [handleLoadMazetLayout]);
@@ -353,9 +354,8 @@ export default function SinglePlayerGame({
             }
 
             if (!spawnerStateRef.current) {
-                if (currentPath.length === 0) return; // Wait for path
                 const waveData = waves[currentWave];
-                if (!waveData) return;
+                if (!waveData || currentPath.length === 0) return;
                 spawnerStateRef.current = {
                     count: 0,
                     timer: 0,
