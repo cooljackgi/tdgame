@@ -172,7 +172,6 @@ export default function GameSession({
   const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
 
   // --- Local State (Client-side only) ---
-  // If in SP, use the state from the parent. If in MP, manage state locally.
   const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(spSelectedTowerToBuild ?? null);
   const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(spFocusedTower ?? null);
   
@@ -194,10 +193,8 @@ export default function GameSession({
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   
-  // This effect runs on the host when the path changes. It tells all enemies to update their path.
   useEffect(() => {
     if (!isGameHost || enemies.length === 0) return;
-
     const deltas: GameDelta[] = [];
     const newPath = findPath(START_NODE, END_NODE, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS);
     
@@ -211,14 +208,15 @@ export default function GameSession({
     if (deltas.length > 0) {
       broadcastGameData(deltas);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placedTowers, isGameHost, broadcastGameData, START_NODE.row, START_NODE.col, END_NODE.row, END_NODE.col]);
+  }, [placedTowers, isGameHost, broadcastGameData, enemies, START_NODE, END_NODE]);
 
-  // This effect runs on the host to start the game when P2 joins.
   useEffect(() => {
     if (isGameHost && gameStatus === 'waiting' && players.length === 2 && players.every(p => p.id)) {
-        console.log("[GameSession - Host] Player 2 detected, starting game countdown.");
-        broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }]]);
+        broadcastGameData([[DeltaType.GAME_STATE_UPDATE, {
+          gameStatus: 'playing',
+          isIntermission: true,
+          waveStartCountdown: INTERMISSION_TIME 
+        }]]);
     }
   }, [isGameHost, gameStatus, players, broadcastGameData]);
 
@@ -264,9 +262,9 @@ export default function GameSession({
     if (gameStatus === 'playing') {
       stateUpdate = { gameStatus: 'paused' };
     } else if (gameStatus === 'paused' || gameStatus === 'waiting') {
-      stateUpdate = {
+       stateUpdate = {
         gameStatus: 'playing',
-        isIntermission: false, // Start the wave immediately
+        isIntermission: false,
         waveStartCountdown: 0,
       };
     } else {
@@ -310,18 +308,23 @@ export default function GameSession({
  const handlePlaceTower = useCallback((row: number, col: number, requestedByPlayerId?: Player['id'], requestedTowerId?: string) => {
     const builderId = requestedByPlayerId || localPlayerId;
     
-    const towerToBuild = (isCoop && requestedByPlayerId)
-      ? towers.find(t => t.id === requestedTowerId)
-      : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild);
+    let towerToBuild: Tower | undefined | null;
+    if (isCoop) {
+        if (requestedByPlayerId) {
+            towerToBuild = towers.find(t => t.id === requestedTowerId);
+        } else {
+            towerToBuild = selectedTowerToBuild;
+        }
+    } else {
+        towerToBuild = spSelectedTowerToBuild;
+    }
     
     if (builderId === 'spectator') return;
      
     if (isCoop && !isGameHost) {
         if (towerToBuild && sendActionRequest) {
-            console.log(`[GameSession - Client] Requesting to build tower at ${row},${col}`);
             sendActionRequest(DeltaType.BUILD_TOWER_REQUEST.toString(), { towerId: towerToBuild.id, row, col, playerId: builderId });
         }
-        // Client does not change selection, waits for host confirmation
         return;
     }
     
@@ -376,7 +379,6 @@ export default function GameSession({
     ]);
     
     if(builderId === localPlayerId) {
-        // Do not clear selected tower to allow sequential building
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
         audioManager.playSfx('build_tower');
@@ -405,7 +407,6 @@ export default function GameSession({
         return;
     }
     
-    // Host logic or single-player logic
     const upgradeTowerSpec = towers.find(t => t.id === upgradeId);
     if (!upgradeTowerSpec) {
         if(builderId === localPlayerId) toast({ title: "Upgrade-Fehler", variant: 'destructive' });
@@ -431,10 +432,10 @@ export default function GameSession({
       range: upgradeTowerSpec.range,
       attackSpeed: upgradeTowerSpec.attackSpeed,
       maxHealth: upgradeTowerSpec.maxHealth,
-      health: upgradeTowerSpec.maxHealth, // Heal on upgrade
+      health: upgradeTowerSpec.maxHealth,
       elements: upgradeTowerSpec.elements,
       effect: upgradeTowerSpec.effect,
-      cost: upgradeTowerSpec.cost, // Update cost to new total
+      cost: upgradeTowerSpec.cost,
       tier: upgradeTowerSpec.tier,
       upgradesTo: upgradeTowerSpec.upgradesTo,
       isBase: upgradeTowerSpec.isBase,
@@ -476,7 +477,6 @@ export default function GameSession({
         return;
     }
   
-    // Host logic or single-player logic
     const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
     const refund = Math.round(currentFocusedTower.cost * refundPercentage);
     const cellKey = `${currentFocusedTower.position.row}_${currentFocusedTower.position.col}`;
@@ -600,7 +600,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
     layout.forEach((pos, index) => {
         const { row, col } = pos;
-        const towerSpec = towers[index % towers.length]; // Cycle through all towers
+        const towerSpec = towers[index % towers.length];
         const newTower: PlacedTower = {
             ...towerSpec,
             specId: towerSpec.id,
@@ -625,13 +625,12 @@ const handleLoadAllTowersLayout = useCallback(() => {
     const playerUpdate = { [localPlayer.id]: { unlockedElements: [...localPlayer.unlockedElements, element] }};
     const nextWave = currentWave + 1;
 
-    // Reset for the next wave
     const stateUpdate = {
         gameStatus: 'playing',
         isIntermission: true,
         waveStartCountdown: INTERMISSION_TIME,
         currentWave: nextWave,
-        spawnedThisWave: 0, // Reset for the actual next wave
+        spawnedThisWave: 0,
     };
 
     broadcastGameData([
@@ -647,9 +646,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     const deadIds = new Set<string>();
     const leakedIds = new Set<string>();
     
-    // This is the core host-only simulation logic
     if (isGameHost) {
-      // Tower attacks
       Object.values(towersByCell).forEach(tower => {
         if ((now - (tower.lastAttack || 0) <= tower.attackSpeed) || tower.effect?.type === 'aura') return;
 
@@ -672,7 +669,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
           };
           deltas.push([DeltaType.TOWER_ATTACK, mainAttack]);
           
-          tower.lastAttack = now; // Update host-side state immediately
+          tower.lastAttack = now;
 
           if (tower.effect?.type === 'chain' && tower.effect.bounces) {
               let currentTarget = mainTarget;
@@ -811,7 +808,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
                     deltas.push([DeltaType.ENEMY_REMOVE_EFFECT, enemy.id, effect.type]);
                 }
             });
-            enemy.effects = newEffects; // Update host map
+            enemy.effects = newEffects;
 
             if (!isStunned && enemy.health > 0 && !leakedIds.has(enemy.id)) {
                 const slowEffect = newEffects.find(e => e.type === 'slow');
@@ -867,14 +864,13 @@ const handleLoadAllTowersLayout = useCallback(() => {
       
       const liveEnemyCount = enemiesMap.size;
       const waveData = waves[currentWave];
-      const allSpawned = spawnedThisWave >= (waveData?.enemies.count || 0);
+      const allSpawnedForWave = spawnedThisWave >= (waveData?.enemies.count || 0);
 
-      if (!isIntermission && allSpawned && liveEnemyCount === 0 && gameStatus !== 'gameover') {
+      if (!isIntermission && allSpawnedForWave && liveEnemyCount === 0 && gameStatus !== 'gameover') {
           audioManager.stopMusic();
           onWaveComplete?.();
 
           const nextWave = currentWave + 1;
-          
           let stateUpdate: GameDelta | null = null;
 
           if (nextWave >= waves.length) {
@@ -916,24 +912,20 @@ const handleLoadAllTowersLayout = useCallback(() => {
     }
   }, [placedTowers, isGameHost, gameState.lives, gameStatus, players, localPlayerId, currentWave, END_NODE, broadcastGameData, currentPath, isIntermission, localPlayer, difficulty, onGameEnd, onWaveComplete, towersByCell, enemies, spawnedThisWave, setPlayers, towers]);
 
-  // This effect listens for client build requests on the host
   useEffect(() => {
     if (!isGameHost) return;
 
     const onHostAction = (ev: Event) => {
         const { type, payload } = (ev as CustomEvent).detail;
-        console.log(`[GameSession - Host] Handling event ${type} with payload:`, payload);
         const { row, col, playerId, upgradeId, towerId } = payload;
 
         switch (String(type)) {
             case DeltaType.BUILD_TOWER_REQUEST.toString():
                 handlePlaceTower(row, col, playerId, towerId);
                 break;
-
             case DeltaType.UPGRADE_TOWER_REQUEST.toString():
                 const towerToUpgrade = towersByCell[`${row}_${col}`];
                 if (!towerToUpgrade) return;
-                
                 const originalFocusUpgrade = focusedTower;
                 setFocusedTower(towerToUpgrade);
                 setTimeout(() => {
@@ -941,11 +933,9 @@ const handleLoadAllTowersLayout = useCallback(() => {
                     setFocusedTower(originalFocusUpgrade);
                 }, 0);
                 break;
-
             case DeltaType.SELL_TOWER_REQUEST.toString():
                 const towerToSell = towersByCell[`${row}_${col}`];
                 if (!towerToSell) return;
-
                 const originalFocusSell = focusedTower;
                 setFocusedTower(towerToSell);
                 setTimeout(() => {
@@ -963,14 +953,13 @@ const handleLoadAllTowersLayout = useCallback(() => {
 
   useEffect(() => {
     if (hasInteracted) {
-      // Music logic handled by start/stop wave
+      // Music logic is handled by wave start/stop
     }
   }, [hasInteracted]);
   
   const frameCountRef = useRef(0);
   const lastFpsUpdateTimeRef = useRef(performance.now());
   
-  // MAIN GAME LOOP (HOST ONLY)
   useEffect(() => {
     let isTabVisible = true;
 
@@ -1158,16 +1147,14 @@ const handleLoadAllTowersLayout = useCallback(() => {
             cheat_skipWaves={cheat_skipWaves}
             cheat_heal={cheat_heal}
             cheat_unlockAll={cheat_unlockAll}
-            // Network Stats
-            isWsConnected={isWsConnected}
-            clientPacketsPerSecond={clientPacketsPerSecond}
-            clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
-            hostPacketsPerSecond={hostPacketsPerSecond}
-            hostBytesSentPerSecond={hostBytesSentPerSecond}
-            averagePacketSize={averagePacketSize}
             firingTowerIds={firingTowerIds}
-            // Props for TowerContextMenu
             allTowers={towers}
+            isWsConnected={isWsConnected}
+            hostPacketsPerSecond={hostPacketsPerSecond}
+            clientPacketsPerSecond={clientPacketsPerSecond}
+            averagePacketSize={averagePacketSize}
+            hostBytesSentPerSecond={hostBytesSentPerSecond}
+            clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
           />
       </main>
       
@@ -1201,12 +1188,3 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-

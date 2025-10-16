@@ -4,7 +4,7 @@
 
 import GameSession from "@/components/game/game-session";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { onAuthStateChanged, auth, functions } from "@/lib/firebase";
 import { doc, onSnapshot, updateDoc, getDoc, Unsubscribe, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -12,13 +12,13 @@ import { useWebRTC } from '@/hooks/use-webrtc';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
-import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element, MovementPattern } from '@/lib/game-data/types';
 import { Loader2 } from "lucide-react";
 import { DeltaType } from "@/lib/game-data/types";
-import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from "@/lib/game-data/constants";
+import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS, difficultyModifiers } from "@/lib/game-data/constants";
 import { audioManager } from "@/lib/audio/audio-manager";
 import { findPath } from '@/lib/pathfinding';
-import { towers as initialTowers } from '@/lib/game-data/towers';
+import { waves } from "@/lib/game-data/enemies";
 import { httpsCallable } from "firebase/functions";
 
 function CoopGame() {
@@ -40,8 +40,6 @@ function CoopGame() {
   const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [spawnedThisWave, setSpawnedThisWave] = useState(0);
-  const [clientPacketsPerSecond, setClientPacketsPerSecond] = useState(0);
-  const [clientBytesReceivedPerSecond, setClientBytesReceivedPerSecond] = useState(0);
 
   // --- Local State ---
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
@@ -57,14 +55,13 @@ function CoopGame() {
   
   // --- Stats State ---
   const [fps, setFps] = useState(0);
-  const [hostPacketsPerSecond, setHostPacketsPerSecond] = useState(0);
-  const [hostBytesSentPerSecond, setHostBytesSentPerSecond] = useState(0);
-  const [averagePacketSize, setAveragePacketSize] = useState(0);
+  
+  const rtc = useWebRTC(gameId, isGameHost, user);
 
-  // Memoize the isGameHost value to provide a stable reference to useWebRTC
-  const memoizedIsGameHost = useMemo(() => isGameHost, [isGameHost]);
-  const rtc = useWebRTC(gameId, memoizedIsGameHost, user);
-
+  // Refs for wave spawning logic
+  const spawnerRef = useRef<NodeJS.Timeout>();
+  const waveInProgressRef = useRef(false);
+  const enemyIdCounter = useRef(0);
 
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -148,11 +145,7 @@ function CoopGame() {
                 setSplashRings(prev => [...prev.slice(-50), payload]);
                 break;
              case DeltaType.CLIENT_STATS_UPDATE:
-                if (isGameHost) {
-                  const stats = payload as { pps: number, bps: number, avgSize: number };
-                  setClientPacketsPerSecond(stats.pps);
-                  setClientBytesReceivedPerSecond(stats.bps);
-                }
+                // This state update is handled by the useWebRTC hook itself, no action needed here.
                 break;
             case DeltaType.GAME_STATE_UPDATE: {
                 const newState = payload as Partial<GameState & { gameStatus: GameStatus, currentWave: number, isIntermission: boolean, waveStartCountdown: number, spawnedThisWave: number }>;
@@ -196,22 +189,86 @@ function CoopGame() {
     
   const broadcastGameData = useCallback((deltas: GameDelta[]) => {
       if (deltas.length === 0) return;
-      
-      // Send to other players
-      if(isGameHost) {
+      if (isGameHost) {
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
-      
-      // Apply locally for the host.
       applyDeltas(deltas);
   }, [rtc, isGameHost, applyDeltas]);
+
+  // Wave Spawning Logic (HOST ONLY)
+  const startWave = useCallback(() => {
+    if (!isGameHost || currentWave >= waves.length || waveInProgressRef.current) return;
+    
+    waveInProgressRef.current = true;
+    if (spawnerRef.current) clearTimeout(spawnerRef.current);
+    spawnerRef.current = undefined;
+
+    setSpawnedThisWave(0);
+    audioManager.playWaveMusic();
+  
+    const waveData = waves[currentWave];
+    let spawnedCount = 0;
+  
+    const spawnEnemy = () => {
+      if (gameStatus !== 'playing' || isIntermission) {
+        if (spawnerRef.current) clearTimeout(spawnerRef.current);
+        spawnerRef.current = undefined;
+        waveInProgressRef.current = false; // Stop if game state changes
+        return;
+      }
+      if (spawnedCount >= waveData.enemies.count) {
+        if (spawnerRef.current) clearTimeout(spawnerRef.current);
+        spawnerRef.current = undefined;
+        return;
+      }
+  
+      const difficultyMod = difficultyModifiers[difficulty];
+      const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
+      
+      let movementPattern: MovementPattern;
+      switch(waveData.enemies.type) {
+        case 'schnell': movementPattern = 'zigzag'; break;
+        case 'gepanzert': case 'boss': movementPattern = 'straight'; break;
+        default: movementPattern = 'wobble'; break;
+      }
+
+      const enemyId = `enemy-${enemyIdCounter.current++}`;
+      const newEnemy: Enemy = {
+        id: enemyId, ...waveData.enemies, health, maxHealth: health,
+        pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
+        lastMove: performance.now(), wasHit: false, targetNode: END_NODE,
+        movementPattern: movementPattern, path: [], // Path is added in applyDeltas
+      };
+      
+      broadcastGameData([[DeltaType.ENEMY_SPAWN, newEnemy]]);
+      
+      spawnedCount++;
+      setSpawnedThisWave(c => c + 1); // Local update for host UI
+      spawnerRef.current = setTimeout(spawnEnemy, waveData.enemies.spawnDelay);
+    };
+
+    spawnEnemy();
+  }, [isGameHost, currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE]);
+
+  // Effect to trigger wave start on host
+  useEffect(() => {
+      if (isGameHost && gameStatus === 'playing' && !isIntermission && !waveInProgressRef.current) {
+          startWave();
+      }
+      // Cleanup spawner if game state changes
+      return () => {
+          if (spawnerRef.current) {
+              clearTimeout(spawnerRef.current);
+              waveInProgressRef.current = false;
+          }
+      };
+  }, [isGameHost, gameStatus, isIntermission, startWave]);
 
 
   useEffect(() => {
     if (!user || !gameId) return;
 
     let gameUnsubscribe: Unsubscribe;
-    const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
 
     const setupListeners = async (uid: string) => {
         try {
@@ -226,21 +283,16 @@ function CoopGame() {
             let isPlayer1 = gameData.player1Id === uid;
             let isPlayer2 = gameData.player2Id === uid;
 
-            // If user is not in the game and it's not full, join them.
             if (!isPlayer1 && !isPlayer2 && !gameData.player2Id && !gameData.isTestGame) {
-                console.log("[CoopGame] User not in game, attempting to join...");
                 const joinGameCallable = httpsCallable(functions, 'joinGame');
                 await joinGameCallable({ gameId });
-                isPlayer2 = true; // Assume join was successful
+                isPlayer2 = true;
                 toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
-            } else if (!isPlayer1 && !isPlayer2) {
-                console.log("[CoopGame] User is a spectator.");
             }
 
             const currentRole = isPlayer1 ? 'player1' : (isPlayer2 ? 'player2' : 'spectator');
             setIsGameHost(currentRole === 'player1');
             setLocalPlayerId(currentRole);
-            console.log(`[CoopGame] User role set: ${currentRole}, isHost: ${currentRole === 'player1'}`);
 
             gameUnsubscribe = onSnapshot(gameDocRef, (snap) => {
                 if (!snap.exists()) {
@@ -255,14 +307,11 @@ function CoopGame() {
                 setPlayers(normalized);
 
                 const currentIsHost = data.player1Id === user.uid;
-                if (currentIsHost !== memoizedIsGameHost) {
-                   console.log(`[CoopGame] Host status changed to: ${currentIsHost}`);
+                if (currentIsHost !== isGameHost) {
                    setIsGameHost(currentIsHost);
                 }
                 setLocalPlayerId(currentIsHost ? 'player1' : (data.player2Id === user.uid ? 'player2' : 'spectator'));
 
-                // This is now the single source of truth for these states,
-                // driven by Firestore and then overridden by deltas.
                 setGameState(data.gameState || { lives: 20 });
                 setDifficulty(data.difficulty || 'Normal');
                 setGameStatus(data.gameStatus || 'waiting');
@@ -296,7 +345,7 @@ function CoopGame() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, isGameHost, memoizedIsGameHost]);
+  }, [user, gameId, router, toast, isGameHost]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -328,7 +377,6 @@ function CoopGame() {
     if (!rtc.lastMessage) return;
     
     const { type, payload } = rtc.lastMessage;
-    // console.log("[CoopGame] Received message from useWebRTC:", { type, payload });
 
     if (type === 'game_delta_batch') {
       applyDeltas(payload as GameDelta[]);
@@ -339,23 +387,22 @@ function CoopGame() {
   const handleGameEnd = useCallback(async (result: GameResult) => {
     if (gameId && isGameHost) {
         if(gameStatus === 'gameover') return;
-      const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
       const logData = {
           ...result,
           timestamp: serverTimestamp(),
-          hostPacketsPerSecond,
-          hostBytesSentPerSecond,
-          clientPacketsPerSecond,
-          clientBytesReceivedPerSecond,
-          averagePacketSize,
+          hostPacketsPerSecond: rtc.packetsPerSecond,
+          hostBytesSentPerSecond: rtc.bytesPerSecond,
+          clientPacketsPerSecond: 0, // Placeholder
+          clientBytesReceivedPerSecond: 0, // Placeholder
+          averagePacketSize: rtc.averagePacketSize,
           enemyCount: enemies.length,
           towerCount: Object.keys(towersByCell).length,
           fps,
       };
-      await addDoc(logCollectionRef, logData);
+      await addDoc(collection(db, `games/${gameId}/game_logs`), logData);
       await updateDoc(doc(db, 'games', gameId), { gameStatus: 'gameover' });
     }
-  }, [gameId, isGameHost, gameStatus, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize, enemies.length, Object.keys(towersByCell).length, fps]);
+  }, [gameId, isGameHost, gameStatus, enemies.length, Object.keys(towersByCell).length, fps, rtc.packetsPerSecond, rtc.bytesPerSecond, rtc.averagePacketSize]);
   
   if (loading || !localPlayerId) {
     return (
@@ -399,11 +446,11 @@ function CoopGame() {
       fps={fps}
       setFps={setFps}
       isWsConnected={rtc?.isConnected}
-      hostPacketsPerSecond={hostPacketsPerSecond}
-      hostBytesSentPerSecond={hostBytesSentPerSecond}
-      clientPacketsPerSecond={clientPacketsPerSecond}
-      clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
-      averagePacketSize={averagePacketSize}
+      hostPacketsPerSecond={rtc.packetsPerSecond}
+      hostBytesSentPerSecond={rtc.bytesPerSecond}
+      clientPacketsPerSecond={rtc.packetsPerSecond} // Note: This is an approximation from client perspective
+      clientBytesReceivedPerSecond={rtc.bytesPerSecond} // Note: This is an approximation from client perspective
+      averagePacketSize={rtc.averagePacketSize}
       finalGameResult={finalGameResult}
     />
   );
