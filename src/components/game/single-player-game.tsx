@@ -57,7 +57,7 @@ export default function SinglePlayerGame({
     const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
-    const [renderTick, setRenderTick] = useState(0); // Controlled re-render trigger
+    const [renderTick, setRenderTick] = useState(0);
 
     // --- Refs for state that should NOT cause re-renders within the loop ---
     const enemiesRef = useRef<Enemy[]>([]);
@@ -84,7 +84,6 @@ export default function SinglePlayerGame({
       return findPath(START_NODE, END_NODE, blockedPositions, GRID_ROWS, GRID_COLS) || [];
     }, [towersByCell]);
 
-    // Use refs for state that changes inside the loop
     const playersRef = useRef(players);
     useEffect(() => { playersRef.current = players; }, [players]);
     
@@ -93,6 +92,9 @@ export default function SinglePlayerGame({
 
     const towersByCellRef = useRef(towersByCell);
     useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
+
+    const currentPathRef = useRef(currentPath);
+    useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
     
     const saveGameState = useCallback(() => {
         if (gameStatus === 'gameover' || isCheating) return;
@@ -195,7 +197,9 @@ export default function SinglePlayerGame({
             ownerId: player.id,
         };
     
-        setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
+        towersByCellRef.current[cellKey] = newTower;
+        setTowersByCell({ ...towersByCellRef.current });
+
         setPlayers(prevPlayers => prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources - newTower.cost } : p));
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
@@ -230,7 +234,9 @@ export default function SinglePlayerGame({
             health: upgradeTowerSpec.maxHealth,
         };
     
-        setTowersByCell(prev => ({ ...prev, [cellKey]: newPlacedTower }));
+        towersByCellRef.current[cellKey] = newPlacedTower;
+        setTowersByCell({ ...towersByCellRef.current });
+
         setPlayers(prevPlayers => prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources - cost } : p));
         setLastUpgradedTowerId(newPlacedTower.id);
         setTimeout(() => setLastUpgradedTowerId(null), 1000);
@@ -246,11 +252,8 @@ export default function SinglePlayerGame({
         const refund = Math.round(focusedTower.cost * refundPercentage);
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
     
-        setTowersByCell(prev => {
-            const newTowers = { ...prev };
-            delete newTowers[cellKey];
-            return newTowers;
-        });
+        delete towersByCellRef.current[cellKey];
+        setTowersByCell({ ...towersByCellRef.current });
         
         setPlayers(prevPlayers => prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources + refund } : p));
         setFocusedTower(null);
@@ -407,9 +410,7 @@ export default function SinglePlayerGame({
                 }
             }
             
-            const newEnemies = [...enemiesRef.current];
-
-            if (spawnerStateRef.current && currentPath.length > 0) {
+            if (spawnerStateRef.current && currentPathRef.current.length > 0) {
                 spawnerStateRef.current.timer += delta;
                 if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
                     if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
@@ -419,10 +420,10 @@ export default function SinglePlayerGame({
                         
                         const newEnemy: Enemy = {
                             id: `enemy-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData, health, maxHealth: health,
-                            path: currentPath, pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
+                            path: currentPathRef.current, pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
                             lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern
                         };
-                        newEnemies.push(newEnemy);
+                        enemiesRef.current.push(newEnemy);
                         spawnedThisWaveRef.current++;
                         spawnerStateRef.current.count++;
                     }
@@ -436,7 +437,7 @@ export default function SinglePlayerGame({
 
             Object.values(currentTowers).forEach(tower => {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
-                    const targets = newEnemies.filter(e => {
+                    const targets = enemiesRef.current.filter(e => {
                         const towerPos = { x: tower.position.col, y: tower.position.row };
                         const enemyPos = { x: e.position.col, y: e.position.row };
                         const distSq = (towerPos.x - enemyPos.x) ** 2 + (towerPos.y - enemyPos.y) ** 2;
@@ -461,7 +462,7 @@ export default function SinglePlayerGame({
             });
 
             let playerResourcesToAdd = 0;
-            const stillAliveEnemies = newEnemies.map(enemy => {
+            const stillAliveEnemies = enemiesRef.current.map(enemy => {
                 let newHealth = enemy.health;
                 newAttacks.forEach(attack => {
                     if (attack.targetId === enemy.id) {
@@ -492,8 +493,8 @@ export default function SinglePlayerGame({
                     const timeSinceMove = now - enemy.lastMove;
                     
                     if (timeSinceMove / (1000 / effectiveSpeed) >= 1) {
-                         if (enemy.pathIndex < currentPath.length - 1) {
-                            return {...enemy, health: newHealth, pathIndex: enemy.pathIndex + 1, lastMove: now, position: currentPath[enemy.pathIndex+1]};
+                         if (enemy.pathIndex < currentPathRef.current.length - 1) {
+                            return {...enemy, health: newHealth, pathIndex: enemy.pathIndex + 1, lastMove: now, position: currentPathRef.current[enemy.pathIndex+1]};
                         } else {
                             totalLeakedRef.current++;
                             setGameState(g => ({...g, lives: Math.max(0, g.lives - 1)}));
@@ -507,13 +508,12 @@ export default function SinglePlayerGame({
             if (playerResourcesToAdd > 0) {
                 setPlayers(prev => prev.map(p => ({...p, resources: p.resources + playerResourcesToAdd})));
             }
-
+            
             enemiesRef.current = stillAliveEnemies;
             if(newAttacks.length > 0) attacksRef.current = [...attacksRef.current.slice(-200), ...newAttacks];
             if(newDamageNumbers.length > 0) damageNumbersRef.current = [...damageNumbersRef.current.slice(-100), ...newDamageNumbers];
             firingTowerIdsRef.current = currentFiringIds;
 
-            // Wave Completion Check
             if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.length === 0) {
                 spawnerStateRef.current = null;
                 const nextWave = currentWave + 1;
@@ -530,7 +530,6 @@ export default function SinglePlayerGame({
                     }
                 }
             }
-            // Controlled re-render
             setRenderTick(t => t + 1);
         };
         
@@ -540,9 +539,9 @@ export default function SinglePlayerGame({
             document.removeEventListener("visibilitychange", handleVisibilityChange);
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         };
-    }, [gameStatus, isIntermission, handleGameEnd, user, isCheating, difficulty, currentPath, currentWave]);
-
-    const { toast: a, ...isMobile } = useIsMobile();
+    }, [gameStatus, isIntermission, handleGameEnd, user, isCheating, difficulty, currentWave]);
+    
+    const isMobile = useIsMobile();
     const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
 
     if (players.length === 0) {
@@ -552,7 +551,7 @@ export default function SinglePlayerGame({
     return (
         <div className="flex flex-col h-full bg-background text-foreground font-body">
             <Header 
-                isMobile={!!isMobile} 
+                isMobile={isMobile} 
                 onExit={() => { saveGameState(); onExit(); }}
                 fps={fpsRef.current}
                 isMuted={audioManager.isMuted}
