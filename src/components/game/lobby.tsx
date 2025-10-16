@@ -94,11 +94,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   const handleStartGame = async (gameId: string) => {
     try {
         const gameRef = doc(db, 'games', gameId);
-        // This is the fix: set isIntermission to false to immediately start the wave.
         await updateDoc(gameRef, {
-            gameStatus: 'playing',
-            isIntermission: false,
-            waveStartCountdown: 0
+            isIntermission: true, // Should already be set by joinGame, but good to be sure
+            waveStartCountdown: INTERMISSION_TIME
         });
         router.push(`/game/${gameId}`);
     } catch (error: any) {
