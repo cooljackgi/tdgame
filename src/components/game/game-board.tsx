@@ -572,7 +572,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const q = incomingDmgRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
-                    // Attach targetId if it's not present (for backward compatibility)
                     const damageData = { ...q[i], targetId: q[i].targetId || ''};
                     damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
                 }
@@ -601,16 +600,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const t = clamp((now - dn.start) / dn.life, 0, 1);
             if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
             
-            // Get the live position of the enemy this number belongs to
             let p = interpolatedEnemyPositions.get(dn.targetId!);
             if (!p) {
               const lastKnown = lastKnownEnemyPosRef.current.get(dn.targetId!);
-              if (lastKnown) {
-                  p = lastKnown;
-              } else {
-                  // Fallback if enemy is gone, render at last known grid position
-                  p = gridToPx(dn.position);
-              }
+              p = lastKnown ? lastKnown : gridToPx(dn.position);
             }
 
             const yOffset = dn.isCrit ? 25 : 15;

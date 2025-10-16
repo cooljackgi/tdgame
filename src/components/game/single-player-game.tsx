@@ -147,7 +147,6 @@ export default function SinglePlayerGame({
         const existingTower = towersByCell[cellKey];
         if (existingTower) {
             setFocusedTower(existingTower);
-            setSelectedTowerToBuild(null);
             return;
         }
     
@@ -481,7 +480,7 @@ export default function SinglePlayerGame({
                     if (nextWaveIdx >= waves.length) {
                         handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: nextWaveIdx, won: true, finalTowers: towersByCell });
                     } else {
-                        const canPickElement = nextWaveIdx > 0 && nextWaveIdx % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
+                        const canPickElement = currentWave > 0 && (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
                         if (canPickElement && !isCheating) {
                             setGameStatus('picking-element');
                         } else {
