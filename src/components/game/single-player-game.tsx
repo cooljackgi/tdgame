@@ -275,16 +275,26 @@ export default function SinglePlayerGame({
     }, [currentWave]);
     
     const handleLoadTestLayout = useCallback(() => {
-        const longPathLayout: { row: number, col: number }[] = [];
+        const layout: Node[] = [];
+        // Vertikale Linien
+        for (let r = 1; r < GRID_ROWS; r++) {
+            if (r !== 1 || r !== 2) {
+                layout.push({ row: r, col: 3 });
+                layout.push({ row: r, col: 6 });
+                layout.push({ row: r, col: 9 });
+            }
+        }
+        // Horizontale Brücken
+        for (let r = 2; r < GRID_ROWS; r++) {
+            if (r !== GRID_ROWS-1) {
+                layout.push({ row: r, col: 1 });
+                layout.push({ row: r, col: 4 });
+                layout.push({ row: r, col: 7 });
+                layout.push({ row: r, col: 10 });
+            }
+        }
         
-        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 2 });
-        for (let r = GRID_ROWS; r >= 2; r--) longPathLayout.push({ row: r, col: 4 });
-        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 6 });
-        for (let r = GRID_ROWS; r >= 2; r--) longPathLayout.push({ row: r, col: 8 });
-        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 10 });
-
-
-        const newTowersByCell = longPathLayout.reduce((acc, pos) => {
+        const newTowersByCell = layout.reduce((acc, pos) => {
             const towerSpec = initialTowers.find(t=>t.id==='neutral-0')!;
             const id = `tower-${pos.row}-${pos.col}-${Date.now()}-${Math.random()}`;
             acc[`${pos.row}_${pos.col}`] = { ...towerSpec, id, specId: towerSpec.id, position: pos, lastAttack: 0, health: towerSpec.maxHealth, ownerId: 'player1' };
@@ -565,5 +575,7 @@ export default function SinglePlayerGame({
         />
     )
 }
+
+    
 
     
