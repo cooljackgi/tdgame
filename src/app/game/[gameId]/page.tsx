@@ -43,7 +43,7 @@ function CoopGame() {
 
   // --- Local State ---
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
-  const [isGameHost, setIsGameHost] = useState(false);
+  const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   
   // --- VFX State ---
   const [attacks, setAttacks] = useState<Attack[]>([]);
@@ -197,7 +197,7 @@ function CoopGame() {
 
   // Wave Spawning Logic (HOST ONLY)
   const startWave = useCallback(() => {
-    if (!isGameHost || currentWave >= waves.length || waveInProgressRef.current) return;
+    if (currentWave >= waves.length || waveInProgressRef.current) return;
     
     waveInProgressRef.current = true;
     if (spawnerRef.current) clearTimeout(spawnerRef.current);
@@ -248,7 +248,7 @@ function CoopGame() {
     };
 
     spawnEnemy();
-  }, [isGameHost, currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE]);
+  }, [currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE]);
 
   // Effect to trigger wave start on host
   useEffect(() => {
@@ -291,7 +291,6 @@ function CoopGame() {
             }
 
             const currentRole = isPlayer1 ? 'player1' : (isPlayer2 ? 'player2' : 'spectator');
-            setIsGameHost(currentRole === 'player1');
             setLocalPlayerId(currentRole);
 
             gameUnsubscribe = onSnapshot(gameDocRef, (snap) => {
@@ -307,9 +306,6 @@ function CoopGame() {
                 setPlayers(normalized);
 
                 const currentIsHost = data.player1Id === user.uid;
-                if (currentIsHost !== isGameHost) {
-                   setIsGameHost(currentIsHost);
-                }
                 setLocalPlayerId(currentIsHost ? 'player1' : (data.player2Id === user.uid ? 'player2' : 'spectator'));
 
                 setGameState(data.gameState || { lives: 20 });
