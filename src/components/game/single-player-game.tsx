@@ -67,7 +67,7 @@ export default function SinglePlayerGame({
     // --- Refs for Game Loop ---
     const gameLoopRef = useRef<number>();
     const lastTickRef = useRef(performance.now());
-    const enemyIdCounter = useRef(0);
+    const [waveInProgress, setWaveInProgress] = useState(false);
     
     const START_NODE = { row: 1, col: 1 };
     const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -239,6 +239,7 @@ export default function SinglePlayerGame({
         if (isIntermission && gameStatus === 'playing') {
             setIsIntermission(false);
             setWaveStartCountdown(0);
+            setWaveInProgress(true);
         }
     }, [isIntermission, gameStatus]);
     
@@ -249,51 +250,50 @@ export default function SinglePlayerGame({
         document.addEventListener("visibilitychange", handleVisibilityChange);
         window.addEventListener('beforeunload', saveGameState);
 
-        let waveInProgress = false;
         let lastSpawnTime = 0;
-        let spawnedCountInWave = 0;
+        let spawnedInWave = 0;
+        let enemyIdCounter = 0;
 
         const simulate = (now: number) => {
             gameLoopRef.current = requestAnimationFrame(simulate);
 
+            const timeSinceLastTick = now - lastTickRef.current;
+            if (timeSinceLastTick < 1000 / 65) return; // Cap FPS
+            lastTickRef.current = now;
+
+            setFps(Math.round(1000 / timeSinceLastTick));
+
             if (gameStatus !== 'playing' || !isTabVisible) {
-                lastTickRef.current = now;
+                return;
+            }
+            
+            if (isIntermission) {
                 return;
             }
 
-            const delta = now - lastTickRef.current;
-            if (delta < 1000 / 65) return; // Cap FPS
-            lastTickRef.current = now;
-
-            // --- Wave Logic ---
-            if (isIntermission) return;
-
-            if (!waveInProgress) {
-                waveInProgress = true;
-                spawnedCountInWave = 0;
-                lastSpawnTime = 0; // Reset for the new wave
-                enemyIdCounter.current = 0;
+            // --- Start Wave ---
+            if (waveInProgress && spawnedThisWave === 0) {
+                lastSpawnTime = now;
                 audioManager.playWaveMusic();
             }
 
             const waveData = waves[currentWave];
-            if (waveData && spawnedCountInWave < waveData.enemies.count) {
-                if (now - lastSpawnTime > waveData.enemies.spawnDelay) {
-                    lastSpawnTime = now;
-                    const difficultyMod = difficultyModifiers[difficulty];
-                    const health = isCheating ? waveData.enemies.health : Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
-                    const movementPattern: MovementPattern = waveData.enemies.type === 'schnell' ? 'zigzag' : ((waveData.enemies.type === 'gepanzert' || waveData.enemies.type === 'boss') ? 'straight' : 'wobble');
+            const newEnemiesToSpawn: Enemy[] = [];
 
-                    const newEnemy: Enemy = {
-                        id: `enemy-${enemyIdCounter.current++}`, ...waveData.enemies, health, maxHealth: health,
-                        path: [], pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
-                        lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern
-                    };
+            if (waveData && spawnedThisWave < waveData.enemies.count && now - lastSpawnTime > waveData.enemies.spawnDelay) {
+                lastSpawnTime = now;
+                const difficultyMod = difficultyModifiers[difficulty];
+                const health = isCheating ? waveData.enemies.health : Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
+                const movementPattern: MovementPattern = waveData.enemies.type === 'schnell' ? 'zigzag' : ((waveData.enemies.type === 'gepanzert' || waveData.enemies.type === 'boss') ? 'straight' : 'wobble');
 
-                    setEnemies(prev => [...prev, { ...newEnemy, path: currentPath }]);
-                    spawnedCountInWave++;
-                    setSpawnedThisWave(spawnedCountInWave);
-                }
+                const newEnemy: Enemy = {
+                    id: `enemy-${enemyIdCounter++}`, ...waveData.enemies, health, maxHealth: health,
+                    path: currentPath, pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
+                    lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern
+                };
+                newEnemiesToSpawn.push(newEnemy);
+                spawnedInWave++;
+                setSpawnedThisWave(s => s + 1);
             }
 
             // --- Simulation Logic ---
@@ -301,8 +301,9 @@ export default function SinglePlayerGame({
             let resourcesGained = 0;
             const newAttacks: Attack[] = [];
             const newDamageNumbers: DamageNumber[] = [];
+            const towers = Object.values(towersByCell);
 
-            const updatedEnemies = enemies.map(enemy => {
+            const updatedEnemies = [...enemies, ...newEnemiesToSpawn].map(enemy => {
                 if (enemy.health <= 0) {
                     resourcesGained += enemy.bounty;
                     return null;
@@ -310,12 +311,10 @@ export default function SinglePlayerGame({
 
                 let activeEffects = enemy.effects.filter(e => e.expires > now);
                 let isStunned = activeEffects.some(e => e.type === 'stun');
-                let newWasHit = enemy.wasHit;
-                if(enemy.wasHit && now - enemy.lastMove > 150) newWasHit = false;
+                let wasHit = enemy.wasHit && now - enemy.lastMove < 150;
                 
                 let newPathIndex = enemy.pathIndex;
                 let newLastMove = enemy.lastMove;
-                let newPosition = enemy.position;
 
                 if (!isStunned) {
                     const slowEffect = activeEffects.find(e => e.type === 'slow');
@@ -324,17 +323,15 @@ export default function SinglePlayerGame({
                         if (enemy.pathIndex < currentPath.length - 1) {
                             newPathIndex++;
                             newLastMove = now;
-                            newPosition = currentPath[newPathIndex] || enemy.position;
                         } else {
                             livesLostThisTick++;
                             return null;
                         }
                     }
                 }
-                return { ...enemy, pathIndex: newPathIndex, lastMove: newLastMove, position: newPosition, effects: activeEffects, wasHit: newWasHit };
+                return { ...enemy, pathIndex: newPathIndex, lastMove: newLastMove, effects: activeEffects, wasHit };
             }).filter(Boolean) as Enemy[];
 
-            const towers = Object.values(towersByCell);
             towers.forEach(tower => {
                 if (now - tower.lastAttack > tower.attackSpeed) {
                     const enemiesInRange = updatedEnemies.filter(e => Math.hypot(e.position.row - tower.position.row, e.position.col - tower.position.col) <= tower.range);
@@ -362,26 +359,25 @@ export default function SinglePlayerGame({
                     }
                 }
             });
-            
-            // --- State Updates ---
+
             if (newAttacks.length > 0) setAttacks(prev => [...prev.slice(-200), ...newAttacks]);
             if (newDamageNumbers.length > 0) setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
             setEnemies(updatedEnemies);
 
             if (livesLostThisTick > 0) {
                 setGameState(prev => ({ ...prev, lives: Math.max(0, prev.lives - livesLostThisTick) }));
-                if (gameState.lives - livesLostThisTick <= 0) {
-                    handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: currentWave, won: false, finalTowers: towersByCell });
-                }
+            }
+             if (gameState.lives - livesLostThisTick <= 0) {
+                handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: currentWave, won: false, finalTowers: towersByCell });
             }
 
             if (resourcesGained > 0) {
                 setPlayers(prev => prev.map(p => ({ ...p, resources: p.resources + resourcesGained })));
             }
 
-            // Check for wave end
-            if (waveInProgress && spawnedCountInWave >= (waves[currentWave]?.enemies.count || 0) && updatedEnemies.length === 0) {
-                waveInProgress = false;
+            if (waveInProgress && spawnedInWave >= (waveData?.enemies.count || 0) && updatedEnemies.length === 0) {
+                setWaveInProgress(false);
+                setSpawnedThisWave(0);
                 const nextWave = currentWave + 1;
                 if (nextWave >= waves.length) {
                     handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: nextWave, won: true, finalTowers: towersByCell });
@@ -404,7 +400,7 @@ export default function SinglePlayerGame({
             window.removeEventListener('beforeunload', saveGameState);
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         };
-    }, [gameStatus, isIntermission, currentPath, handleGameEnd, saveGameState, towersByCell, enemies, players, currentWave, difficulty, isCheating, user, gameState.lives, spawnedThisWave]);
+    }, [gameStatus, isIntermission, currentPath, handleGameEnd, saveGameState, towersByCell, enemies, players, currentWave, difficulty, isCheating, user, gameState.lives, spawnedThisWave, waveInProgress]);
 
     // Countdown timer effect
     useEffect(() => {
@@ -415,6 +411,7 @@ export default function SinglePlayerGame({
                         clearInterval(countdownInterval);
                         setIsIntermission(false);
                         setWaveStartCountdown(0);
+                        setWaveInProgress(true);
                         return 0;
                     }
                     return prev - 1;
