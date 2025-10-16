@@ -29,6 +29,14 @@ type SinglePlayerGameProps = {
     user: User | null;
 }
 
+const CELL_SIZE = 64;
+function gridToPx(node: Node) {
+    const x = (node.col - 1) * CELL_SIZE + CELL_SIZE / 2;
+    const y = (node.row - 1) * CELL_SIZE + CELL_SIZE / 2;
+    return { x, y };
+}
+
+
 export default function SinglePlayerGame({
     difficulty: initialDifficulty,
     onExit,
