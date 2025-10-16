@@ -1,4 +1,5 @@
 
+
 import React, { useState, memo, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -124,7 +125,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const handleSelectAndClose = (tower: Tower | null) => {
     onSelectTowerToBuild(tower);
-    setIsBuildSheetOpen(false);
+    // Don't close the sheet automatically to allow for multiple placements
+    // setIsBuildSheetOpen(false);
   };
   const handleSellAndClose = () => {
     handleSellTower();
