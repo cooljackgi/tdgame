@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { Player } from '@/lib/game-data/types';
+import { INTERMISSION_TIME } from '@/lib/game-data/constants';
 
 type GameLobbyInfo = {
   id: string;
@@ -89,6 +91,20 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     }
   };
 
+  const handleStartGame = async (gameId: string) => {
+    try {
+        const gameRef = doc(db, 'games', gameId);
+        await updateDoc(gameRef, {
+            gameStatus: 'playing',
+            isIntermission: true, // Start with the first intermission
+            waveStartCountdown: INTERMISSION_TIME
+        });
+        router.push(`/game/${gameId}`);
+    } catch (error: any) {
+        toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
+    }
+  };
+
   const handleSpectateGame = (gameId: string) => {
     router.push(`/game/${gameId}`);
   };
@@ -130,7 +146,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               const player1 = game.player1;
               const player2 = game.player2;
               const isFull = !!player2;
-              const isPlayerInGame = game.player1Id === currentUser.uid || player2?.id === currentUser.uid;
               const isCreator = game.player1Id === currentUser.uid;
               const isJoiningThisGame = joiningGameId === game.id;
 
@@ -148,19 +163,29 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {isPlayerInGame ? (
-                       <Button onClick={() => router.push(`/game/${game.id}`)} variant="outline">
-                         <Play className="mr-2" /> Zurück
-                       </Button>
-                    ) : !isFull ? (
-                      <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
-                        {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
-                        {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
-                      </Button>
+                    {game.gameStatus === 'playing' ? (
+                        isCreator ? (
+                            <Button onClick={() => router.push(`/game/${game.id}`)} variant="outline">
+                                <Play className="mr-2" /> Zurück zum Spiel
+                            </Button>
+                        ) : (
+                             <Button onClick={() => handleSpectateGame(game.id)} variant="secondary">
+                                <Eye className="mr-2" /> Zuschauen
+                            </Button>
+                        )
                     ) : (
-                      <Button onClick={() => handleSpectateGame(game.id)} variant="secondary">
-                        <Eye className="mr-2" /> Zuschauen
-                      </Button>
+                        isCreator ? (
+                             <Button onClick={() => handleStartGame(game.id)} disabled={!isFull}>
+                                <Play className="mr-2" /> {!isFull ? 'Warte auf P2...' : 'Starten'}
+                            </Button>
+                        ) : !isFull ? (
+                             <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
+                                {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
+                                {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
+                            </Button>
+                        ) : (
+                             <p className="text-sm text-muted-foreground">Spiel voll</p>
+                        )
                     )}
                     {isCreator && (
                        <AlertDialog>

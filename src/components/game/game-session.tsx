@@ -266,21 +266,16 @@ export default function GameSession({
     } else if (gameStatus === 'paused' || gameStatus === 'waiting') {
       stateUpdate = {
         gameStatus: 'playing',
-        isIntermission: isIntermission && gameStatus === 'paused', // Only stay in intermission if we were paused in it
-        waveStartCountdown: isIntermission ? waveStartCountdown : 0,
+        isIntermission: false, // Start the wave immediately
+        waveStartCountdown: 0,
       };
-      // If we are starting from 'waiting' or starting a paused wave, ensure intermission is false
-      if (gameStatus === 'waiting' || (gameStatus === 'paused' && isIntermission)) {
-          stateUpdate.isIntermission = false;
-          stateUpdate.waveStartCountdown = 0;
-      }
     } else {
       return;
     }
     
     broadcastGameData([[DeltaType.GAME_STATE_UPDATE, stateUpdate]]);
 
-  }, [gameStatus, isCoop, isGameHost, isIntermission, waveStartCountdown, toast, localPlayerId, broadcastGameData]);
+  }, [gameStatus, isCoop, isGameHost, toast, localPlayerId, broadcastGameData]);
 
 
   const onFocusTower = useCallback((tower: PlacedTower) => {
@@ -326,6 +321,7 @@ export default function GameSession({
             console.log(`[GameSession - Client] Requesting to build tower at ${row},${col}`);
             sendActionRequest(DeltaType.BUILD_TOWER_REQUEST.toString(), { towerId: towerToBuild.id, row, col, playerId: builderId });
         }
+        // Client does not change selection, waits for host confirmation
         return;
     }
     
@@ -380,6 +376,7 @@ export default function GameSession({
     ]);
     
     if(builderId === localPlayerId) {
+        // Do not clear selected tower to allow sequential building
         setJustPlacedTowerId(newTower.id);
         setTimeout(() => setJustPlacedTowerId(null), 1000);
         audioManager.playSfx('build_tower');
@@ -1204,6 +1201,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
     </div>
   );
 }
+
 
 
 
