@@ -75,7 +75,8 @@ function CoopGame() {
         const payload = delta[1];
         switch(type) {
             case DeltaType.ENEMY_SPAWN: {
-                const newEnemy = { ...payload, path: currentPath };
+                // The path is now included in the payload
+                const newEnemy = payload as Enemy;
                 setEnemies(prev => [...prev, newEnemy]);
                 break;
             }
@@ -240,10 +241,11 @@ function CoopGame() {
         id: enemyId, ...waveData.enemies, health, maxHealth: health,
         pathIndex: 0, position: START_NODE, isBlocked: false, effects: [],
         lastMove: performance.now(), wasHit: false, targetNode: END_NODE,
-        movementPattern: movementPattern, path: [], // Path is added in applyDeltas
+        movementPattern: movementPattern, path: [], // Path is added in the broadcast delta
       };
       
-      broadcastGameData([[DeltaType.ENEMY_SPAWN, newEnemy]]);
+      // CRITICAL FIX: Include the currentPath in the spawn delta payload
+      broadcastGameData([[DeltaType.ENEMY_SPAWN, { ...newEnemy, path: currentPath }]]);
       
       spawnedCount++;
       setSpawnedThisWave(c => c + 1); // Local update for host UI
@@ -251,7 +253,7 @@ function CoopGame() {
     };
 
     spawnEnemy();
-  }, [isGameHost, currentWave, gameStatus, difficulty, broadcastGameData, START_NODE, END_NODE]);
+  }, [isGameHost, currentWave, gameStatus, difficulty, broadcastGameData, START_NODE, END_NODE, currentPath]);
 
   useEffect(() => {
     if (!user || !gameId) {
