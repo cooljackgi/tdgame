@@ -94,11 +94,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   const handleStartGame = async (gameId: string) => {
     try {
-        // This dummy write acts as a synchronization point. It ensures the client
-        // has processed the state update from `joinGame` before navigating,
-        // preventing the React #185 error.
+        console.log(`[Lobby] Host starting game ${gameId}...`);
         const gameRef = doc(db, 'games', gameId);
+        // This is a dummy write to ensure client has latest state before navigating.
         await updateDoc(gameRef, { hostReadyTimestamp: new Date() });
+        console.log(`[Lobby] Navigating to /game/${gameId}`);
         router.push(`/game/${gameId}`);
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });

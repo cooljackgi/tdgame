@@ -26,6 +26,8 @@ function CoopGame() {
   const router = useRouter();
   const { toast } = useToast();
   
+  console.log(`[CoopGame] Component Rendering for game: ${gameId}`);
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -204,7 +206,10 @@ function CoopGame() {
     spawnerRef.current = undefined;
 
     setSpawnedThisWave(0);
-    audioManager.playWaveMusic();
+    // Only host plays music
+    if (isGameHost) {
+      audioManager.playWaveMusic();
+    }
   
     const waveData = waves[currentWave];
     let spawnedCount = 0;
@@ -248,11 +253,12 @@ function CoopGame() {
     };
 
     spawnEnemy();
-  }, [currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE]);
+  }, [currentWave, gameStatus, isIntermission, difficulty, broadcastGameData, START_NODE, END_NODE, isGameHost]);
 
   // Effect to trigger wave start on host
   useEffect(() => {
       if (isGameHost && gameStatus === 'playing' && !isIntermission && !waveInProgressRef.current) {
+          console.log(`[Host] Wave ${currentWave} starting...`);
           startWave();
       }
       // Cleanup spawner if game state changes
@@ -262,16 +268,21 @@ function CoopGame() {
               waveInProgressRef.current = false;
           }
       };
-  }, [isGameHost, gameStatus, isIntermission, startWave]);
+  }, [isGameHost, gameStatus, isIntermission, startWave, currentWave]);
 
 
   useEffect(() => {
-    if (!user || !gameId) return;
+    if (!user || !gameId) {
+      console.log("[CoopGame] Waiting for user and gameId...", { user, gameId });
+      return;
+    }
 
     let gameUnsubscribe: Unsubscribe;
+    console.log(`[CoopGame] Setting up listeners for user ${user.uid} and game ${gameId}`);
 
     const setupListeners = async (uid: string) => {
         try {
+            console.log("[CoopGame] Getting initial game document...");
             const gameDocRef = doc(db, 'games', gameId);
             const gameSnap = await getDoc(gameDocRef);
             if (!gameSnap.exists()) {
@@ -279,28 +290,37 @@ function CoopGame() {
                  router.push('/');
                  return;
             }
+            
+            console.log("[CoopGame] Initial game data found:", gameSnap.data());
             const gameData = gameSnap.data();
             let isPlayer1 = gameData.player1Id === uid;
             let isPlayer2 = gameData.player2Id === uid;
 
             if (!isPlayer1 && !isPlayer2 && !gameData.player2Id && !gameData.isTestGame) {
+                console.log("[CoopGame] User is not a player, attempting to join...");
                 const joinGameCallable = httpsCallable(functions, 'joinGame');
                 await joinGameCallable({ gameId });
                 isPlayer2 = true;
                 toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
+                console.log("[CoopGame] Successfully joined as Player 2.");
             }
 
             const currentRole = isPlayer1 ? 'player1' : (isPlayer2 ? 'player2' : 'spectator');
             setLocalPlayerId(currentRole);
+            console.log(`[CoopGame] User role set to: ${currentRole}`);
 
+            console.log("[CoopGame] Subscribing to Firestore updates...");
             gameUnsubscribe = onSnapshot(gameDocRef, (snap) => {
                 if (!snap.exists()) {
+                    console.error("[CoopGame] Game document no longer exists.");
                     toast({ title: "Spiel nicht mehr vorhanden", variant: 'destructive'});
                     router.push('/');
                     return;
                 }
                 const data = snap.data();
                 if (!data) return;
+
+                console.log("[CoopGame] Firestore data received:", data);
 
                 const normalized = normalizePlayers(data.players);
                 setPlayers(normalized);
@@ -317,6 +337,8 @@ function CoopGame() {
                 setTowersByCell(data.towersByCell || {});
                 setSpawnedThisWave(data.spawnedThisWave || 0);
                 
+                console.log(`[CoopGame] State updated: status=${data.gameStatus}, wave=${data.currentWave}, intermission=${data.isIntermission}`);
+
                 if (data.lastUpgradedTowerId) {
                   setLastUpgradedTowerId(data.lastUpgradedTowerId);
                   setTimeout(() => setLastUpgradedTowerId(null), 1000);
@@ -339,7 +361,10 @@ function CoopGame() {
     setupListeners(user.uid);
 
     return () => {
-        if (gameUnsubscribe) gameUnsubscribe();
+        if (gameUnsubscribe) {
+            console.log("[CoopGame] Unsubscribing from Firestore listener.");
+            gameUnsubscribe();
+        }
     };
   }, [user, gameId, router, toast, isGameHost]);
 

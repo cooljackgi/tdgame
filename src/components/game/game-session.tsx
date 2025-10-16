@@ -179,6 +179,8 @@ export default function GameSession({
   const { toast } = useToast();
   const isMobile = useIsMobile();
   
+  console.log('[GameSession] Rendering with props:', { gameStatus, isIntermission, currentWave });
+  
   // --- Global Static Data ---
   const allTowers = useMemo(() => spAllTowers ?? initialTowers.map(t => ({...t})), [spAllTowers]);
   const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
