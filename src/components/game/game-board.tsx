@@ -86,7 +86,7 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
   }
 
   const currentPos = interpolatedEnemyPositions.get(enemy.id);
-  if (!currentPos || now - currentPos.lastUpdate > 500) { 
+  if (!currentPos) {
     interpolatedEnemyPositions.set(enemy.id, { x: targetPos.x, y: targetPos.y, lastUpdate: now });
     return targetPos;
   }
