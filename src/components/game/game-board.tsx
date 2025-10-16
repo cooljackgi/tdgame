@@ -213,7 +213,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number,
         
         ctx.strokeStyle = baseColor;
         ctx.lineWidth = a.projectile === 'chain' ? 2 : 3;
-        ctx.globalAlpha = (1 - t*t) * (0.6 + Math.sin(t * Math.PI * 3) * 0.4);
+        ctx.globalAlpha = (1 - t*t);
         
         ctx.beginPath();
         ctx.moveTo(headX, headY);
@@ -540,6 +540,16 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         ctx.translate(panRef.current.x, panRef.current.y);
         ctx.scale(zoomRef.current, zoomRef.current);
         
+        // Cleanup old positions first
+        const currentEnemyIds = enemiesRef.current.keys();
+        const activeEnemyIdSet = new Set(currentEnemyIds);
+        for(const id of enemyPositionsRef.current.keys()) {
+            if(!activeEnemyIdSet.has(id)) {
+                enemyPositionsRef.current.delete(id);
+                lastKnownEnemyPosRef.current.delete(id);
+            }
+        }
+
         for (const enemy of enemiesRef.current.values()) {
             const pos = getEnemyWorldPos(enemy, now);
             enemyPositionsRef.current.set(enemy.id, pos);
