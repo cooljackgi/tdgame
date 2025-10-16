@@ -17,6 +17,7 @@ export type EnemyProps = {
   wasHit?: boolean;
   isDamaged?: boolean;
   effects: EnemyStatusEffect[];
+  isGhost?: boolean; // Debug-Prop
   className?: string;
 };
 
@@ -47,6 +48,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
   wasHit,
   isDamaged,
   effects,
+  isGhost,
   className,
 }: EnemyProps) {
   const iconPath = enemyIconPaths[type];
@@ -77,7 +79,11 @@ const EnemyComponent = React.memo(function EnemyComponent({
       </div>
       <svg
         viewBox="0 0 24 24"
-        className={cn("h-full w-full drop-shadow-lg", iconClass)}
+        className={cn(
+          "h-full w-full drop-shadow-lg", 
+          iconClass,
+          isGhost && "border-2 border-red-500 rounded-full" // Debug-Highlight
+        )}
         fill="currentColor"
         stroke="black"
         strokeWidth="0.5"

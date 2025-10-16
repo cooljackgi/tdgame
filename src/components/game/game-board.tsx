@@ -956,6 +956,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         if (!pos) return null;
                         
                         const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
+                        const isGhost = !enemies.find(e => e.id === enemy.id);
 
                         return (
                             <div
@@ -979,6 +980,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                                 health={enemy.health}
                                 maxHealth={enemy.maxHealth}
                                 effects={enemy.effects}
+                                isGhost={isGhost}
                             />
                             </div>
                         );

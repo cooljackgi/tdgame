@@ -66,6 +66,7 @@ export default function SinglePlayerGame({
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
     const [fps, setFps] = useState(0);
+    const [enemies, setEnemies] = useState<Enemy[]>([]);
 
     // Refs for stable game loop state
     const gameLoopRef = useRef<number>();
@@ -76,11 +77,6 @@ export default function SinglePlayerGame({
     const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
     const gameStatusRef = useRef<GameStatus>('playing');
     
-    // THE SINGLE SOURCE OF TRUTH FOR ENEMIES
-    const enemiesRef = useRef<Enemy[]>([]);
-    // This state is just a trigger to force re-renders when enemies change.
-    const [, setEnemyStateTrigger] = useState(0);
-
 
     const START_NODE = { row: 1, col: 1 };
     const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -148,8 +144,7 @@ export default function SinglePlayerGame({
         setGameStatus('playing');
         countdownRef.current = INTERMISSION_TIME;
         setWaveStartCountdown(INTERMISSION_TIME);
-        enemiesRef.current = [];
-        setEnemyStateTrigger(c => c + 1);
+        setEnemies([]);
     }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user, difficulty]);
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
@@ -363,10 +358,14 @@ export default function SinglePlayerGame({
                 startWave(now);
             }
             
+            const currentEnemies = [...enemies];
+            const newLocalAttacks = [];
+
             const spawner = spawnerStateRef.current;
             if (spawner && spawner.count < spawner.waveData.count) {
                 spawner.timer += delta;
                 if (spawner.timer >= spawner.waveData.spawnDelay) {
+                    if (currentPath.length === 0) return;
                     spawner.timer = 0;
                     
                     const difficultyMod = difficultyModifiers[difficulty];
@@ -379,7 +378,7 @@ export default function SinglePlayerGame({
                         lastMove: now, wasHit: false, targetNode: END_NODE, movementPattern
                     };
                     
-                    enemiesRef.current.push(newEnemy);
+                    currentEnemies.push(newEnemy);
                     spawner.count++;
                     setSpawnedThisWave(spawner.count);
                 }
@@ -389,7 +388,7 @@ export default function SinglePlayerGame({
             currentTowers.forEach(tower => {
                 if (now - tower.lastAttack > tower.attackSpeed) {
                     const towerPos = gridToPx(tower.position);
-                    const enemiesInRange = enemiesRef.current.filter(e => {
+                    const enemiesInRange = currentEnemies.filter(e => {
                         const enemyWorldPos = gridToPx(e.position); // Simplified for single player
                         if (!enemyWorldPos) return false;
                         const distance = Math.hypot(enemyWorldPos.y - towerPos.y, enemyWorldPos.x - towerPos.x);
@@ -399,7 +398,7 @@ export default function SinglePlayerGame({
                         const mainTarget = enemiesInRange[0];
                         const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
                         const newAttack = { id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType };
-                        setLocalAttacks(prev => [...prev.slice(-100), newAttack]);
+                        newLocalAttacks.push(newAttack);
                         
                         let damage = tower.damage;
                         mainTarget.health -= damage;
@@ -419,11 +418,12 @@ export default function SinglePlayerGame({
                     }
                 }
             });
+            setLocalAttacks(newLocalAttacks);
 
             let livesLost = 0;
             let resourcesGained = 0;
             
-            enemiesRef.current = enemiesRef.current.filter(enemy => {
+            const survivingEnemies = currentEnemies.filter(enemy => {
                  if (enemy.health <= 0) {
                     resourcesGained += enemy.bounty;
                     return false;
@@ -451,8 +451,7 @@ export default function SinglePlayerGame({
                 return true;
             });
             
-            // This is the trigger that tells React to re-render with the latest enemy list
-            setEnemyStateTrigger(c => c + 1);
+            setEnemies(survivingEnemies);
 
             if (livesLost > 0) {
                 setGameState(prev => ({ ...prev, lives: Math.max(0, prev.lives - livesLost) }));
@@ -465,7 +464,7 @@ export default function SinglePlayerGame({
             const totalEnemiesInWave = waveData?.enemies.count || 0;
             const allEnemiesSpawned = spawner ? spawner.count >= totalEnemiesInWave : false;
             
-            if (waveInProgressRef.current && allEnemiesSpawned && enemiesRef.current.length === 0) {
+            if (waveInProgressRef.current && allEnemiesSpawned && survivingEnemies.length === 0) {
                 waveInProgressRef.current = false;
                 spawnerStateRef.current = null;
                 const nextWave = currentWave + 1;
@@ -515,8 +514,8 @@ export default function SinglePlayerGame({
             isIntermission={isIntermissionRef.current} setIsIntermission={(val) => isIntermissionRef.current = val}
             waveStartCountdown={waveStartCountdown} setWaveStartCountdown={setWaveStartCountdown}
             currentPath={currentPath}
-            enemies={enemiesRef.current} // Pass the ref's value directly
-            setEnemies={() => {}} // This is now managed internally by the loop
+            enemies={enemies}
+            setEnemies={setEnemies}
             spawnedThisWave={spawnedThisWave} setSpawnedThisWave={setSpawnedThisWave}
             isCoop={false}
             isGameHost={true}
