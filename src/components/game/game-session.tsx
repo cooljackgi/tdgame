@@ -56,9 +56,9 @@ type GameSessionProps = {
     setWaveStartCountdown: React.Dispatch<React.SetStateAction<number>>;
     currentPath: Node[];
     enemies: Enemy[];
-    setEnemies: React.Dispatch<React.SetStateAction<Enemy[]>>;
+    setEnemies: (val: Enemy[] | ((prev: Enemy[]) => Enemy[])) => void;
     spawnedThisWave: number;
-    setSpawnedThisWave: React.Dispatch<React.SetStateAction<number>>;
+    setSpawnedThisWave: (val: number | ((prev: number) => number)) => void;
 
     // --- Contolling Props ---
     isCoop: boolean;
@@ -77,7 +77,7 @@ type GameSessionProps = {
     splashRings: SplashRing[];
     lastUpgradedTowerId: string | null;
     setLastUpgradedTowerId: (id: string | null) => void;
-    setFiringTowerIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+    setFiringTowerIds: (val: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
     firingTowerIds: Set<string>;
     
     // --- Single Player Passthrough ---
@@ -214,7 +214,7 @@ export default function GameSession({
   const difficultyRef = useRef(difficulty);
 
 
-  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
+  useEffect(() => { setEnemies(enemiesRef.current) }, [enemiesRef.current, setEnemies]);
   useEffect(() => { playersRef.current = players; }, [players]);
   useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -778,54 +778,54 @@ export default function GameSession({
         };
     }, [isGameHost, gameStatus, isIntermission, setFps, broadcastGameData, onGameEnd, players, isCheating]);
     
-  const isSpectator = localPlayerId === 'spectator';
+    // This effect runs on the host to handle client action requests.
+    useEffect(() => {
+        if (!isGameHost) return;
 
-  const interactionPrompt = isSpectator
-    ? 'Du schaust zu.'
-    : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)
-    ? `Wähle Bauplatz für ${localPlayer?.name}: ${(isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)?.name}`
-    : (isCoop ? focusedTower : spFocusedTower)
-    ? `Fokus: ${(isCoop ? focusedTower : spFocusedTower)?.name} (Besitzer: ${players.find(p => p.id === (isCoop ? focusedTower : spFocusedTower)?.ownerId)?.name})`
-    : (isCoop && localPlayerId ? `Du bist ${players.find(p=> p.id === localPlayerId)?.name}` : 'Wähle einen Turm zum Bauen');
-    
-  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
-  
+        const handleAction = (e: Event) => {
+            const { type, payload } = (e as CustomEvent).detail;
+            
+            switch (Number(type)) {
+                case DeltaType.BUILD_TOWER_REQUEST:
+                    handlePlaceTower(payload.row, payload.col, payload.playerId, payload.towerId);
+                    break;
+                case DeltaType.UPGRADE_TOWER_REQUEST:
+                    const towerToUpgrade = Object.values(towersByCellRef.current).find(t => t.position.row === payload.row && t.position.col === payload.col);
+                    if (towerToUpgrade) {
+                        setFocusedTower(towerToUpgrade); // Temporarily set focus to perform action
+                        setTimeout(() => handleUpgradeTower(payload.upgradeId, payload.playerId), 0);
+                    }
+                    break;
+                case DeltaType.SELL_TOWER_REQUEST:
+                     const towerToSell = Object.values(towersByCellRef.current).find(t => t.position.row === payload.row && t.position.col === payload.col);
+                     if (towerToSell) {
+                        setFocusedTower(towerToSell); // Temporarily set focus
+                        setTimeout(() => handleSellTower(payload.playerId), 0);
+                     }
+                    break;
+            }
+        };
+        
+        document.addEventListener('hostActionRequest', handleAction);
+        return () => document.removeEventListener('hostActionRequest', handleAction);
+
+    }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower]);
+
+  if (!localPlayer && !isCoop) return null; // Wait for player init in SP
+
+  const isSpectator = localPlayerId === 'spectator';
   const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
   const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
 
-  useEffect(() => {
-    if (!isGameHost) return;
-
-    const handleAction = (e: Event) => {
-        const { type, payload } = (e as CustomEvent).detail;
-        
-        switch (Number(type)) {
-            case DeltaType.BUILD_TOWER_REQUEST:
-                handlePlaceTower(payload.row, payload.col, payload.playerId, payload.towerId);
-                break;
-            case DeltaType.UPGRADE_TOWER_REQUEST:
-                const towerToUpgrade = Object.values(towersByCellRef.current).find(t => t.position.row === payload.row && t.position.col === payload.col);
-                if (towerToUpgrade) {
-                    setFocusedTower(towerToUpgrade); // Temporarily set focus to perform action
-                    setTimeout(() => handleUpgradeTower(payload.upgradeId, payload.playerId), 0);
-                }
-                break;
-            case DeltaType.SELL_TOWER_REQUEST:
-                 const towerToSell = Object.values(towersByCellRef.current).find(t => t.position.row === payload.row && t.position.col === payload.col);
-                 if (towerToSell) {
-                    setFocusedTower(towerToSell); // Temporarily set focus
-                    setTimeout(() => handleSellTower(payload.playerId), 0);
-                 }
-                break;
-        }
-    };
+  const interactionPrompt = isSpectator
+    ? 'Du schaust zu.'
+    : currentSelectedTower
+    ? `Wähle Bauplatz für ${localPlayer?.name}: ${currentSelectedTower?.name}`
+    : currentFocusedTower
+    ? `Fokus: ${currentFocusedTower?.name} (Besitzer: ${players.find(p => p.id === currentFocusedTower?.ownerId)?.name})`
+    : (isCoop && localPlayerId ? `Du bist ${players.find(p=> p.id === localPlayerId)?.name}` : 'Wähle einen Turm zum Bauen');
     
-    document.addEventListener('hostActionRequest', handleAction);
-    return () => document.removeEventListener('hostActionRequest', handleAction);
-
-  }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower]);
-
-  if (!localPlayer && !isSpectator) return null;
+  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
@@ -849,7 +849,7 @@ export default function GameSession({
             gameStatus={gameStatus}
             resetGame={resetGame}
             towers={allTowers}
-            setTowers={() => {}} // No-op, managed by spAllTowers
+            setTowers={() => {}} // SP manages its own tower data
             placedTowers={placedTowers}
             enemies={enemies}
             attacks={attacks}
