@@ -12,7 +12,7 @@ import { useWebRTC } from '@/hooks/use-webrtc';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
-import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, Element, MovementPattern } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Node, Enemy, EnemyStatusEffect, MovementPattern } from '@/lib/game-data/types';
 import { Loader2 } from "lucide-react";
 import { DeltaType } from "@/lib/game-data/types";
 import { INTERMISSION_TIME, GRID_ROWS, GRID_COLS, difficultyModifiers } from "@/lib/game-data/constants";
@@ -70,6 +70,9 @@ function CoopGame() {
   const currentPath = useMemo(() => findPath(START_NODE, END_NODE, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
 
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
+    if (deltas.length > 0) {
+        console.log('[CLIENT-RECV]', deltas);
+    }
     deltas.forEach(delta => {
         const type = delta[0];
         const payload = delta[1];
@@ -192,6 +195,7 @@ function CoopGame() {
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
       if (deltas.length === 0) return;
       if (isGameHost) {
+         console.log('[HOST-SEND]', deltas);
          rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
       }
       // The host also applies the deltas to its own state immediately
@@ -463,3 +467,5 @@ function CoopGame() {
 }
 
 export default CoopGame;
+
+    
