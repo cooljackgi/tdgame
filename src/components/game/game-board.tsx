@@ -505,15 +505,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         // --- NEW ---
         // Cleanup and update all enemy positions in one go.
         const currentEnemyIds = new Set(enemiesRef.current.keys());
-        const enemyPositions = new Map<string, {x:number, y:number}>();
-        interpolatedEnemyPositions.forEach((val, key) => {
-          if(currentEnemyIds.has(key)) {
-            enemyPositions.set(key, val);
-          }
-        });
-        interpolatedEnemyPositions.clear();
-        for(const [key, val] of enemyPositions.entries()) {
-          interpolatedEnemyPositions.set(key, val);
+        
+        // Only keep positions for enemies that are still in the game state
+        for (const id of interpolatedEnemyPositions.keys()) {
+            if (!currentEnemyIds.has(id)) {
+                interpolatedEnemyPositions.delete(id);
+            }
         }
         // --- END NEW ---
 
@@ -826,7 +823,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
       const mouseWorldY = (my - panRef.current.y) / zoomRef.current;
 
       const zoomFactor = 1.1;
-      const newZoom = e.deltaY < 0 ? zoomRef.current * zoomFactor : zoomRef.current / zoomFactor;
+      const newZoom = e.deltaY < 0 ? zoomRef.current * zoomFactor : zoomRef.current / zoomRef.current;
       
       zoomRef.current = clamp(newZoom, 0.6, 1.5);
 
