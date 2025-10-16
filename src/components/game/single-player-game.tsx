@@ -171,16 +171,17 @@ export default function SinglePlayerGame({
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
         const player = players[0];
-        if (!player || !selectedTowerToBuild) return;
+        if (!player) return;
 
         const cellKey = `${row}_${col}`;
         const existingTower = towersByCell[cellKey];
-
         if (existingTower) {
             setFocusedTower(existingTower);
             setSelectedTowerToBuild(null);
             return;
         }
+
+        if (!selectedTowerToBuild) return;
 
         const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
         const newPath = findPath(START_NODE, END_NODE, [...currentPlacedTowers, { row, col }], GRID_ROWS, GRID_COLS);
@@ -280,6 +281,7 @@ export default function SinglePlayerGame({
     
     const startWave = useCallback(() => {
         if (currentWave >= waves.length || waveInProgressRef.current) return;
+        
         waveInProgressRef.current = true;
         if (spawnerRef.current) clearTimeout(spawnerRef.current);
         
