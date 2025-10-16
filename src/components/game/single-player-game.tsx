@@ -101,7 +101,6 @@ export default function SinglePlayerGame({
       return findPath(START_NODE, END_NODE, blockedPositions, GRID_ROWS, GRID_COLS) || [];
     }, [towersByCell]);
 
-    // Save game state logic remains the same
     const saveGameState = useCallback(() => {
         if (gameStatus === 'gameover' || isCheating) return;
         const stateToSave: GameSaveState = {
@@ -169,6 +168,80 @@ export default function SinglePlayerGame({
         setWaveStartCountdown(INTERMISSION_TIME);
         setEnemies([]);
     }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user]);
+
+    const handleUpgradeTower = useCallback((upgradeId: string) => {
+        const player = players[0];
+        if (!player || !focusedTower) return;
+    
+        const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
+        if (!upgradeTowerSpec) {
+            toast({ title: "Upgrade-Fehler", variant: 'destructive' });
+            return;
+        }
+    
+        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
+    
+        if (player.resources < cost) {
+            toast({ title: "Upgrade fehlgeschlagen", description: "Nicht genügend Ressourcen.", variant: 'destructive' });
+            return;
+        }
+    
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+        const newTowers = { ...towersByCell };
+        
+        const upgradedTower: PlacedTower = {
+            ...newTowers[cellKey],
+            specId: upgradeTowerSpec.id,
+            name: upgradeTowerSpec.name,
+            damage: upgradeTowerSpec.damage,
+            range: upgradeTowerSpec.range,
+            attackSpeed: upgradeTowerSpec.attackSpeed,
+            maxHealth: upgradeTowerSpec.maxHealth,
+            health: upgradeTowerSpec.maxHealth,
+            elements: upgradeTowerSpec.elements,
+            effect: upgradeTowerSpec.effect,
+            cost: upgradeTowerSpec.cost,
+            tier: upgradeTowerSpec.tier,
+            upgradesTo: upgradeTowerSpec.upgradesTo,
+            isBase: upgradeTowerSpec.isBase,
+        };
+        newTowers[cellKey] = upgradedTower;
+    
+        setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - cost }]);
+        setTowersByCell(newTowers);
+        setLastUpgradedTowerId(upgradedTower.id);
+        setTimeout(() => setLastUpgradedTowerId(null), 1000);
+        setFocusedTower(null);
+        audioManager.playSfx('build_tower');
+    
+    }, [players, focusedTower, towersByCell, difficulty, toast]);
+    
+    const handleSellTower = useCallback(() => {
+        const player = players[0];
+        if (!player || !focusedTower) return;
+    
+        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const refund = Math.round(focusedTower.cost * refundPercentage);
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
+    
+        const newTowers = { ...towersByCell };
+        delete newTowers[cellKey];
+    
+        setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + refund }]);
+        setTowersByCell(newTowers);
+        setFocusedTower(null);
+        audioManager.playSfx('build_tower');
+    }, [players, focusedTower, towersByCell, difficulty]);
+    
+    const applyDeltas = useCallback((deltas: GameDelta[]) => {
+        deltas.forEach(([type, ...payload]) => {
+            if (type === DeltaType.ENEMY_PATH_UPDATE) {
+                const [enemyId, newPath, newPathIndex] = payload;
+                setEnemies(prev => prev.map(e => e.id === enemyId ? { ...e, path: newPath, pathIndex: newPathIndex } : e));
+            }
+        });
+    }, []);
     
     const startWave = useCallback(() => {
         if (currentWave >= waves.length || waveInProgressRef.current) return;
@@ -374,7 +447,26 @@ export default function SinglePlayerGame({
             }
         }
       }
-  }, [players, gameState.lives, currentWave, difficulty, towersByCell, currentPath, isIntermission, user, handleGameEnd]);
+  }, [players, gameState.lives, currentWave, difficulty, towersByCell, currentPath, isIntermission, user, handleGameEnd, enemies]);
+
+  // Effect to handle path changes for existing enemies
+  useEffect(() => {
+    if (enemies.length === 0 || !waveInProgressRef.current) return;
+
+    const deltas: GameDelta[] = [];
+
+    enemies.forEach(enemy => {
+        const newPathIndex = findClosestPathIndex(currentPath, enemy.position);
+        if (newPathIndex !== enemy.pathIndex) {
+            deltas.push([DeltaType.ENEMY_PATH_UPDATE, enemy.id, currentPath, newPathIndex]);
+        }
+    });
+    
+    if (deltas.length > 0) {
+        applyDeltas(deltas);
+    }
+  }, [currentPath, applyDeltas]);
+
 
   useEffect(() => {
     let isTabVisible = true;
@@ -468,7 +560,7 @@ export default function SinglePlayerGame({
             isGameHost={true}
             localPlayerId="player1"
             broadcastGameData={(deltas) => { /* No-op for single player */ }}
-            applyDeltas={(deltas) => { /* No-op, handled internally */ }}
+            applyDeltas={applyDeltas}
             onGameEnd={handleGameEnd}
             onWaveComplete={() => { waveInProgressRef.current = false; }}
             onExit={onExit}
