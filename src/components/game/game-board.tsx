@@ -41,7 +41,7 @@ function gridToPx(node: Node) {
     };
 }
 
-const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
+export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
 const LERP_FACTOR = 0.2;
 
 function getEnemyWorldPos(enemy: Enemy, now: number): { x: number; y: number } {
@@ -1159,5 +1159,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
 
 

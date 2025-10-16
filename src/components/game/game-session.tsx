@@ -18,6 +18,7 @@ import { ElementPickDialog } from '@/components/game/element-pick-dialog';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
+import { interpolatedEnemyPositions } from './game-board';
 
 export type Player = {
   id: 'player1' | 'player2' | 'spectator';
