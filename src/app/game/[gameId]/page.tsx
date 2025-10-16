@@ -168,16 +168,9 @@ function CoopGame() {
                 setLastUpgradedTowerId((payload as { towerId: string }).towerId);
                 setTimeout(() => setLastUpgradedTowerId(null), 1000);
                 break;
-            case DeltaType.BUILD_TOWER_REQUEST:
-            case DeltaType.UPGRADE_TOWER_REQUEST:
-            case DeltaType.SELL_TOWER_REQUEST:
-                 if (isGameHost) {
-                    document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: { type, payload } }));
-                }
-                break;
         }
     });
-  }, [isGameHost]);
+  }, []);
 
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
       if (deltas.length === 0) return;
@@ -307,8 +300,8 @@ function CoopGame() {
     }
   }, [gameId, isGameHost, gameStatus, broadcastGameData]);
   
-  const handlePlaceTower = useCallback((towerId: string, row: number, col: number, playerId: Player['id']) => {
-    const selectedTowerToBuild = allTowersData.find(t => t.id === towerId);
+  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id']) => {
+    const selectedTowerToBuild = allTowersData.find(t => t.id === (document as any).__SELECTED_TOWER_ID);
     if (!selectedTowerToBuild) return;
 
     const cellKey = `${row}_${col}`;
@@ -316,7 +309,6 @@ function CoopGame() {
 
     const currentPlacedTowers = Object.values(towersByCellRef.current).map(t => t.position);
     if (!findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...currentPlacedTowers, {row, col}], GRID_ROWS, GRID_COLS)) {
-        // Maybe send a feedback delta to the client? For now, we just deny.
         return;
     }
 
@@ -389,6 +381,7 @@ function CoopGame() {
 
       const handleRequest = (event: Event) => {
           const { type, payload } = (event as CustomEvent).detail;
+           console.log('[HOST-RECV-ACTION]', { type, payload });
           switch (type) {
               case String(DeltaType.BUILD_TOWER_REQUEST):
                   handlePlaceTower(payload.towerId, payload.row, payload.col, payload.playerId);
@@ -405,6 +398,36 @@ function CoopGame() {
       document.addEventListener('hostActionRequest', handleRequest);
       return () => document.removeEventListener('hostActionRequest', handleRequest);
   }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower]);
+
+  const handleLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+    if (localPlayerId === 'spectator') return;
+
+    // Temporarily store the selected tower ID on a global object for the handler to access
+    if (action === 'build' && payload.tower) {
+      (document as any).__SELECTED_TOWER_ID = payload.tower.id;
+    }
+
+    if (isGameHost) {
+      // Host executes logic directly
+      switch(action) {
+        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId!); break;
+        case 'upgrade': handleUpgradeTower(payload.row, payload.col, payload.upgradeId, localPlayerId!); break;
+        case 'sell': handleSellTower(payload.row, payload.col, localPlayerId!); break;
+      }
+    } else {
+      // Client sends a request
+      switch(action) {
+        case 'build': rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { towerId: payload.tower.id, row: payload.row, col: payload.col, playerId: localPlayerId! }); break;
+        case 'upgrade': rtc.sendActionRequest(String(DeltaType.UPGRADE_TOWER_REQUEST), { row: payload.row, col: payload.col, upgradeId: payload.upgradeId, playerId: localPlayerId! }); break;
+        case 'sell': rtc.sendActionRequest(String(DeltaType.SELL_TOWER_REQUEST), { row: payload.row, col: payload.col, playerId: localPlayerId! }); break;
+      }
+    }
+
+    if (action === 'build') {
+      (document as any).__SELECTED_TOWER_ID = null;
+    }
+  }, [localPlayerId, isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower, rtc]);
+
 
   useEffect(() => {
     if (!isGameHost || !gameStatus) return;
@@ -595,6 +618,7 @@ function CoopGame() {
         finalGameResult={finalGameResult}
         totalKilled={totalKilled} setTotalKilled={setTotalKilled}
         totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
+        onLocalAction={handleLocalAction}
     />
   );
 }

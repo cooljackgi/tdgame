@@ -88,6 +88,7 @@ type GameSessionProps = {
     setTotalKilled: (value: number | ((prev: number) => number)) => void;
     totalLeaked: number;
     setTotalLeaked: (value: number | ((prev: number) => number)) => void;
+    onLocalAction: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
 }
 
 export default function GameSession({ 
@@ -105,7 +106,7 @@ export default function GameSession({
     
     // Control
     isCoop, isGameHost, localPlayerId,
-    broadcastGameData, sendActionRequest, applyDeltas, onGameEnd, onExit,
+    broadcastGameData, sendActionRequest, applyDeltas, onGameEnd, onExit, onLocalAction,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -199,42 +200,31 @@ export default function GameSession({
     setFocusedTower(null);
   }, [localPlayerId, selectedTowerToBuild, focusedTower]);
 
- const handlePlaceTower = useCallback((row: number, col: number) => {
-    const builderId = localPlayerId;
-    if (builderId === 'spectator' || !selectedTowerToBuild) return;
-
-    if (!isGameHost) {
-        sendActionRequest?.(String(DeltaType.BUILD_TOWER_REQUEST), { towerId: selectedTowerToBuild.id, row, col, playerId: builderId });
-        cancelInteractions();
-        return;
-    }
-}, [localPlayerId, isGameHost, selectedTowerToBuild, sendActionRequest, cancelInteractions]);
+  const handlePlaceTower = useCallback((row: number, col: number) => {
+    if (localPlayerId === 'spectator' || !selectedTowerToBuild) return;
+    onLocalAction('build', { tower: selectedTowerToBuild, row, col });
+    cancelInteractions();
+  }, [localPlayerId, selectedTowerToBuild, onLocalAction, cancelInteractions]);
   
   const handleUpgradeTower = useCallback((upgradeId: string) => {
-    const builderId = localPlayerId;
-    if (builderId === 'spectator' || !focusedTower) return;
-    if (focusedTower.ownerId !== builderId) {
-        toast({ title: "Upgrade nicht möglich", description: "Du kannst nur deine eigenen Türme upgraden.", variant: "destructive" });
-        return;
-    }
-    if (!isGameHost) {
-        sendActionRequest?.(String(DeltaType.UPGRADE_TOWER_REQUEST), { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId: upgradeId, playerId: builderId });
-        cancelInteractions();
-    }
-  }, [localPlayerId, isGameHost, focusedTower, sendActionRequest, cancelInteractions, toast]);
+      if (localPlayerId === 'spectator' || !focusedTower) return;
+      if (focusedTower.ownerId !== localPlayerId) {
+          toast({ title: "Upgrade nicht möglich", description: "Du kannst nur deine eigenen Türme upgraden.", variant: "destructive" });
+          return;
+      }
+      onLocalAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+      cancelInteractions();
+  }, [localPlayerId, focusedTower, onLocalAction, cancelInteractions, toast]);
   
   const handleSellTower = useCallback(() => {
-    const builderId = localPlayerId;
-    if (builderId === 'spectator' || !focusedTower) return;
-    if (focusedTower.ownerId !== builderId) {
-        toast({ title: "Verkauf nicht möglich", description: "Du kannst nur deine eigenen Türme verkaufen.", variant: "destructive" });
-        return;
-    }
-    if (!isGameHost) {
-        sendActionRequest?.(String(DeltaType.SELL_TOWER_REQUEST), { row: focusedTower.position.row, col: focusedTower.position.col, playerId: builderId });
-        cancelInteractions();
-    }
-  }, [isGameHost, focusedTower, localPlayerId, sendActionRequest, cancelInteractions, toast]);
+      if (localPlayerId === 'spectator' || !focusedTower) return;
+      if (focusedTower.ownerId !== localPlayerId) {
+          toast({ title: "Verkauf nicht möglich", description: "Du kannst nur deine eigenen Türme verkaufen.", variant: "destructive" });
+          return;
+      }
+      onLocalAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
+      cancelInteractions();
+  }, [localPlayerId, focusedTower, onLocalAction, cancelInteractions, toast]);
 
   const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
     const currentLocalPlayer = players.find(p => p.id === localPlayerId);
@@ -326,3 +316,4 @@ export default function GameSession({
     </div>
   );
 }
+
