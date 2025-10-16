@@ -5,7 +5,7 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
 import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element } from '@/lib/game-data/types';
-import { elementProjectileColors } from '@/lib/game-data/constants';
+import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Target, RefreshCcw } from 'lucide-react';
@@ -113,10 +113,6 @@ type GameBoardProps = {
   cancelInteractions: () => void;
   selectedTowerToBuild: Tower | null;
   focusedTower: PlacedTower | null;
-  rows: number;
-  cols: number;
-  startNode: Node;
-  endNode: Node;
   lastUpgradedTowerId: string | null;
   justPlacedTowerId?: string | null;
   isCoop: boolean;
@@ -330,10 +326,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     cancelInteractions,
     selectedTowerToBuild,
     focusedTower, 
-    rows, 
-    cols, 
-    startNode, 
-    endNode,
     lastUpgradedTowerId,
     justPlacedTowerId,
     isCoop,
@@ -363,10 +355,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const lastKnownEnemyPosRef = useRef<Map<string, { x: number; y: number; expires: number }>>(new Map());
   
   const boardDimensions = useMemo(() => {
-    const boardWidth = cols * CELL_SIZE;
-    const boardHeight = rows * CELL_SIZE;
+    const boardWidth = GRID_COLS * CELL_SIZE;
+    const boardHeight = GRID_ROWS * CELL_SIZE;
     return { boardWidth, boardHeight };
-  }, [cols, rows]);
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -641,28 +633,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const pathD = useMemo(() => {
     if (currentPath.length === 0) return '';
-    const startPos = gridToPx(startNode);
+    const startPos = gridToPx({row:1, col:1});
     let pathString = `M ${startPos.x} ${startPos.y}`;
     currentPath.forEach(node => {
       const pos = gridToPx(node);
       pathString += ` L ${pos.x} ${pos.y}`;
     });
     return pathString;
-  }, [currentPath, startNode]);
+  }, [currentPath]);
   
   const ghostTowerPath = useMemo(() => {
     if (!selectedTowerToBuild || !hoveredCell) return null;
-    const newPath = findPath(startNode, endNode, [...placedTowers.map(t => t.position), hoveredCell], rows, cols);
+    const newPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...placedTowers.map(t => t.position), hoveredCell], GRID_ROWS, GRID_COLS);
     if (!newPath) return 'invalid';
 
-    const startPos = gridToPx(startNode);
+    const startPos = gridToPx({row:1, col:1});
     let pathString = `M ${startPos.x} ${startPos.y}`;
     newPath.forEach(node => {
       const pos = gridToPx(node);
       pathString += ` L ${pos.x} ${pos.y}`;
     });
     return pathString;
-  }, [selectedTowerToBuild, hoveredCell, placedTowers, startNode, endNode, rows, cols]);
+  }, [selectedTowerToBuild, hoveredCell, placedTowers]);
 
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -681,7 +673,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const col = Math.floor(worldX / CELL_SIZE) + 1;
     const row = Math.floor(worldY / CELL_SIZE) + 1;
     
-    const cell = (row >= 1 && row <= rows && col >= 1 && col <= cols) ? { row, col } : null;
+    const cell = (row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS) ? { row, col } : null;
     setHoveredCell(cell);
 
     if (!isPanningRef.current) return;
@@ -739,7 +731,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         const worldY = (touch.clientY - rect.top - panRef.current.y) / zoomRef.current;
         const col = Math.floor(worldX / CELL_SIZE) + 1;
         const row = Math.floor(worldY / CELL_SIZE) + 1;
-        const cell = (row >= 1 && row <= rows && col >= 1 && col <= cols) ? { row, col } : null;
+        const cell = (row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS) ? { row, col } : null;
         setHoveredCell(cell);
 
         const dx = touch.clientX - panStartRef.current.x;
@@ -867,8 +859,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     return buffedIds;
   }, [placedTowers, auraTowers]);
   
-  const startPos = gridToPx(startNode);
-  const endPos = gridToPx(endNode);
+  const startPos = gridToPx({row:1, col:1});
+  const endPos = gridToPx({row:12, col:12});
 
   const onTowerClick = useCallback((e: React.MouseEvent, clickedTower: PlacedTower) => {
     if (Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5) return;
