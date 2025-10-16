@@ -179,6 +179,7 @@ export default function SinglePlayerGame({
             
             return prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources - newTower.cost } : p);
         });
+        setSelectedTowerToBuild(null);
     }, [selectedTowerToBuild, towersByCell, toast, START_NODE, END_NODE]);
     
     const handleUpgradeTower = useCallback((upgradeId: string) => {
@@ -352,11 +353,11 @@ export default function SinglePlayerGame({
                         return newTime;
                     });
                 }
-                return;
+                return; // End loop here during intermission
             }
 
             // --- WAVE LOGIC ---
-            if (!spawnerStateRef.current && !isIntermission) {
+            if (!spawnerStateRef.current) {
                  const waveData = waves[currentWave];
                 if (!waveData) return;
                 spawnerStateRef.current = {
@@ -405,7 +406,7 @@ export default function SinglePlayerGame({
                 const updatedEnemies = prevEnemies.map(enemy => {
                     let updatedEnemy = { ...enemy, wasHit: false, path: currentPath };
                     
-                    const isStunned = updatedEnemy.effects.some(e => e.expires > now && e.type === 'stun');
+                    const isStunned = updatedEnemy.effects.some(e => e.type === 'stun' && e.expires > now);
                     if (!isStunned) {
                         const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
                         const effectiveSpeed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
@@ -417,7 +418,6 @@ export default function SinglePlayerGame({
                                 updatedEnemy.lastMove = now;
                             } else {
                                 enemiesThatReachedEnd++;
-                                setTotalLeaked(c => c + 1);
                                 return null;
                             }
                         }
@@ -427,6 +427,7 @@ export default function SinglePlayerGame({
 
                 if (enemiesThatReachedEnd > 0) {
                     setGameState(g => ({...g, lives: Math.max(0, g.lives - enemiesThatReachedEnd)}));
+                    setTotalLeaked(c => c + enemiesThatReachedEnd);
                 }
 
                 currentTowers.forEach(tower => {
@@ -448,7 +449,7 @@ export default function SinglePlayerGame({
                             mainTarget.wasHit = true;
 
                             const primaryElement = tower.elements?.[0] ?? 'neutral';
-                            newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, amount: damage, position: mainTarget.position, color: elementProjectileColors[primaryElement] });
+                            newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, amount: damage, position: mainTarget.position, color: elementProjectileColors[primaryElement], targetId: mainTarget.id });
                             
                             tower.lastAttack = now;
                             newFiringTowerIds.add(tower.id);

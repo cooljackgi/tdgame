@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
@@ -571,7 +572,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const q = incomingDmgRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
-                    damageNumbersPoolRef.current.alloc({ ...q[i], start: now, life: 900 }); 
+                    // Attach targetId if it's not present (for backward compatibility)
+                    const damageData = { ...q[i], targetId: q[i].targetId || ''};
+                    damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
                 }
                 q.length = 0; 
             }
@@ -597,7 +600,19 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         damageNumbersPoolRef.current.forEachActive(dn => {
             const t = clamp((now - dn.start) / dn.life, 0, 1);
             if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
-            const p = gridToPx(dn.position);
+            
+            // Get the live position of the enemy this number belongs to
+            let p = interpolatedEnemyPositions.get(dn.targetId!);
+            if (!p) {
+              const lastKnown = lastKnownEnemyPosRef.current.get(dn.targetId!);
+              if (lastKnown) {
+                  p = lastKnown;
+              } else {
+                  // Fallback if enemy is gone, render at last known grid position
+                  p = gridToPx(dn.position);
+              }
+            }
+
             const yOffset = dn.isCrit ? 25 : 15;
             const size = dn.isCrit ? 16 : 12;
 
@@ -609,6 +624,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             ctx.shadowBlur = dn.isCrit ? 4 : 2;
             ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
         });
+
 
         for (const tower of placedTowers) {
             if (!tower.lastAttack) continue;
