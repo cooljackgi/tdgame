@@ -188,7 +188,7 @@ export default function GameSession({
   const simAccumulatorRef = useRef(0);
   
   const difficultyMod = difficultyModifiers[difficulty];
-  const localPlayer = players.find(p => p.id === localPlayerId);
+  const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
 
   const START_NODE = { row: 1, col: 1 };
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -310,7 +310,7 @@ export default function GameSession({
     
     let towerToBuild: Tower | undefined | null;
     if (isCoop) {
-        if (requestedByPlayerId) {
+        if (requestedByPlayerId && requestedTowerId) {
             towerToBuild = towers.find(t => t.id === requestedTowerId);
         } else {
             towerToBuild = selectedTowerToBuild;
@@ -1066,7 +1066,10 @@ const handleLoadAllTowersLayout = useCallback(() => {
     return [{ ...enemy, effects: newEffects }, delta];
   };
 
-  const interactionPrompt = localPlayerId === 'spectator'
+  const isSpectator = localPlayerId === 'spectator';
+  const canStartWave = !isSpectator && (!isCoop || isGameHost);
+
+  const interactionPrompt = isSpectator
     ? 'Du schaust zu.'
     : (isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)
     ? `Wähle Bauplatz für ${localPlayer?.name}: ${(isCoop ? selectedTowerToBuild : spSelectedTowerToBuild)?.name}`
@@ -1079,7 +1082,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
   const currentFocusedTower = isCoop ? focusedTower : spFocusedTower;
   const currentSelectedTower = isCoop ? selectedTowerToBuild : spSelectedTowerToBuild;
 
-  if (!localPlayer && localPlayerId !== 'spectator') return null;
+  if (!localPlayer && !isSpectator) return null;
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
@@ -1132,8 +1135,7 @@ const handleLoadAllTowersLayout = useCallback(() => {
             waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME}
             handleStartNextWaveNow={() => {
-                const canStart = !isCoop || isGameHost;
-                if (!isIntermission || !canStart || localPlayerId === 'spectator') return;
+                if (!isIntermission || !canStartWave) return;
                 broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { isIntermission: false, waveStartCountdown: 0 }]]);
             }}
             lastUpgradedTowerId={lastUpgradedTowerId}
