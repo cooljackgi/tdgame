@@ -21,7 +21,7 @@ const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
 
 
-export type GameBoardHandle = { resetView: () => void };
+export type GameBoardHandle = { resetView: () => void, queueAttacks: (attacks: Attack[]) => void };
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -355,6 +355,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const incomingRingsRef = useRef<SplashRing[]>([]);
   const incomingDmgRef = useRef<DamageNumber[]>([]);
 
+  // This ref is for single-player to queue attacks without causing a re-render
+  const singlePlayerAttackQueue = useRef<Attack[]>([]);
+
   const processedAttackCount = useRef(0);
   const processedRingCount   = useRef(0);
   const processedDmgCount    = useRef(0);
@@ -424,6 +427,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   useImperativeHandle(ref, () => ({
     resetView: internalResetView,
+    queueAttacks: (attacksToQueue) => {
+        singlePlayerAttackQueue.current.push(...attacksToQueue);
+    },
   }));
 
   useEffect(() => {
@@ -444,7 +450,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     }
   }, [enemies]);
   
+  // Coop attack handling
   useEffect(() => {
+    if (!isCoop) return;
     const arr = attacks ?? [];
     const dist = arr.length - processedAttackCount.current;
     if (dist > 0) {
@@ -453,7 +461,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
       }
       processedAttackCount.current = arr.length;
     }
-  }, [attacks]);
+  }, [attacks, isCoop]);
   
   useEffect(() => {
     const arr = splashRings ?? [];
@@ -540,6 +548,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         for (const [id, val] of lastKnownEnemyPosRef.current) {
             if (val.expires < now) lastKnownEnemyPosRef.current.delete(id);
+        }
+
+        // Combine single player queue with coop queue
+        if (singlePlayerAttackQueue.current.length > 0) {
+            incomingAttacksRef.current.push(...singlePlayerAttackQueue.current);
+            singlePlayerAttackQueue.current = [];
         }
 
         {
@@ -1159,6 +1173,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
-
-
