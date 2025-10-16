@@ -53,7 +53,7 @@ export default function SinglePlayerGame({
     const [attacks, setAttacks] = useState<Attack[]>([]);
     const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
-    const [lastUpgradedTowerId, setLastUpgradedTowerId] useState<string|null>(null);
+    const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -276,13 +276,12 @@ export default function SinglePlayerGame({
     
     const handleLoadTestLayout = useCallback(() => {
         const longPathLayout: { row: number, col: number }[] = [];
-        for (let r = 1; r <= GRID_ROWS; r++) {
-            if (r > 1) longPathLayout.push({ row: r, col: 2 });
-            longPathLayout.push({ row: r, col: 4 });
-            if (r < GRID_ROWS) longPathLayout.push({ row: r, col: 6 });
-            longPathLayout.push({ row: r, col: 8 });
-             if (r > 1) longPathLayout.push({ row: r, col: 10 });
-        }
+        
+        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 2 });
+        for (let r = GRID_ROWS; r >= 2; r--) longPathLayout.push({ row: r, col: 4 });
+        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 6 });
+        for (let r = GRID_ROWS; r >= 2; r--) longPathLayout.push({ row: r, col: 8 });
+        for (let r = 2; r <= GRID_ROWS; r++) longPathLayout.push({ row: r, col: 10 });
 
 
         const newTowersByCell = longPathLayout.reduce((acc, pos) => {
@@ -329,6 +328,44 @@ export default function SinglePlayerGame({
 
     }, [toast]);
 
+    const renderVfx = useCallback(() => {
+        const now = performance.now();
+        const newLocalAttacks: Attack[] = [];
+        const currentTowers = Object.values(towersByCell);
+        let currentEnemies = [...enemiesRef.current]; // Make a mutable copy
+
+        currentTowers.forEach(tower => {
+            if (now - tower.lastAttack > tower.attackSpeed) {
+                const towerPos = gridToPx(tower.position);
+                
+                const enemiesInRange = currentEnemies.filter(e => {
+                    const enemyWorldPos = interpolatedEnemyPositions.get(e.id);
+                    if (!enemyWorldPos) return false;
+                    const distance = Math.hypot(enemyWorldPos.y - towerPos.y, enemyWorldPos.x - towerPos.x);
+                    return distance <= (tower.range + 0.5) * 64;
+                });
+
+                if (enemiesInRange.length > 0) {
+                    const mainTarget = enemiesInRange[0];
+                    const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
+                    newLocalAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType });
+                    
+                    let damage = tower.damage;
+                    mainTarget.health -= damage;
+                    mainTarget.wasHit = true;
+                    
+                    tower.lastAttack = now;
+                }
+            }
+        });
+        
+        enemiesRef.current = currentEnemies;
+        if (newLocalAttacks.length > 0) {
+            gameBoardRef.current?.queueAttacks(newLocalAttacks);
+        }
+    }, [enemiesRef, towersByCell]);
+
+
     useEffect(() => {
         let isTabVisible = true;
         const handleVisibilityChange = () => { isTabVisible = document.visibilityState === 'visible'; };
@@ -367,8 +404,6 @@ export default function SinglePlayerGame({
             }
             
             let currentEnemies = enemiesRef.current;
-            const newLocalAttacks: Attack[] = [];
-
             const spawner = spawnerStateRef.current;
             if (spawner && spawner.count < spawner.waveData.count) {
                 spawner.timer += delta;
@@ -391,37 +426,7 @@ export default function SinglePlayerGame({
                 }
             }
 
-
-            const currentTowers = Object.values(towersByCell);
-
-            currentTowers.forEach(tower => {
-                if (now - tower.lastAttack > tower.attackSpeed) {
-                    const towerPos = gridToPx(tower.position);
-                    
-                    const enemiesInRange = currentEnemies.filter(e => {
-                        const enemyWorldPos = interpolatedEnemyPositions.get(e.id);
-                        if (!enemyWorldPos) return false;
-                        const distance = Math.hypot(enemyWorldPos.y - towerPos.y, enemyWorldPos.x - towerPos.x);
-                        return distance <= (tower.range + 0.5) * 64;
-                    });
-
-                    if (enemiesInRange.length > 0) {
-                        const mainTarget = enemiesInRange[0];
-                        const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
-                        newLocalAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType });
-                        
-                        let damage = tower.damage;
-                        mainTarget.health -= damage;
-                        mainTarget.wasHit = true;
-                        
-                        tower.lastAttack = now;
-                    }
-                }
-            });
-
-            if (newLocalAttacks.length > 0) {
-                gameBoardRef.current?.queueAttacks(newLocalAttacks);
-            }
+            renderVfx();
             
             let livesLost = 0;
             let resourcesGained = 0;
@@ -504,7 +509,7 @@ export default function SinglePlayerGame({
             window.removeEventListener('beforeunload', saveGameState);
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         };
-    }, [currentPath, handleGameEnd, saveGameState, towersByCell, players, currentWave, difficulty, isCheating, user, gameState.lives, startWave]);
+    }, [currentPath, handleGameEnd, saveGameState, players, currentWave, difficulty, isCheating, user, gameState.lives, startWave, renderVfx]);
 
     if (players.length === 0) {
         return <div className="flex items-center justify-center h-full"><Loader2 className="h-16 w-16 animate-spin text-primary" /></div>
@@ -560,3 +565,5 @@ export default function SinglePlayerGame({
         />
     )
 }
+
+    
