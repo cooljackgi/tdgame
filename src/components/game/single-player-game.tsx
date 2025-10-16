@@ -71,7 +71,6 @@ export default function SinglePlayerGame({
     const lastTickRef = useRef(performance.now());
     const enemyIdCounter = useRef(0);
     const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
-    const waveInProgressRef = useRef(false);
     
     const START_NODE = { row: 1, col: 1 };
     const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
@@ -248,7 +247,6 @@ export default function SinglePlayerGame({
     const startWave = useCallback(() => {
         setIsIntermission(false);
         audioManager.playWaveMusic();
-        setSpawnedThisWave(0);
     }, []);
 
     const handleStartNextWaveNow = useCallback(() => {
@@ -274,6 +272,10 @@ export default function SinglePlayerGame({
         }
         if (tower && players[0].resources < tower.cost) {
             toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
+            return;
+        }
+        if(tower === null) {
+            setSelectedTowerToBuild(null);
             return;
         }
         setSelectedTowerToBuild(tower);
@@ -354,13 +356,9 @@ export default function SinglePlayerGame({
             }
 
             // --- WAVE LOGIC ---
-            if (!waveInProgressRef.current) {
-                waveInProgressRef.current = true;
-                const waveData = waves[currentWave];
-                if (!waveData) {
-                    waveInProgressRef.current = false;
-                    return;
-                }
+            if (!spawnerStateRef.current && !isIntermission) {
+                 const waveData = waves[currentWave];
+                if (!waveData) return;
                 spawnerStateRef.current = {
                     count: 0,
                     timer: 0,
@@ -400,11 +398,7 @@ export default function SinglePlayerGame({
             const newFiringTowerIds = new Set<string>();
 
             const currentTowers = Object.values(towersByCell);
-
-            let enemiesThatReachedEnd = 0;
-            let enemiesKilled = 0;
-            let totalBounty = 0;
-
+            
             const updatedEnemies = enemies.map(enemy => {
                 let updatedEnemy = { ...enemy, wasHit: false, path: currentPath };
                 
@@ -419,7 +413,6 @@ export default function SinglePlayerGame({
                             updatedEnemy.position = currentPath[updatedEnemy.pathIndex];
                             updatedEnemy.lastMove = now;
                         } else {
-                            enemiesThatReachedEnd++;
                             return null;
                         }
                     }
@@ -464,32 +457,24 @@ export default function SinglePlayerGame({
             
             const finalEnemies = updatedEnemies.filter(enemy => {
               if(enemy.health <= 0) {
-                totalBounty += enemy.bounty;
-                enemiesKilled++;
+                setTotalKilled(k => k + 1);
+                setPlayers(prev => prev.map(p => ({...p, resources: p.resources + enemy.bounty})));
                 return false;
               }
               return true;
             });
             
-            if (enemiesThatReachedEnd > 0) {
-              setGameState(g => ({...g, lives: Math.max(0, g.lives - enemiesThatReachedEnd)}));
-              setTotalLeaked(c => c + enemiesThatReachedEnd);
-            }
-
-            if (enemiesKilled > 0) {
-                setTotalKilled(k => k + enemiesKilled);
-            }
-
-            if (totalBounty > 0) {
-                setPlayers(prev => prev.map(p => ({...p, resources: p.resources + totalBounty})))
+            const enemiesThatReachedEnd = enemies.length - finalEnemies.length;
+            if(enemiesThatReachedEnd > 0) {
+                 setGameState(g => ({...g, lives: Math.max(0, g.lives - enemiesThatReachedEnd)}));
+                 setTotalLeaked(c => c + enemiesThatReachedEnd);
             }
 
             setEnemies(finalEnemies);
             
             const waveData = waves[currentWave];
             const allEnemiesSpawned = spawnerStateRef.current ? spawnerStateRef.current.count >= waveData.enemies.count : false;
-            if (waveInProgressRef.current && allEnemiesSpawned && finalEnemies.length === 0) {
-                waveInProgressRef.current = false;
+            if (allEnemiesSpawned && finalEnemies.length === 0) {
                 spawnerStateRef.current = null;
                 const nextWaveIdx = currentWave + 1;
                 if (nextWaveIdx >= waves.length) {
