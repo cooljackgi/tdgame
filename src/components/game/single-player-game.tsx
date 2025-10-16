@@ -178,9 +178,6 @@ export default function SinglePlayerGame({
             setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
             audioManager.playSfx('build_tower');
             
-            // Allow building multiple towers
-            // setSelectedTowerToBuild(null);
-            
             return prevPlayers.map(p => p.id === player.id ? { ...p, resources: p.resources - newTower.cost } : p);
         });
     }, [selectedTowerToBuild, towersByCell, toast, START_NODE, END_NODE]);
@@ -517,8 +514,7 @@ export default function SinglePlayerGame({
             window.removeEventListener('beforeunload', saveGameState);
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         };
-    // Re-run the effect if the game is unpaused, or if key dependencies for the loop logic change.
-    }, [saveGameState, isIntermission, currentWave, difficulty, isCheating, user, handleGameEnd, startWave, towersByCell, currentPath, gameStatus]);
+    }, [saveGameState, isIntermission, currentWave, difficulty, isCheating, user, handleGameEnd, startWave, towersByCell, currentPath, gameStatus, enemies, players]);
     
     useEffect(() => {
         if (gameState.lives <= 0) {
