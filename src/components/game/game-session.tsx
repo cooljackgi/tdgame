@@ -114,6 +114,8 @@ type GameSessionProps = {
     clientBytesReceivedPerSecond?: number;
     averagePacketSize?: number;
     finalGameResult?: GameResult | null;
+    totalKilled?: number;
+    totalLeaked?: number;
 }
 
 const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): PlacedTower[] => {
@@ -167,7 +169,9 @@ export default function GameSession({
     // Stats
     fps, setFps,
     isWsConnected, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize,
-    finalGameResult
+    finalGameResult,
+    totalKilled,
+    totalLeaked
 }: GameSessionProps) {
   
   const { toast } = useToast();
@@ -185,9 +189,6 @@ export default function GameSession({
   const [isMuted, setIsMuted] = useState(false);
   const [justPlacedTowerId, setJustPlacedTowerId] = useState<string|null>(null);
   
-  const [totalKilled, setTotalKilled] = useState(0);
-  const [totalLeaked, setTotalLeaked] = useState(0);
-
   // Simulation
   const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>();
   
@@ -628,8 +629,8 @@ export default function GameSession({
             setFocusedTower={isCoop ? setFocusedTower : spSetFocusedTower!}
             spawnedThisWave={spawnedThisWave}
             totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
-            totalKilled={totalKilled}
-            totalLeaked={totalLeaked}
+            totalKilled={totalKilled || 0}
+            totalLeaked={totalLeaked || 0}
             isIntermission={isIntermission}
             waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME}
