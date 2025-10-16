@@ -106,13 +106,10 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   const availableUpgrades = React.useMemo(() => {
     if (!focusedTower?.upgradesTo) return [];
   
-    // Create a map for quick lookups
     const towerMap = new Map(allTowers.map(t => [t.id, t]));
     
-    // Use a Set to ensure unique upgrade IDs
     const uniqueUpgradeIds = new Set(focusedTower.upgradesTo);
   
-    // Map over the unique IDs to get the tower objects, filtering out unavailable ones
     return Array.from(uniqueUpgradeIds)
       .map(id => towerMap.get(id))
       .filter((tower): tower is Tower => 
@@ -140,9 +137,9 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             <Separator />
           <p className="text-sm text-muted-foreground px-2">Upgrades:</p>
           <ul className="space-y-2">
-            {availableUpgrades.length > 0 ? availableUpgrades.map((tower, index) => (
+            {availableUpgrades.length > 0 ? availableUpgrades.map((tower) => (
                 <TowerCard 
-                  key={`${tower.id}-${index}`}
+                  key={tower.id}
                   tower={tower} 
                   onSelect={() => onUpgradeTower(tower.id)} 
                   disabled={localPlayer.resources < tower.cost - Math.round(focusedTower.cost * 0.75)}
