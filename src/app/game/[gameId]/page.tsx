@@ -69,18 +69,30 @@ function CoopGame() {
   const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
   const currentPath = useMemo(() => findPath(START_NODE, END_NODE, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
 
+  const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
+      if (deltas.length === 0) return;
+      if (isGameHost) {
+         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
+      }
+      // The host also applies the deltas to its own state immediately
+      applyDeltas(deltas);
+  }, [rtc, isGameHost, applyDeltas]);
+
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
     deltas.forEach(delta => {
         const type = delta[0];
         const payload = delta[1];
         switch(type) {
             case DeltaType.ENEMY_SPAWN: {
-                // The path is now included in the payload
                 const newEnemy = payload as Enemy;
                 setEnemies(prev => [...prev, newEnemy]);
                 break;
             }
             case DeltaType.ENEMY_MOVE: {
+                if (isGameHost) {
+                    broadcastGameData([delta]);
+                    return;
+                }
                 const [id, pathIndex, now] = delta.slice(1);
                 setEnemies(prev => prev.map(e => {
                     if (e.id === id) {
@@ -188,15 +200,8 @@ function CoopGame() {
                 break;
         }
     });
-  }, [currentPath, isGameHost]);
+  }, [currentPath, isGameHost, broadcastGameData]);
     
-  const broadcastGameData = useCallback((deltas: GameDelta[]) => {
-      if (deltas.length === 0) return;
-      if (isGameHost) {
-         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
-      }
-      applyDeltas(deltas);
-  }, [rtc, isGameHost, applyDeltas]);
 
   // Wave Spawning Logic (HOST ONLY) - Now triggered from game-session
   const startWave = useCallback(() => {
@@ -244,7 +249,6 @@ function CoopGame() {
         movementPattern: movementPattern, path: [], // Path is added in the broadcast delta
       };
       
-      // CRITICAL FIX: Include the currentPath in the spawn delta payload
       broadcastGameData([[DeltaType.ENEMY_SPAWN, { ...newEnemy, path: currentPath }]]);
       
       spawnedCount++;
