@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
@@ -956,6 +955,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         if (!pos) return null;
                         
                         const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
+                        
                         const isGhost = !enemies.find(e => e.id === enemy.id);
 
                         return (
@@ -1136,7 +1136,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
-    
 
     
