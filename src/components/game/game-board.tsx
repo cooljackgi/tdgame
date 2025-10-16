@@ -57,7 +57,7 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
       targetPos = gridToPx(enemy.position);
     } else {
       const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
-      const speed = enemy.speed * (slowEffect ? (1 - slowEffect.potency) : 1);
+      const speed = enemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
       const stepMs = 1000 / Math.max(0.001, speed);
 
       const t = clamp((now - enemy.lastMove) / stepMs, 0, 1);
@@ -161,16 +161,9 @@ function createPool<T extends {id: string}>(size: number) {
 }
 
 
-function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number, enemyPositions: Map<string, { x: number; y: number }>) {
+function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number) {
     let fromPos = a._vfx.fromPx;
     let toPos = a._vfx.toPx;
-
-    const currentTargetPos = enemyPositions.get(a.targetId);
-    if (currentTargetPos) {
-      const targetPx = {...currentTargetPos, y: currentTargetPos.y - CELL_SIZE * 0.25 };
-      toPos = targetPx;
-      a._vfx.toPx = targetPx;
-    }
 
     const primaryElement = a.elements?.[0] ?? 'neutral';
     const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
@@ -490,7 +483,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         const currentEnemyIds = new Set(enemies.map(e => e.id));
         
-        // Correct cleanup logic: remove interpolated positions for enemies that are no longer in the main `enemies` array.
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
                 interpolatedEnemyPositions.delete(id);
@@ -537,13 +529,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     }
                     if (!fromPx) continue;
                     
-                    const liveTarget = interpolatedEnemyPositions.get(a.targetId);
-                    const lastKnownTarget = lastKnownEnemyPosRef.current.get(a.targetId);
-                    let toPx = liveTarget ?? lastKnownTarget ?? null;
+                    const toPx = a.targetPosition ? gridToPx(a.targetPosition) : null;
             
                     if (!toPx) continue;
-
-                    toPx = { ...toPx, y: toPx.y - CELL_SIZE * 0.25 };
             
                     const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
                     const dynamicLife =
@@ -584,7 +572,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const life = Math.max(1, attack._vfx.life || 1);
             const t = clamp((now - attack._vfx.start) / life, 0, 1);
             if (t >= 1) { attacksPoolRef.current.free(attack); return; }
-            drawProjectile(ctx, attack, t, interpolatedEnemyPositions);
+            drawProjectile(ctx, attack, t);
         });
 
         splashRingsPoolRef.current.forEachActive(r => {
@@ -1145,5 +1133,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
 
     

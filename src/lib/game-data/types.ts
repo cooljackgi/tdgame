@@ -88,6 +88,7 @@ export type Attack = {
   id: string;
   towerId: string;
   targetId: string;
+  targetPosition: Node; // The position of the target at the time of attack
   elements: Tower['elements'];
   projectile: 'beam' | 'arrow' | 'chain';
   isChain?: boolean;
@@ -193,3 +194,5 @@ export type Wave = {
   waveNumber: number;
   enemies: WaveEnemyData;
 };
+
+    
