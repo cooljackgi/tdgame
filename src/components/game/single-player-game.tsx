@@ -58,7 +58,7 @@ export default function SinglePlayerGame({
     const [difficulty, setDifficulty] = useState<Difficulty>(initialDifficulty);
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     const [spawnedThisWave, setSpawnedThisWave] = useState(0);
-    const [attacks, setAttacks] = useState<Attack[]>([]);
+    const [localAttacks, setLocalAttacks] = useState<Attack[]>([]);
     const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
@@ -322,8 +322,7 @@ export default function SinglePlayerGame({
         handleLoadMazeLayout(true);
     }, [handleLoadMazeLayout]);
 
-    const renderVfx = useCallback(() => {
-        const now = performance.now();
+    const renderVfx = useCallback((now: number) => {
         const newLocalAttacks: Attack[] = [];
         const currentTowers = Object.values(towersByCell);
         let currentEnemies = [...enemiesRef.current];
@@ -349,7 +348,11 @@ export default function SinglePlayerGame({
                     mainTarget.wasHit = true;
                     
                     tower.lastAttack = now;
-                    setFiringTowerIds(prev => new Set(prev).add(tower.id));
+                    setFiringTowerIds(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(tower.id);
+                        return newSet;
+                    });
                     setTimeout(() => setFiringTowerIds(prev => {
                         const newSet = new Set(prev);
                         newSet.delete(tower.id);
@@ -361,7 +364,7 @@ export default function SinglePlayerGame({
         
         enemiesRef.current = currentEnemies;
         if (newLocalAttacks.length > 0) {
-            gameBoardRef.current?.queueAttacks(newLocalAttacks);
+            setLocalAttacks(prev => [...prev.slice(-100), ...newLocalAttacks]);
         }
     }, [towersByCell]);
 
@@ -426,7 +429,7 @@ export default function SinglePlayerGame({
                 }
             }
 
-            renderVfx();
+            renderVfx(now);
             
             let livesLost = 0;
             let resourcesGained = 0;
@@ -535,7 +538,7 @@ export default function SinglePlayerGame({
             applyDeltas={() => {}}
             onGameEnd={handleGameEnd}
             onExit={() => { saveGameState(); onExit(); }}
-            attacks={attacks}
+            attacks={localAttacks}
             damageNumbers={damageNumbers}
             splashRings={splashRings}
             lastUpgradedTowerId={lastUpgradedTowerId}
