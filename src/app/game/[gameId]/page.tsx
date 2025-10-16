@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import GameSession from "@/components/game/game-session";
@@ -351,37 +350,58 @@ function CoopGame() {
                 if (targets.length > 0) {
                     const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
                     deltas.push([DeltaType.TOWER_ATTACK, { id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: 'beam' }]);
-                    tower.lastAttack = now;
+                    tower.lastAttack = now; // Update last attack time for the tower in the ref
                 }
             }
         });
         
         // 3. Enemy Damage & Effects
-        enemiesRef.current.forEach(enemy => {
-            deltas.forEach(delta => {
-                if (delta[0] === DeltaType.TOWER_ATTACK && delta[1].targetId === enemy.id) {
-                    const tower = Object.values(towersByCellRef.current).find(t => t.id === delta[1].towerId);
-                    if (tower) {
-                        deltas.push([DeltaType.ENEMY_DAMAGE, enemy.id, tower.damage]);
-                        deltas.push([DeltaType.VFX_DAMAGE_NUMBER, { id: `dmg-${now}-${Math.random()}`, targetId: enemy.id, amount: tower.damage, color: elementProjectileColors[tower.elements[0]] || 'white', position: enemy.position }]);
-                    }
+        const liveEnemyIds = new Set(enemiesRef.current.map(e => e.id));
+        const healthUpdates = new Map<string, number>();
+
+        deltas.forEach(delta => {
+            if (delta[0] === DeltaType.TOWER_ATTACK) {
+                const attack = delta[1] as Attack;
+                const tower = Object.values(towersByCellRef.current).find(t => t.id === attack.towerId);
+                if (tower && liveEnemyIds.has(attack.targetId)) {
+                    const currentDamage = healthUpdates.get(attack.targetId) || 0;
+                    healthUpdates.set(attack.targetId, currentDamage + tower.damage);
                 }
-            });
+            }
         });
 
-        // 4. Enemy Movement & Path End
-        const liveEnemyIds = new Set(enemiesRef.current.map(e => e.id));
-        deltas.filter(d => d[0] === DeltaType.ENEMY_DAMAGE).forEach(d => {
-            const enemy = enemiesRef.current.find(e => e.id === d[1]);
-            if (enemy) enemy.health -= d[2];
+        healthUpdates.forEach((damage, enemyId) => {
+            deltas.push([DeltaType.ENEMY_DAMAGE, enemyId, damage]);
+            // Find enemy to create damage number at correct position
+            const enemy = enemiesRef.current.find(e => e.id === enemyId);
+            if(enemy) {
+                const towerThatShot = Object.values(towersByCellRef.current).find(t => deltas.some(d => d[0] === DeltaType.TOWER_ATTACK && d[1].towerId === t.id && d[1].targetId === enemyId));
+                deltas.push([DeltaType.VFX_DAMAGE_NUMBER, { 
+                    id: `dmg-${now}-${Math.random()}`, 
+                    targetId: enemy.id, 
+                    amount: damage, 
+                    color: elementProjectileColors[towerThatShot?.elements[0] || 'neutral'] || 'white', 
+                    position: enemy.position 
+                }]);
+            }
         });
+
         
+        // 4. Enemy Movement & Path End
         enemiesRef.current.forEach(enemy => {
-             if (enemy.health <= 0) {
+             const totalDamage = healthUpdates.get(enemy.id) || 0;
+             if (enemy.health - totalDamage <= 0) {
                 if (liveEnemyIds.has(enemy.id)) {
                    deltas.push([DeltaType.ENEMY_DIE, enemy.id]);
                    const bounty = enemy.bounty;
-                   deltas.push([DeltaType.PLAYER_UPDATE, { player1: { resources: playersRef.current[0].resources + bounty }, player2: { resources: playersRef.current[1]?.resources + bounty } }]);
+                   // Assuming player1 is always present and player2 might not be
+                   const p1 = playersRef.current.find(p => p.id === 'player1');
+                   const p2 = playersRef.current.find(p => p.id === 'player2');
+                   const playerUpdates: Record<string, Partial<Player>> = {};
+                   if (p1) playerUpdates.player1 = { resources: p1.resources + bounty };
+                   if (p2) playerUpdates.player2 = { resources: p2.resources + bounty };
+                   deltas.push([DeltaType.PLAYER_UPDATE, playerUpdates]);
+
                    liveEnemyIds.delete(enemy.id);
                 }
                 return;
@@ -394,16 +414,18 @@ function CoopGame() {
                      if (enemy.pathIndex < currentPathRef.current.length - 1) {
                         deltas.push([DeltaType.ENEMY_MOVE, enemy.id, enemy.pathIndex + 1, now]);
                     } else {
-                        deltas.push([DeltaType.ENEMY_REACH_END, enemy.id]);
-                        deltas.push([DeltaType.GAME_STATE_UPDATE, { lives: gameStateRef.current.lives - 1 }]);
-                        liveEnemyIds.delete(enemy.id);
+                        if(liveEnemyIds.has(enemy.id)) {
+                            deltas.push([DeltaType.ENEMY_REACH_END, enemy.id]);
+                            deltas.push([DeltaType.GAME_STATE_UPDATE, { lives: gameStateRef.current.lives - 1 }]);
+                            liveEnemyIds.delete(enemy.id);
+                        }
                     }
                 }
              }
         });
         
         // 5. Wave Completion
-        if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.every(e => e.health <= 0)) {
+        if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && Array.from(liveEnemyIds).length === 0) {
             spawnerStateRef.current = null;
             const nextWave = currentWaveRef.current + 1;
             if (nextWave >= waves.length) {
@@ -469,3 +491,5 @@ function CoopGame() {
 }
 
 export default CoopGame;
+
+    
