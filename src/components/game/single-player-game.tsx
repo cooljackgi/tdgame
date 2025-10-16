@@ -352,7 +352,8 @@ export default function SinglePlayerGame({
                 return;
             }
 
-            if (!spawnerStateRef.current && !isIntermission) {
+            if (!spawnerStateRef.current) {
+                if (currentPath.length === 0) return; // Wait for path
                 const waveData = waves[currentWave];
                 if (!waveData) return;
                 spawnerStateRef.current = {
@@ -473,7 +474,7 @@ export default function SinglePlayerGame({
                 const allEnemiesSpawned = spawnerStateRef.current ? spawnerStateRef.current.count >= waveData.enemies.count : false;
                 if (allEnemiesSpawned && finalEnemies.length === 0 && newEnemiesThisFrame.length === 0) {
                     spawnerStateRef.current = null;
-                    const canPickElement = (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
+                    const canPickElement = (currentWave + 1) > 0 && (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
                     
                     if (canPickElement && !isCheating) {
                         setGameStatus('picking-element');
@@ -562,6 +563,7 @@ export default function SinglePlayerGame({
             cheat_unlockAll={() => setPlayers(prev => prev.map(p => ({...p, unlockedElements: [...ALL_PICKABLE_ELEMENTS, 'neutral']})))}
             totalKilled={totalKilled}
             totalLeaked={totalLeaked}
+            handleElementPick={handleElementPick}
         />
     )
 }

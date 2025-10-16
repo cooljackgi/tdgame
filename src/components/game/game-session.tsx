@@ -93,6 +93,7 @@ type GameSessionProps = {
     handlePlaceTower?: (row: number, col: number) => void;
     allTowers?: Tower[];
     cancelInteractions?: () => void;
+    handleElementPick?: (element: Element) => void;
 
 
     // --- Debug / Cheats ---
@@ -153,6 +154,7 @@ export default function GameSession({
     handlePlaceTower: spHandlePlaceTower,
     allTowers: spAllTowers,
     cancelInteractions: spCancelInteractions,
+    handleElementPick: spHandleElementPick,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -514,23 +516,27 @@ export default function GameSession({
   
 
   const handleElementPick = (element: Element) => {
-    if (localPlayerId === 'spectator' || !localPlayer) return;
-      
-    const playerUpdate = { [localPlayer.id]: { unlockedElements: [...localPlayer.unlockedElements, element] }};
-    const nextWave = currentWave + 1;
+    if (isCoop) {
+        if (localPlayerId === 'spectator' || !localPlayer) return;
+        
+        const playerUpdate = { [localPlayer.id]: { unlockedElements: [...localPlayer.unlockedElements, element] }};
+        const nextWave = currentWave + 1;
 
-    const stateUpdate = {
-        gameStatus: 'playing',
-        isIntermission: true,
-        waveStartCountdown: INTERMISSION_TIME,
-        currentWave: nextWave,
-        spawnedThisWave: 0,
-    };
+        const stateUpdate = {
+            gameStatus: 'playing',
+            isIntermission: true,
+            waveStartCountdown: INTERMISSION_TIME,
+            currentWave: nextWave,
+            spawnedThisWave: 0,
+        };
 
-    broadcastGameData([
-        [DeltaType.PLAYER_UPDATE, playerUpdate],
-        [DeltaType.GAME_STATE_UPDATE, stateUpdate]
-    ]);
+        broadcastGameData([
+            [DeltaType.PLAYER_UPDATE, playerUpdate],
+            [DeltaType.GAME_STATE_UPDATE, stateUpdate]
+        ]);
+    } else if (spHandleElementPick) {
+        spHandleElementPick(element);
+    }
   };
   
   const isSpectator = localPlayerId === 'spectator';
