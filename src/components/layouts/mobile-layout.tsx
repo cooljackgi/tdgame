@@ -125,9 +125,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const handleSelectAndClose = (tower: Tower | null) => {
     onSelectTowerToBuild(tower);
-    // Don't close the sheet automatically to allow for multiple placements
-    // setIsBuildSheetOpen(false);
+    setIsBuildSheetOpen(false);
   };
+  
   const handleSellAndClose = () => {
     handleSellTower();
     setIsBuildSheetOpen(false);
