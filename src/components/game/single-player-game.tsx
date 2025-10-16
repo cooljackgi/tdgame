@@ -238,7 +238,7 @@ export default function SinglePlayerGame({
         deltas.forEach(([type, ...payload]) => {
             if (type === DeltaType.ENEMY_PATH_UPDATE) {
                 const [enemyId, newPath, newPathIndex] = payload;
-                setEnemies(prev => prev.map(e => e.id === enemyId ? { ...e, path: newPath, pathIndex: newPathIndex } : e));
+                setEnemies(prev => prev.map(e => e.id === enemyId ? { ...e, path: newPath as Node[], pathIndex: newPathIndex as number } : e));
             }
         });
     }, []);
@@ -286,6 +286,7 @@ export default function SinglePlayerGame({
 
     const simulate = useCallback(() => {
       const now = performance.now();
+      let livesLost = 0;
       
       setEnemies(prevEnemies => {
           let newEnemies = [...prevEnemies];
@@ -293,7 +294,7 @@ export default function SinglePlayerGame({
           const newDamageNumbers: DamageNumber[] = [];
           const newSplashRings: SplashRing[] = [];
           const deadEnemyIds = new Set<string>();
-          let livesLost = 0;
+          
 
           const damageToApply: Map<string, { totalDamage: number; sources: PlacedTower[] }> = new Map();
 
@@ -465,7 +466,7 @@ export default function SinglePlayerGame({
     if (deltas.length > 0) {
         applyDeltas(deltas);
     }
-  }, [currentPath, applyDeltas]);
+  }, [currentPath, enemies, applyDeltas]);
 
 
   useEffect(() => {
