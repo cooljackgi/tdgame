@@ -53,7 +53,7 @@ export default function SinglePlayerGame({
     const [attacks, setAttacks] = useState<Attack[]>([]);
     const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
-    const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
+    const [lastUpgradedTowerId, setLastUpgradedTowerId] useState<string|null>(null);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -275,19 +275,15 @@ export default function SinglePlayerGame({
     }, [currentWave]);
     
     const handleLoadTestLayout = useCallback(() => {
-        const longPathLayout: { row: number, col: number }[] = [
-            { row: 1, col: 3 }, { row: 2, col: 3 }, { row: 3, col: 3 }, { row: 4, col: 3 }, { row: 5, col: 3 },
-            { row: 7, col: 3 }, { row: 8, col: 3 }, { row: 9, col: 3 }, { row: 10, col: 3 }, { row: 11, col: 3 },
+        const longPathLayout: { row: number, col: number }[] = [];
+        for (let r = 1; r <= GRID_ROWS; r++) {
+            if (r > 1) longPathLayout.push({ row: r, col: 2 });
+            longPathLayout.push({ row: r, col: 4 });
+            if (r < GRID_ROWS) longPathLayout.push({ row: r, col: 6 });
+            longPathLayout.push({ row: r, col: 8 });
+             if (r > 1) longPathLayout.push({ row: r, col: 10 });
+        }
 
-            { row: 11, col: 5 }, { row: 10, col: 5 }, { row: 9, col: 5 }, { row: 8, col: 5 }, { row: 7, col: 5 },
-            { row: 5, col: 5 }, { row: 4, col: 5 }, { row: 3, col: 5 }, { row: 2, col: 5 }, { row: 1, col: 5 },
-            
-            { row: 1, col: 7 }, { row: 2, col: 7 }, { row: 3, col: 7 }, { row: 4, col: 7 }, { row: 5, col: 7 },
-            { row: 7, col: 7 }, { row: 8, col: 7 }, { row: 9, col: 7 }, { row: 10, col: 7 }, { row: 11, col: 7 },
-            
-            { row: 11, col: 9 }, { row: 10, col: 9 }, { row: 9, col: 9 }, { row: 8, col: 9 }, { row: 7, col: 9 },
-            { row: 5, col: 9 }, { row: 4, col: 9 }, { row: 3, col: 9 }, { row: 2, col: 9 }, { row: 1, col: 9 },
-        ];
 
         const newTowersByCell = longPathLayout.reduce((acc, pos) => {
             const towerSpec = initialTowers.find(t=>t.id==='neutral-0')!;
