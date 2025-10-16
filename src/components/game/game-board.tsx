@@ -502,18 +502,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         ctx.translate(panRef.current.x, panRef.current.y);
         ctx.scale(zoomRef.current, zoomRef.current);
         
-        // --- NEW ---
-        // Cleanup and update all enemy positions in one go.
         const currentEnemyIds = new Set(enemiesRef.current.keys());
         
-        // Only keep positions for enemies that are still in the game state
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
                 interpolatedEnemyPositions.delete(id);
             }
         }
-        // --- END NEW ---
-
+        
         for (const enemy of enemiesRef.current.values()) {
             const pos = getEnemyWorldPos(enemy, now, enemy.path || currentPath);
             lastKnownEnemyPosRef.current.set(enemy.id, { x: pos.x, y: pos.y, expires: now + 350 });
@@ -610,7 +606,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         });
 
         ctx.globalAlpha = 1;
-        
+        ctx.shadowBlur = 0;
+
         damageNumbersPoolRef.current.forEachActive(dn => {
             const t = clamp((now - dn.start) / dn.life, 0, 1);
             if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
@@ -901,227 +898,236 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <canvas 
-              ref={fxCanvasRef} 
-              className="absolute inset-0 z-20 pointer-events-none" 
-              style={{ left: 0, top: 0, width: '100%', height: '100%' }}
-          />
         <div 
           ref={worldRef}
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
         >
+          {/* Layer 10: Game World (Enemies, Towers, Path) */}
           <div 
-            className="relative"
-            style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight, zIndex: 10 }}
+            className="absolute inset-0"
+            style={{ zIndex: 10 }}
           >
-            <div className="absolute inset-0" style={{
-                backgroundColor: 'hsl(216 28% 12%)',
-                backgroundImage: `
-                  linear-gradient(to right, rgba(148,163,184,0.1) 1px, transparent 1px),
-                  linear-gradient(to bottom, rgba(148,163,184,0.1) 1px, transparent 1px)
-                `,
-                backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
-            }} />
-            <div className="absolute inset-0 pointer-events-none">
-                <svg width="100%" height="100%" className="overflow-visible">
-                  <defs>
-                    <filter id="pathGlow">
-                      <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-                      <feMerge>
-                        <feMergeNode in="coloredBlur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  {ghostTowerPath ? (
-                      <path
-                          d={ghostTowerPath === 'invalid' ? '' : ghostTowerPath}
-                          fill="none"
-                          stroke={ghostTowerPath === 'invalid' ? 'hsl(var(--destructive))' : "hsl(142 71% 45%)"}
-                          strokeWidth="3"
-                          strokeDasharray="8 8"
-                          strokeLinecap="round"
-                      />
-                  ) : (
-                      <path
-                          d={pathD}
-                          fill="none"
-                          stroke="hsl(35 91% 50%)"
-                          strokeWidth="3"
-                          strokeDasharray="10 5"
-                          strokeLinecap="round"
-                          filter="url(#pathGlow)"
-                          className="opacity-70"
-                      >
-                        <animate
-                          attributeName="stroke-dashoffset"
-                          from="15"
-                          to="0"
-                          dur="0.5s"
-                          repeatCount="indefinite"
+            <div 
+              className="relative"
+              style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight }}
+            >
+              <div className="absolute inset-0" style={{
+                  backgroundColor: 'hsl(216 28% 12%)',
+                  backgroundImage: `
+                    linear-gradient(to right, rgba(148,163,184,0.1) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(148,163,184,0.1) 1px, transparent 1px)
+                  `,
+                  backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
+              }} />
+              <div className="absolute inset-0 pointer-events-none">
+                  <svg width="100%" height="100%" className="overflow-visible">
+                    <defs>
+                      <filter id="pathGlow">
+                        <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                        <feMerge>
+                          <feMergeNode in="coloredBlur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    {ghostTowerPath ? (
+                        <path
+                            d={ghostTowerPath === 'invalid' ? '' : ghostTowerPath}
+                            fill="none"
+                            stroke={ghostTowerPath === 'invalid' ? 'hsl(var(--destructive))' : "hsl(142 71% 45%)"}
+                            strokeWidth="3"
+                            strokeDasharray="8 8"
+                            strokeLinecap="round"
                         />
-                      </path>
-                  )}
-                </svg>
-              </div>
-
-              <div className="absolute inset-0">
-                  {enemies.map((enemy) => {
-                      const pos = interpolatedEnemyPositions.get(enemy.id);
-                      if (!pos) return null;
-                      
-                      const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
-
-                      return (
-                          <div
-                          key={enemy.id}
-                          style={{
-                              position: 'absolute',
-                              left: pos.x,
-                              top: pos.y,
-                              width: CELL_SIZE,
-                              height: CELL_SIZE,
-                              transform: 'translate(-50%, -50%)',
-                              willChange: 'left, top',
-                          }}
-                          className="pointer-events-none"
-                          >
-                          <EnemyComponent
-                              type={enemy.type}
-                              wasHit={enemy.wasHit}
-                              isDamaged={enemy.wasHit}
-                              isStunned={isStunned}
-                              health={enemy.health}
-                              maxHealth={enemy.maxHealth}
-                              effects={enemy.effects}
+                    ) : (
+                        <path
+                            d={pathD}
+                            fill="none"
+                            stroke="hsl(35 91% 50%)"
+                            strokeWidth="3"
+                            strokeDasharray="10 5"
+                            strokeLinecap="round"
+                            filter="url(#pathGlow)"
+                            className="opacity-70"
+                        >
+                          <animate
+                            attributeName="stroke-dashoffset"
+                            from="15"
+                            to="0"
+                            dur="0.5s"
+                            repeatCount="indefinite"
                           />
-                          </div>
-                      );
-                  })}
-                
-                    {placedTowers.map(tower => {
-                      const specId = tower.specId || tower.id;
-                      const variant = 
-                          specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
-                          specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
-                          "basic";
-                      return (
-                        <MemoizedTower
-                          key={tower.id}
-                          tower={tower}
-                          isFocused={focusedTower?.id === tower.id}
-                          isJustUpgraded={lastUpgradedTowerId === tower.id}
-                          isJustBuilt={justPlacedTowerId === tower.id}
-                          onTowerClick={onTowerClick}
-                          cooldownProgress={towerCooldownsRef.current.get(tower.id) ?? 1}
-                          variant={variant}
-                          isFiring={firingTowerIds.has(tower.id)}
-                          isBuffed={buffedTowerIds.has(tower.id)}
-                        />
-                      )
+                        </path>
+                    )}
+                  </svg>
+                </div>
+
+                <div className="absolute inset-0">
+                    {enemies.map((enemy) => {
+                        const pos = interpolatedEnemyPositions.get(enemy.id);
+                        if (!pos) return null;
+                        
+                        const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
+
+                        return (
+                            <div
+                            key={enemy.id}
+                            style={{
+                                position: 'absolute',
+                                left: pos.x,
+                                top: pos.y,
+                                width: CELL_SIZE,
+                                height: CELL_SIZE,
+                                transform: 'translate(-50%, -50%)',
+                                willChange: 'left, top',
+                            }}
+                            className="pointer-events-none"
+                            >
+                            <EnemyComponent
+                                type={enemy.type}
+                                wasHit={enemy.wasHit}
+                                isDamaged={enemy.wasHit}
+                                isStunned={isStunned}
+                                health={enemy.health}
+                                maxHealth={enemy.maxHealth}
+                                effects={enemy.effects}
+                            />
+                            </div>
+                        );
                     })}
-                    
-                    <div className="absolute flex items-center justify-center pointer-events-auto" style={{ left: startPos.x, top: startPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)'}}>
-                          <div className="relative h-10 w-10">
-                              <svg className="h-full w-full absolute" viewBox="0 0 100 100">
-                              <circle cx="50" cy="50" r="16" stroke="hsl(var(--primary)/0.5)" strokeWidth="2" fill="transparent" className="animate-core-glow"/>
-                              <circle cx="50" cy="50" r="12" fill="hsl(var(--primary))" className="animate-core-pulse"/>
-                              <circle cx="50" cy="50" r="24" stroke="hsl(var(--primary))" strokeWidth="1.5" strokeDasharray="4 8" fill="transparent" className="animate-upgrade-ring"/>
-                              </svg>
-                          </div>
-                    </div>
-                    
-                      <div
-                          className="absolute flex items-center justify-center pointer-events-auto"
-                          style={{ left: endPos.x, top: endPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)' }}
-                      >
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex pointer-events-auto">
-                                <Target className="h-8 w-8 text-red-500 animate-ping" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent><p>Nexus</p></TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                  
+                      {placedTowers.map(tower => {
+                        const specId = tower.specId || tower.id;
+                        const variant = 
+                            specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
+                            specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
+                            "basic";
+                        return (
+                          <MemoizedTower
+                            key={tower.id}
+                            tower={tower}
+                            isFocused={focusedTower?.id === tower.id}
+                            isJustUpgraded={lastUpgradedTowerId === tower.id}
+                            isJustBuilt={justPlacedTowerId === tower.id}
+                            onTowerClick={onTowerClick}
+                            cooldownProgress={towerCooldownsRef.current.get(tower.id) ?? 1}
+                            variant={variant}
+                            isFiring={firingTowerIds.has(tower.id)}
+                            isBuffed={buffedTowerIds.has(tower.id)}
+                          />
+                        )
+                      })}
+                      
+                      <div className="absolute flex items-center justify-center pointer-events-auto" style={{ left: startPos.x, top: startPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)'}}>
+                            <div className="relative h-10 w-10">
+                                <svg className="h-full w-full absolute" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="16" stroke="hsl(var(--primary)/0.5)" strokeWidth="2" fill="transparent" className="animate-core-glow"/>
+                                <circle cx="50" cy="50" r="12" fill="hsl(var(--primary))" className="animate-core-pulse"/>
+                                <circle cx="50" cy="50" r="24" stroke="hsl(var(--primary))" strokeWidth="1.5" strokeDasharray="4 8" fill="transparent" className="animate-upgrade-ring"/>
+                                </svg>
+                            </div>
                       </div>
+                      
+                        <div
+                            className="absolute flex items-center justify-center pointer-events-auto"
+                            style={{ left: endPos.x, top: endPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)' }}
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex pointer-events-auto">
+                                  <Target className="h-8 w-8 text-red-500 animate-ping" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent><p>Nexus</p></TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                  
+                </div>
                 
-              </div>
-              
-              {ghostTower && (
-                  <div
-                      className="absolute z-30 pointer-events-none opacity-60"
+                {ghostTower && (
+                    <div
+                        className="absolute z-30 pointer-events-none opacity-60"
+                        style={{
+                            left: gridToPx(ghostTower.position).x,
+                            top: gridToPx(ghostTower.position).y,
+                            transform: `translate(-50%, -50%)`,
+                        }}
+                    >
+                        <div
+                            className={cn(
+                                "absolute rounded-full",
+                                isPlacementValid ? "bg-green-500/20 border-green-500" : "bg-red-500/20 border-red-500"
+                            )}
+                            style={{
+                                width: ghostTower.range * CELL_SIZE * 2,
+                                height: ghostTower.range * CELL_SIZE * 2,
+                                transform: 'translate(-50%, -50%)',
+                                left: '50%',
+                                top: '50%',
+                                borderWidth: 2,
+                                borderStyle: 'dashed'
+                            }}
+                        />
+                        <TowerComponent 
+                            element={ghostTower.elements[0]} 
+                            variant={(ghostTower.specId || '').includes('-1a') || (ghostTower.specId || '').endsWith('-2a') ? "sniper" : (ghostTower.specId || '').includes('-1b') || (ghostTower.specId || '').endsWith('-2b') ? "ballista" : "basic"}
+                            isUpgraded={!ghostTower.isBase}
+                            size={CELL_SIZE * 0.8}
+                        />
+                    </div>
+                )}
+
+                {focusedTower && (
+                  <>
+                  <div 
+                    className="absolute pointer-events-none"
+                    style={{
+                      left: gridToPx(focusedTower.position).x,
+                      top: gridToPx(focusedTower.position).y,
+                    }}
+                  >
+                    <div
+                      className="bg-primary/10 border border-primary rounded-full animate-pulse"
                       style={{
-                          left: gridToPx(ghostTower.position).x,
-                          top: gridToPx(ghostTower.position).y,
-                          transform: `translate(-50%, -50%)`,
+                        width: focusedTower.range * CELL_SIZE * 2,
+                        height: focusedTower.range * CELL_SIZE * 2,
+                        transform: 'translate(-50%, -50%)'
+                      }}
+                    ></div>
+                  </div>
+                  <div
+                      className="absolute z-30"
+                      style={{
+                          left: gridToPx(focusedTower.position).x,
+                          top: gridToPx(focusedTower.position).y,
+                          transform: `translate(-50%, calc(-50% - ${CELL_SIZE * 0.7}px))`,
                       }}
                   >
-                      <div
-                          className={cn(
-                              "absolute rounded-full",
-                              isPlacementValid ? "bg-green-500/20 border-green-500" : "bg-red-500/20 border-red-500"
-                          )}
-                          style={{
-                              width: ghostTower.range * CELL_SIZE * 2,
-                              height: ghostTower.range * CELL_SIZE * 2,
-                              transform: 'translate(-50%, -50%)',
-                              left: '50%',
-                              top: '50%',
-                              borderWidth: 2,
-                              borderStyle: 'dashed'
-                          }}
-                      />
-                      <TowerComponent 
-                          element={ghostTower.elements[0]} 
-                          variant={(ghostTower.specId || '').includes('-1a') || (ghostTower.specId || '').endsWith('-2a') ? "sniper" : (ghostTower.specId || '').includes('-1b') || (ghostTower.specId || '').endsWith('-2b') ? "ballista" : "basic"}
-                          isUpgraded={!ghostTower.isBase}
-                          size={CELL_SIZE * 0.8}
+                      <TowerContextMenu
+                          tower={focusedTower}
+                          onUpgrade={onUpgradeTower}
+                          onSell={onSellTower}
+                          allTowers={allTowers}
+                          localPlayer={localPlayer}
+                          onClose={cancelInteractions}
                       />
                   </div>
-              )}
-
-              {focusedTower && (
-                <>
-                <div 
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: gridToPx(focusedTower.position).x,
-                    top: gridToPx(focusedTower.position).y,
-                    zIndex: 15,
-                  }}
-                >
-                  <div
-                    className="bg-primary/10 border border-primary rounded-full animate-pulse"
-                    style={{
-                      width: focusedTower.range * CELL_SIZE * 2,
-                      height: focusedTower.range * CELL_SIZE * 2,
-                      transform: 'translate(-50%, -50%)'
-                    }}
-                  ></div>
-                </div>
-                 <div
-                    className="absolute z-30"
-                     style={{
-                        left: gridToPx(focusedTower.position).x,
-                        top: gridToPx(focusedTower.position).y,
-                        transform: `translate(-50%, calc(-50% - ${CELL_SIZE * 0.7}px))`,
-                     }}
-                 >
-                    <TowerContextMenu
-                        tower={focusedTower}
-                        onUpgrade={onUpgradeTower}
-                        onSell={onSellTower}
-                        allTowers={allTowers}
-                        localPlayer={localPlayer}
-                        onClose={cancelInteractions}
-                    />
-                 </div>
-                 </>
-              )}
-              <div ref={hoverOverlayRef} className="absolute transition-opacity duration-100 opacity-0 pointer-events-none border-2 border-white/25 bg-white/5" style={{width: CELL_SIZE, height: CELL_SIZE}} />
+                  </>
+                )}
+                <div ref={hoverOverlayRef} className="absolute transition-opacity duration-100 opacity-0 pointer-events-none border-2 border-white/25 bg-white/5" style={{width: CELL_SIZE, height: CELL_SIZE}} />
+            </div>
+          </div>
+          
+          {/* Layer 20: VFX Canvas */}
+          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 20 }}>
+            <canvas 
+                ref={fxCanvasRef} 
+                className="absolute inset-0" 
+                style={{ left: 0, top: 0, width: '100%', height: '100%' }}
+            />
           </div>
         </div>
         
@@ -1143,3 +1149,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
