@@ -113,12 +113,11 @@ export default function SinglePlayerGame({
     const handleGameEnd = useCallback(async (result: GameResult) => {
         if (gameStatus !== 'gameover') {
             setGameStatus('gameover');
-            if (!isCheating) saveGameState();
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
             if (user && !isCheating) {
                 try {
                     const docData = { ...result, date: serverTimestamp() };
                     await addDoc(collection(db, "scores"), docData);
-                    localStorage.removeItem(LOCAL_STORAGE_KEY);
                     setFinalGameResult({ ...result, date: new Date().toISOString() });
                 } catch(e) {
                     console.error("Failed to save score", e);
@@ -128,11 +127,10 @@ export default function SinglePlayerGame({
                 setFinalGameResult(result);
             }
         }
-    }, [saveGameState, user, isCheating, gameStatus]);
+    }, [user, isCheating, gameStatus]);
 
     useEffect(() => {
-        window.addEventListener('beforeunload', saveGameState);
-        if (initialSavedGame && !isCheating) {
+        if (initialSavedGame) {
             setPlayers(normalizePlayers(initialSavedGame.players));
             setGameState(initialSavedGame.gameState);
             setTowersByCell(initialSavedGame.towersByCell);
@@ -153,11 +151,19 @@ export default function SinglePlayerGame({
         setGameStatus('playing');
         setWaveStartCountdown(INTERMISSION_TIME);
 
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+          if (gameStatus !== 'gameover' && !isCheating) {
+            saveGameState();
+          }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         return () => {
-            window.removeEventListener('beforeunload', saveGameState);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
         }
 
-    }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user, difficulty, saveGameState]);
+    }, [initialSavedGame, isCheating, startWithTutorial, initialDifficulty, user, difficulty, saveGameState, gameStatus]);
     
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild) {
@@ -552,7 +558,7 @@ export default function SinglePlayerGame({
         <div className="flex flex-col h-full bg-background text-foreground font-body">
             <Header 
                 isMobile={isMobile} 
-                onExit={() => { saveGameState(); onExit(); }}
+                onExit={() => { onExit(); }}
                 fps={fpsRef.current}
                 isMuted={audioManager.isMuted}
                 toggleMute={() => {

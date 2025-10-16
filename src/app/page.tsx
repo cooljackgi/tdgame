@@ -28,6 +28,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [showCheats, setShowCheats] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [loadSavedGame, setLoadSavedGame] = useState(false);
   
   const { toast } = useToast();
 
@@ -62,7 +63,8 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showCheats, toast]);
 
-  const startGame = useCallback((mode: "singleplayer" | "coop") => {
+  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false) => {
+    setLoadSavedGame(shouldLoadSaved);
     setActiveGame(mode);
     setShowTutorial(false);
   }, []);
@@ -131,6 +133,7 @@ export default function Home() {
   const clearSavedGame = () => {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     setSavedGame(null);
+    toast({title: 'Spielstand gelöscht!'});
   };
   
   const renderContent = () => {
@@ -140,7 +143,7 @@ export default function Home() {
           <SinglePlayerGame 
             difficulty={difficulty}
             onExit={() => setActiveGame(null)}
-            initialSavedGame={savedGame}
+            initialSavedGame={loadSavedGame ? savedGame : null}
             isCheating={showCheats}
             startWithTutorial={showTutorial}
             user={user}
@@ -200,16 +203,17 @@ export default function Home() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={() => startGame('singleplayer')} className="w-full" size="lg" disabled={!!savedGame}>
+                        <Button onClick={() => startGame('singleplayer', false)} className="w-full" size="lg">
                             <Play className="mr-2" /> Neues Spiel starten
                         </Button>
                         {savedGame && (
                            <div className="space-y-2">
-                            <Button onClick={() => startGame('singleplayer')} variant="outline" className="w-full">
+                            <Button onClick={() => startGame('singleplayer', true)} variant="outline" className="w-full">
                                 <Gamepad2 className="mr-2" /> Spielstand laden (Welle {savedGame.currentWave + 1})
                             </Button>
-                             <Button onClick={clearSavedGame} variant="link" size="sm" className="w-full text-muted-foreground">
-                                Gespeichertes Spiel löschen
+                             <Button onClick={clearSavedGame} variant="link" size="sm" className="w-full text-muted-foreground hover:text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4"/>
+                                Spielstand löschen
                             </Button>
                            </div>
                         )}
