@@ -300,27 +300,29 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                     </TabsList>
                   </div>
 
-                  <TabsContent value="main" className="flex-1 min-h-0 px-4 py-4">
-                    <div className="space-y-4">
-                      <Button variant="outline" className="w-full" onClick={() => gameBoardRef.current?.resetView()}>
-                        <RefreshCcw className="mr-2 h-4 w-4" />
-                        Ansicht zurücksetzen
-                      </Button>
-                      <Separator />
-                      <WaveTracker currentWave={currentWave} totalWaves={totalWaves} isCompact />
-                      <WavePreview currentWave={currentWave} waves={waves} isCompact />
-                      <GameStatsTracker
-                        spawnedThisWave={spawnedThisWave}
-                        totalEnemiesInWave={totalEnemiesInWave}
-                        totalKilled={totalKilled}
-                        totalLeaked={totalLeaked}
-                        isCompact
-                      />
-                      <Button onClick={resetGame} variant="destructive" size="lg" className="w-full h-12">
-                        <LogOut className="mr-2" />
-                        <span>{isSpectator ? 'Lobby verlassen' : 'Spiel verlassen'}</span>
-                      </Button>
-                    </div>
+                  <TabsContent value="main" className="flex-1 min-h-0">
+                     <ScrollArea className="h-full px-4 py-4">
+                        <div className="space-y-4">
+                          <Button variant="outline" className="w-full" onClick={() => gameBoardRef.current?.resetView()}>
+                            <RefreshCcw className="mr-2 h-4 w-4" />
+                            Ansicht zurücksetzen
+                          </Button>
+                          <Separator />
+                          <WaveTracker currentWave={currentWave} totalWaves={totalWaves} isCompact />
+                          <WavePreview currentWave={currentWave} waves={waves} isCompact />
+                          <GameStatsTracker
+                            spawnedThisWave={spawnedThisWave}
+                            totalEnemiesInWave={totalEnemiesInWave}
+                            totalKilled={totalKilled}
+                            totalLeaked={totalLeaked}
+                            isCompact
+                          />
+                          <Button onClick={resetGame} variant="destructive" size="lg" className="w-full h-12">
+                            <LogOut className="mr-2" />
+                            <span>{isSpectator ? 'Lobby verlassen' : 'Spiel verlassen'}</span>
+                          </Button>
+                        </div>
+                     </ScrollArea>
                   </TabsContent>
 
                   {showDebugFeatures && <TabsContent value="debug" className="flex-1 min-h-0 px-4 py-4">
