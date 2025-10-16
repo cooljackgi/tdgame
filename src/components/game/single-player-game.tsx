@@ -324,11 +324,11 @@ export default function SinglePlayerGame({
         let newAttacks: Attack[] = [];
         let newDamageNumbers: DamageNumber[] = [];
         let newSplashRings: SplashRing[] = [];
+        let resourcesGained = 0;
+    
+        const deadEnemyIds = new Set<string>();
     
         setEnemies(prevEnemies => {
-            let resourcesGained = 0;
-            const deadEnemyIds = new Set<string>();
-    
             const updatedEnemies = prevEnemies.map(enemy => {
                 if (enemy.health <= 0) {
                     deadEnemyIds.add(enemy.id);
@@ -360,51 +360,53 @@ export default function SinglePlayerGame({
                         }
                     }
                 }
-                return { ...enemy, pathIndex: newPathIndex, position: newPosition, effects: activeEffects, lastMove: newLastMove };
+                return { ...enemy, pathIndex: newPathIndex, position: newPosition, effects: activeEffects, lastMove: newLastMove, path: currentPath };
             }).filter(e => e !== null) as Enemy[];
-    
+            
             if (resourcesGained > 0) {
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGained }]);
             }
             return updatedEnemies;
         });
-    
-        setTowersByCell(prevTowers => {
-            const towersArr = Object.values(prevTowers);
-            towersArr.forEach(tower => {
-                if (now - (tower.lastAttack || 0) <= tower.attackSpeed) return;
-    
-                const enemiesInRange = enemies.filter(enemy => {
-                    if (enemy.health <= 0) return false;
-                    const dx = enemy.position.row - tower.position.row;
-                    const dy = enemy.position.col - tower.position.col;
-                    return (dx * dx + dy * dy) <= (tower.range * tower.range);
-                });
-    
-                if (enemiesInRange.length > 0) {
-                    const mainTarget = enemiesInRange[0];
-                    const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
-                    newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType });
-                    tower.lastAttack = now;
-                    setFiringTowerIds(prev => new Set(prev).add(tower.id));
-                    setTimeout(() => setFiringTowerIds(prev => { const s = new Set(prev); s.delete(tower.id); return s; }), 150);
-                }
-            });
-            return prevTowers;
-        });
 
-        newAttacks.forEach(attack => {
-            const enemy = enemies.find(e => e.id === attack.targetId);
-            const tower = Object.values(towersByCell).find(t => t.id === attack.towerId);
-            if (enemy && tower) {
-                 let damage = tower.damage;
-                 let isCrit = false;
-                 if (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0)) {
-                     damage *= (tower.effect.potency ?? 1);
-                     isCrit = true;
-                 }
-                 setEnemies(prev => prev.map(e => e.id === enemy.id ? {...e, health: e.health - damage} : e));
-                 newDamageNumbers.push({ id: `dn-${now}-${Math.random()}`, amount: damage, position: enemy.position, color: isCrit ? '#fde047' : '#ffffff', isCrit });
+        const currentTowers = Object.values(towersByCell);
+        currentTowers.forEach(tower => {
+            if (now - (tower.lastAttack || 0) <= tower.attackSpeed) return;
+
+            const enemiesInRange = enemies.filter(enemy => {
+                if (enemy.health <= 0) return false;
+                const dx = enemy.position.row - tower.position.row;
+                const dy = enemy.position.col - tower.position.col;
+                return (dx * dx + dy * dy) <= (tower.range * tower.range);
+            });
+
+            if (enemiesInRange.length > 0) {
+                const mainTarget = enemiesInRange[0];
+                const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
+                
+                const newAttack: Attack = { id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, elements: tower.elements, projectile: projectileType };
+                newAttacks.push(newAttack);
+
+                setTowersByCell(prev => {
+                    const newTowers = {...prev};
+                    const towerToUpdate = Object.values(newTowers).find(t => t.id === tower.id);
+                    if (towerToUpdate) {
+                        towerToUpdate.lastAttack = now;
+                    }
+                    return newTowers;
+                });
+                
+                setFiringTowerIds(prev => new Set(prev).add(tower.id));
+                setTimeout(() => setFiringTowerIds(prev => { const s = new Set(prev); s.delete(tower.id); return s; }), 150);
+
+                let damage = tower.damage;
+                let isCrit = false;
+                if (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0)) {
+                    damage *= (tower.effect.potency ?? 1);
+                    isCrit = true;
+                }
+                setEnemies(prev => prev.map(e => e.id === mainTarget.id ? {...e, health: e.health - damage} : e));
+                newDamageNumbers.push({ id: `dn-${now}-${Math.random()}`, amount: damage, position: mainTarget.position, color: isCrit ? '#fde047' : '#ffffff', isCrit });
             }
         });
     
@@ -436,7 +438,7 @@ export default function SinglePlayerGame({
                 }
             }
         }
-    }, [players, gameState.lives, currentWave, difficulty, towersByCell, isIntermission, user, handleGameEnd, enemies, spawnedThisWave, isCheating]);
+    }, [players, gameState.lives, currentWave, difficulty, towersByCell, isIntermission, user, handleGameEnd, enemies, spawnedThisWave, isCheating, currentPath]);
 
     useEffect(() => {
         let isTabVisible = true;
@@ -595,3 +597,5 @@ export default function SinglePlayerGame({
         />
     )
 }
+
+    
