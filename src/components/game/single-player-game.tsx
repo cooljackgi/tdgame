@@ -256,13 +256,11 @@ export default function SinglePlayerGame({
     }, [isIntermission, startWave, gameStatus]);
 
     const cancelInteractions = useCallback(() => {
-        if (selectedTowerToBuild?.id) {
-            setSelectedTowerToBuild(null);
-        }
+        setSelectedTowerToBuild(null);
         if (focusedTower) {
             setFocusedTower(null);
         }
-    }, [selectedTowerToBuild, focusedTower]);
+    }, [focusedTower]);
 
     const handleSelectTowerToBuild = (tower: Tower | null) => {
         if (tower?.id === selectedTowerToBuild?.id) {
@@ -309,11 +307,11 @@ export default function SinglePlayerGame({
     }, [toast]);
     
     const handleElementPick = (element: Element) => {
-        setPlayers(prev => prev.map(p => ({...p, unlockedElements: [...p.unlockedElements, element]})));
-        setCurrentWave(prev => prev + 1);
+        setPlayers(prev => prev.map(p => ({ ...p, unlockedElements: [...p.unlockedElements, element] })));
+        setGameStatus('playing');
         setIsIntermission(true);
         setWaveStartCountdown(INTERMISSION_TIME);
-        setGameStatus('playing');
+        setCurrentWave(prev => prev + 1);
     };
 
     const handleLoadTestLayout = useCallback(() => handleLoadMazetLayout(false), [handleLoadMazetLayout]);
@@ -354,9 +352,8 @@ export default function SinglePlayerGame({
                 return;
             }
 
-            // --- WAVE LOGIC ---
-            if (!spawnerStateRef.current) {
-                 const waveData = waves[currentWave];
+            if (!spawnerStateRef.current && !isIntermission) {
+                const waveData = waves[currentWave];
                 if (!waveData) return;
                 spawnerStateRef.current = {
                     count: 0,
@@ -476,14 +473,14 @@ export default function SinglePlayerGame({
                 const allEnemiesSpawned = spawnerStateRef.current ? spawnerStateRef.current.count >= waveData.enemies.count : false;
                 if (allEnemiesSpawned && finalEnemies.length === 0 && newEnemiesThisFrame.length === 0) {
                     spawnerStateRef.current = null;
-                    const nextWaveIdx = currentWave + 1;
-                    if (nextWaveIdx >= waves.length) {
-                        handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: nextWaveIdx, won: true, finalTowers: towersByCell });
+                    const canPickElement = (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
+                    
+                    if (canPickElement && !isCheating) {
+                        setGameStatus('picking-element');
                     } else {
-                        const canPickElement = (currentWave + 1) > 0 && (currentWave + 1) % 5 === 0 && players[0].unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1;
-
-                        if (canPickElement && !isCheating) {
-                            setGameStatus('picking-element');
+                        const nextWaveIdx = currentWave + 1;
+                        if (nextWaveIdx >= waves.length) {
+                             handleGameEnd({ playerName: players[0].name, playerUid: user?.uid || 'local', date: new Date().toISOString(), difficulty, wave: nextWaveIdx, won: true, finalTowers: towersByCell });
                         } else {
                             setCurrentWave(nextWaveIdx);
                             setIsIntermission(true);
