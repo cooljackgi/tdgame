@@ -274,69 +274,45 @@ export default function SinglePlayerGame({
         };
     }, [currentWave]);
     
-    const handleLoadTestLayout = useCallback(() => {
+    const handleLoadMazeLayout = useCallback((useAllTowers: boolean = false) => {
         const layout: Node[] = [];
-        // Vertikale Linien
-        for (let r = 1; r < GRID_ROWS; r++) {
-            if (r !== 1 || r !== 2) {
-                layout.push({ row: r, col: 3 });
-                layout.push({ row: r, col: 6 });
-                layout.push({ row: r, col: 9 });
+        // Erzeugt ein langes Schlangen-Labyrinth
+        for (let r = 3; r < GRID_ROWS; r += 2) {
+            if (r % 4 === 3) {
+                for (let c = 1; c < GRID_COLS; c++) layout.push({ row: r, col: c });
+            } else {
+                for (let c = 2; c <= GRID_COLS; c++) layout.push({ row: r, col: c });
             }
         }
-        // Horizontale Brücken
-        for (let r = 2; r < GRID_ROWS; r++) {
-            if (r !== GRID_ROWS-1) {
-                layout.push({ row: r, col: 1 });
-                layout.push({ row: r, col: 4 });
-                layout.push({ row: r, col: 7 });
-                layout.push({ row: r, col: 10 });
-            }
-        }
-        
+
+        let towerSpecs = useAllTowers ? initialTowers : [initialTowers.find(t => t.id === 'neutral-0')!];
+        let towerIndex = 0;
+
         const newTowersByCell = layout.reduce((acc, pos) => {
-            const towerSpec = initialTowers.find(t=>t.id==='neutral-0')!;
+            let towerSpec = towerSpecs[towerIndex % towerSpecs.length];
+            if (!towerSpec) towerSpec = initialTowers[0];
+
             const id = `tower-${pos.row}-${pos.col}-${Date.now()}-${Math.random()}`;
             acc[`${pos.row}_${pos.col}`] = { ...towerSpec, id, specId: towerSpec.id, position: pos, lastAttack: 0, health: towerSpec.maxHealth, ownerId: 'player1' };
+            
+            if (useAllTowers) towerIndex++;
+
             return acc;
         }, {} as Record<string, PlacedTower>);
         
         setTowersByCell(newTowersByCell);
         setPlayers(prev => prev.map(p => ({...p, resources: 50000})));
-        toast({ title: "Test-Layout geladen", description: "Ein Labyrinth wurde gebaut und Ressourcen hinzugefügt." });
+        toast({ title: "Maze-Layout geladen!", description: "Ein langer Weg wurde gebaut." });
     }, [toast]);
-    
+
+
+    const handleLoadTestLayout = useCallback(() => {
+        handleLoadMazeLayout(false);
+    }, [handleLoadMazeLayout]);
+
     const handleLoadAllTowersLayout = useCallback(() => {
-        const allTowerSpecs = initialTowers;
-        let row = 2;
-        let col = 2;
-        const newTowersByCell: Record<string, PlacedTower> = {};
-
-        for (const towerSpec of allTowerSpecs) {
-            if (col > GRID_COLS - 1) {
-                col = 2;
-                row++;
-            }
-            if (row > GRID_ROWS -1) break;
-
-            const newTower: PlacedTower = {
-                ...towerSpec,
-                id: `tower-${row}-${col}-${Date.now()}-${Math.random()}`,
-                specId: towerSpec.id,
-                position: { row, col },
-                lastAttack: 0,
-                health: towerSpec.maxHealth,
-                ownerId: 'player1',
-            };
-            newTowersByCell[`${row}_${col}`] = newTower;
-            col++;
-        }
-
-        setTowersByCell(newTowersByCell);
-        setPlayers(prev => prev.map(p => ({...p, resources: 99999})));
-        toast({ title: "Alle Türme geladen", description: "Jeder Turmtyp wurde einmal platziert." });
-
-    }, [toast]);
+        handleLoadMazeLayout(true);
+    }, [handleLoadMazeLayout]);
 
     const renderVfx = useCallback(() => {
         const now = performance.now();
@@ -575,7 +551,3 @@ export default function SinglePlayerGame({
         />
     )
 }
-
-    
-
-    
