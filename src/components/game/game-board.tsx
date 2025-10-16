@@ -42,7 +42,7 @@ function gridToPx(node: Node) {
 }
 
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
-const LERP_FACTOR = 0.2;
+const LERP_FACTOR = 1.0;
 
 function getEnemyWorldPos(enemy: Enemy, now: number): { x: number; y: number } {
   const path = enemy.path || [];
