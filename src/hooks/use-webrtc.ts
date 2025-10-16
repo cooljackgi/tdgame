@@ -37,12 +37,14 @@ export type UseWebRTCReturn = {
     packetsPerSecond: number;
     bytesPerSecond: number;
     averagePacketSize: number;
+    sentPacketsPerSecond: number;
+    sentBytesPerSecond: number;
 };
 
 const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
-  const q = `?gameId=${encodeURIComponent(gameId)}${isMonitor ? '&monitor=1' : ''}`;
+  // A monitor now joins as a regular client to receive data, not via a special monitor flag.
+  const q = `?gameId=${encodeURIComponent(gameId)}`;
 
-  // 1) ENV erlaubt Override (nice-to-have)
   const envBase = process.env.NEXT_PUBLIC_WS_BASE;
   const base = (envBase ? envBase.replace(/\/ws$/, '') : RELAY_DEFAULT);
 
@@ -54,10 +56,15 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     const [lastMessage, setLastMessage] = useState<NetMsg | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     
-    // Stats state
+    // Stats state for received data
     const [packetsPerSecond, setPacketsPerSecond] = useState(0);
     const [bytesPerSecond, setBytesPerSecond] = useState(0);
     const [averagePacketSize, setAveragePacketSize] = useState(0);
+    
+    // Stats state for sent data
+    const [sentPacketsPerSecond, setSentPacketsPerSecond] = useState(0);
+    const [sentBytesPerSecond, setSentBytesPerSecond] = useState(0);
+
 
     const signalingSocketRef = useRef<WebSocket | null>(null);
     const selfIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
@@ -77,6 +84,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     // Stats refs
     const packetCountRef = useRef(0);
     const byteCountRef = useRef(0);
+    const sentPacketCountRef = useRef(0);
+    const sentByteCountRef = useRef(0);
     const statsIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
     const periodicLogIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
     const ppsRef = useRef(0);
@@ -202,7 +211,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         let stopped = false;
         
         const connect = () => {
-             if (stopped || !gameIdRef.current || (!userRef.current && !isMonitorRef.current)) {
+             if (stopped || !gameIdRef.current || !userRef.current) {
               if (!stopped) {
                 // If not ready, poll until ready
                 setTimeout(connect, 200);
@@ -236,8 +245,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 backoffRef.current = 0;
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_OPEN');
 
-                // Client starts sending "hello" periodically until an offer is received
-                if (!isHostRef.current && !isMonitorRef.current) {
+                // Client and Monitor start sending "hello" periodically until an offer is received
+                if (!isHostRef.current) {
                     const sendHello = () => {
                        if (ws.readyState === WebSocket.OPEN) {
                          const msg = { kind:'signal', type:'hello', from:selfIdRef.current };
@@ -252,7 +261,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
-                if(isMonitorRef.current || (msg.from && msg.from === selfIdRef.current)) return;
+                if (msg.from && msg.from === selfIdRef.current) return;
                 
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
 
@@ -282,7 +291,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                         ws.send(JSON.stringify(offerMsg));
                         logWebRTCEvent(gid, currentRole, 'PC_OFFER_CREATED_REHELLO');
                     
-                    // Client receives "offer", creates answer
+                    // Client or Monitor receives "offer", creates answer
                     } else if (msg.type === 'offer' && !isHostRef.current) {
                         if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                         helloIntervalRef.current = undefined;
@@ -334,11 +343,15 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         statsIntervalRef.current = setInterval(() => {
             const pps = packetCountRef.current;
             const bps = byteCountRef.current;
+            const sentPps = sentPacketCountRef.current;
+            const sentBps = sentByteCountRef.current;
             const avg = pps ? Math.round(bps / Math.max(1, pps)) : 0;
             
             setPacketsPerSecond(pps);
             setBytesPerSecond(bps);
             setAveragePacketSize(avg);
+            setSentPacketsPerSecond(sentPps);
+            setSentBytesPerSecond(sentBps);
             
             ppsRef.current = pps;
             bpsRef.current = bps;
@@ -346,6 +359,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
             packetCountRef.current = 0;
             byteCountRef.current = 0;
+            sentPacketCountRef.current = 0;
+            sentByteCountRef.current = 0;
         }, 1000);
 
         periodicLogIntervalRef.current = setInterval(() => {
@@ -380,15 +395,17 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     }, []); // <-- This empty dependency array is the key to running this effect only once.
 
     const sendMessage = useCallback((message: NetMsg) => {
+        // A monitor never sends messages.
         if (isMonitorRef.current) return;
+        
         const dc = dataChannelRef.current;
         const MAX_BUFFERED = 256 * 1024;
         if (dc?.readyState === 'open' && dc.bufferedAmount < MAX_BUFFERED) {
             try {
                 const msgStr = JSON.stringify(message);
                 dc.send(msgStr);
-                packetCountRef.current++;
-                byteCountRef.current += msgStr.length;
+                sentPacketCountRef.current++;
+                sentByteCountRef.current += msgStr.length;
             } catch (e) {
                 console.error("Failed to send message over data channel:", e);
             }
@@ -400,5 +417,5 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         sendMessage({ type, payload });
     }, [sendMessage]);
 
-    return { lastMessage, sendMessage, sendActionRequest, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize };
+    return { lastMessage, sendMessage, sendActionRequest, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
 }

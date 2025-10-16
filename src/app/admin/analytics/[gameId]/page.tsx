@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { doc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, ArrowLeft, Network, Users, Gamepad2, AlertCircle, Zap, Terminal, Wifi, WifiOff, Download } from 'lucide-react';
+import { Loader2, ArrowLeft, Network, Users, Gamepad2, AlertCircle, Zap, Terminal, Wifi, WifiOff, Download, ArrowUp, ArrowDown } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import AnalyticsChart from '@/components/admin/AnalyticsChart';
@@ -29,7 +29,16 @@ interface GameData {
 }
 
 const LiveMonitor = ({ gameId }: { gameId: string }) => {
-    const { lastMessage, isConnected, packetsPerSecond, bytesPerSecond } = useWebRTC(gameId, false, auth.currentUser, true);
+    // Monitor tritt als normaler Client bei, aber isHost=false und isMonitor=true (für Logging)
+    const { 
+        lastMessage, 
+        isConnected, 
+        packetsPerSecond, 
+        bytesPerSecond,
+        sentPacketsPerSecond,
+        sentBytesPerSecond,
+    } = useWebRTC(gameId, false, auth.currentUser, true);
+    
     const [messages, setMessages] = useState<NetMsg[]>([]);
     const allMessagesRef = useRef<NetMsg[]>([]);
     const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -38,7 +47,7 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
     useEffect(() => {
         toast({
             title: isConnected ? "Live-Monitor Verbunden" : "Live-Monitor Getrennt",
-            description: isConnected ? "Empfange Echtzeit-Daten..." : "Versuche Verbindung zum Relay aufzubauen...",
+            description: isConnected ? "Empfange Echtzeit-Daten..." : "Versuche Verbindung zum Spiel aufzubauen...",
             variant: isConnected ? "default" : "destructive",
             duration: 2000,
         });
@@ -79,10 +88,17 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
                     <CardTitle className="flex items-center gap-2">
                         <Terminal className="text-primary"/> Live-Datenstrom
                     </CardTitle>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2">
                             {isConnected ? <Wifi className="h-4 w-4 text-green-400"/> : <WifiOff className="h-4 w-4 text-red-400"/>}
-                            {packetsPerSecond} P/s, {formatBytes(bytesPerSecond)}/s
+                        </div>
+                        <div className="flex items-center gap-1">
+                           <ArrowDown className="h-4 w-4 text-green-400" />
+                           {packetsPerSecond} P/s, {formatBytes(bytesPerSecond)}/s
+                        </div>
+                         <div className="flex items-center gap-1">
+                           <ArrowUp className="h-4 w-4 text-blue-400" />
+                           {sentPacketsPerSecond} P/s, {formatBytes(sentBytesPerSecond)}/s
                         </div>
                         <Button onClick={handleExport} variant="outline" size="sm" disabled={allMessagesRef.current.length === 0}>
                             <Download className="mr-2 h-4 w-4" />
@@ -91,7 +107,7 @@ const LiveMonitor = ({ gameId }: { gameId: string }) => {
                     </div>
                 </div>
                 <CardDescription>
-                   Ungefilterte Nachrichten, die vom Host an die Clients gesendet werden.
+                   Ungefilterter Echtzeit-Datenverkehr (Deltas, Aktionen) zwischen Host und Client.
                 </CardDescription>
             </CardHeader>
             <CardContent>
