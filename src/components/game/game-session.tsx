@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -401,6 +400,67 @@ export function GameSession(props: GameSessionProps) {
       }
   }, [props.onLocalAction]);
 
+  const handleLoadTestLayout = useCallback(() => {
+    const testLayout: { pos: Node, id: string }[] = [
+        { pos: { row: 3, col: 4 }, id: "neutral-0" }, { pos: { row: 4, col: 4 }, id: "neutral-0" },
+        { pos: { row: 5, col: 4 }, id: "neutral-0" }, { pos: { row: 6, col: 4 }, id: "neutral-0" },
+        { pos: { row: 7, col: 4 }, id: "neutral-0" }, { pos: { row: 8, col: 4 }, id: "neutral-0" },
+        { pos: { row: 8, col: 5 }, id: "neutral-0" }, { pos: { row: 8, col: 6 }, id: "neutral-0" },
+        { pos: { row: 8, col: 7 }, id: "neutral-0" }, { pos: { row: 8, col: 8 }, id: "neutral-0" },
+        { pos: { row: 8, col: 9 }, id: "neutral-0" }, { pos: { row: 7, col: 9 }, id: "neutral-0" },
+        { pos: { row: 6, col: 9 }, id: "neutral-0" }, { pos: { row: 5, col: 9 }, id: "neutral-0" },
+        { pos: { row: 4, col: 9 }, id: "neutral-0" }, { pos: { row: 3, col: 9 }, id: "neutral-0" },
+    ];
+    
+    const newTowersByCell: Record<string, PlacedTower> = {};
+    const towerSpec = allTowers.find(t => t.id === 'neutral-0');
+    if (!towerSpec) return;
+
+    testLayout.forEach((l, i) => {
+        const cellKey = `${l.pos.row}_${l.pos.col}`;
+        newTowersByCell[cellKey] = {
+            ...towerSpec,
+            id: `tower-test-${i}`,
+            specId: towerSpec.id,
+            position: l.pos,
+            lastAttack: 0,
+            health: towerSpec.maxHealth,
+            ownerId: localPlayer?.id || 'player1',
+        }
+    });
+
+    setTowersByCell(newTowersByCell);
+    toast({ title: "Test-Layout geladen!" });
+  }, [allTowers, localPlayer?.id, toast]);
+  
+  const handleLoadAllTowersLayout = useCallback(() => {
+    const baseTowers = allTowers.filter(t => t.isBase);
+    let row = 2;
+    let col = 2;
+    const newTowersByCell: Record<string, PlacedTower> = {};
+
+    baseTowers.forEach((towerSpec, i) => {
+        const cellKey = `${row}_${col}`;
+        newTowersByCell[cellKey] = {
+            ...towerSpec,
+            id: `tower-all-${i}`,
+            specId: towerSpec.id,
+            position: { row, col },
+            lastAttack: 0,
+            health: towerSpec.maxHealth,
+            ownerId: localPlayer?.id || 'player1',
+        };
+        col += 2;
+        if (col > GRID_COLS - 1) {
+            col = 2;
+            row += 2;
+        }
+    });
+
+    setTowersByCell(newTowersByCell);
+    toast({ title: "Alle Basis-Türme geladen!" });
+  }, [allTowers, localPlayer?.id, toast]);
+
 
   const handleElementPick = (element: Element) => {
     setPlayers(prev => [{...prev[0], unlockedElements: [...prev[0].unlockedElements, element]}]);
@@ -445,7 +505,7 @@ export function GameSession(props: GameSessionProps) {
             intermissionTime={INTERMISSION_TIME} handleStartNextWaveNow={handleStartNextWaveNow}
             lastUpgradedTowerId={props.isCoop ? (props.lastUpgradedTowerIdFromParent || null) : lastUpgradedTowerId}
             isCoop={props.isCoop} playerRole={props.localPlayerId}
-            handleLoadTestLayout={() => {}} handleLoadAllTowersLayout={() => {}}
+            handleLoadTestLayout={handleLoadTestLayout} handleLoadAllTowersLayout={handleLoadAllTowersLayout}
             isCheating={!!props.isCheating} cheat_addResources={() => {}} cheat_skipWaves={() => {}} cheat_heal={() => {}} cheat_unlockAll={() => {}}
             firingTowerIds={props.isCoop ? (props.firingTowerIdsFromParent || new Set()) : firingTowerIds} allTowers={allTowers}
             isWsConnected={props.isWsConnected} hostPacketsPerSecond={props.hostPacketsPerSecond} clientPacketsPerSecond={props.clientPacketsPerSecond}
