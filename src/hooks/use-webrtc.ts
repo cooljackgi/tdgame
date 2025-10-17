@@ -54,8 +54,6 @@ export function useWebRTC(
     onGameDataMessage: (msg: NetMsg) => void,
     onActionMessage: (msg: NetMsg) => void,
 ): UseWebRTCReturn {
-    const [gameDataChannel, setGameDataChannel] = useState<RTCDataChannel | null>(null);
-    const [actionsChannel, setActionsChannel] = useState<RTCDataChannel | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     
     // Stats state
@@ -78,7 +76,11 @@ export function useWebRTC(
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
     const helloIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
     
-    // Stabilize callbacks with refs to prevent re-renders and circular dependencies
+    // Refs for data channels to create stable send functions
+    const gameDataChannelRef = useRef<RTCDataChannel | null>(null);
+    const actionsChannelRef = useRef<RTCDataChannel | null>(null);
+    
+    // Stabilize callbacks with refs
     const onGameDataMessageRef = useRef(onGameDataMessage);
     const onActionMessageRef = useRef(onActionMessage);
     useEffect(() => {
@@ -103,68 +105,27 @@ export function useWebRTC(
     useEffect(() => { userRef.current = user; }, [user]);
     useEffect(() => { isHostRef.current = isHost; }, [isHost]);
     useEffect(() => { isMonitorRef.current = isMonitor; }, [isMonitor]);
-
-    useEffect(() => {
-        const gameDc = gameDataChannel;
-        const actDc = actionsChannel;
-
-        const checkConnection = () => {
-            const connected = !!(gameDc && gameDc.readyState === 'open' && actDc && actDc.readyState === 'open');
-            setIsConnected(connected);
-        };
-        
-        if (gameDc) {
-            gameDc.addEventListener('open', checkConnection);
-            gameDc.addEventListener('close', checkConnection);
-            gameDc.onmessage = (event) => {
-                const msg: NetMsg = JSON.parse(event.data);
-                onGameDataMessageRef.current(msg);
-                packetCountRef.current++;
-                byteCountRef.current += event.data.length;
-            };
-        }
-        if (actDc) {
-            actDc.addEventListener('open', checkConnection);
-            actDc.addEventListener('close', checkConnection);
-            actDc.onmessage = (event) => {
-                const msg: NetMsg = JSON.parse(event.data);
-                onActionMessageRef.current(msg);
-                 packetCountRef.current++;
-                byteCountRef.current += event.data.length;
-            };
-        }
-
-        checkConnection();
-
-        return () => {
-            if (gameDc) {
-                gameDc.removeEventListener('open', checkConnection);
-                gameDc.removeEventListener('close', checkConnection);
-            }
-            if (actDc) {
-                actDc.removeEventListener('open', checkConnection);
-                actDc.removeEventListener('close', checkConnection);
-            }
-        }
-    }, [gameDataChannel, actionsChannel]);
     
+    // Stable send functions that use refs
     const sendGameData = useCallback((type: string, payload: any) => {
-        if (gameDataChannel && gameDataChannel.readyState === 'open') {
+        const channel = gameDataChannelRef.current;
+        if (channel && channel.readyState === 'open') {
             const msgStr = JSON.stringify({ type, payload });
-            gameDataChannel.send(msgStr);
+            channel.send(msgStr);
             sentPacketCountRef.current++;
             sentByteCountRef.current += msgStr.length;
         }
-    }, [gameDataChannel]);
+    }, []);
     
     const sendAction = useCallback((type: string, payload: any) => {
-        if (actionsChannel && actionsChannel.readyState === 'open') {
+        const channel = actionsChannelRef.current;
+        if (channel && channel.readyState === 'open') {
             const msgStr = JSON.stringify({ type, payload });
-            actionsChannel.send(msgStr);
+            channel.send(msgStr);
             sentPacketCountRef.current++;
             sentByteCountRef.current += msgStr.length;
         }
-    }, [actionsChannel]);
+    }, []);
 
 
     const createPeerConnection = useCallback(() => {
@@ -230,10 +191,33 @@ export function useWebRTC(
             const currentGid = gameIdRef.current;
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
             
+            dc.onopen = () => {
+                const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
+                const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
+                setIsConnected(isGameOpen && isActionsOpen);
+            };
+
+            dc.onclose = () => {
+                const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
+                const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
+                setIsConnected(isGameOpen && isActionsOpen);
+            };
+
+            dc.onmessage = (event) => {
+                const msg: NetMsg = JSON.parse(event.data);
+                packetCountRef.current++;
+                byteCountRef.current += event.data.length;
+                if (dc.label === 'game_data') {
+                    onGameDataMessageRef.current(msg);
+                } else if (dc.label === 'actions') {
+                    onActionMessageRef.current(msg);
+                }
+            };
+            
             if (dc.label === 'game_data') {
-                setGameDataChannel(dc);
+                gameDataChannelRef.current = dc;
             } else if (dc.label === 'actions') {
-                setActionsChannel(dc);
+                actionsChannelRef.current = dc;
             }
         };
 
@@ -303,16 +287,15 @@ export function useWebRTC(
                     if (msg.type === 'hello' && isHostRef.current) {
                         if (pc.signalingState !== 'stable') return;
 
-                        // Only create channels if they don't exist or are closed.
-                        if (!gameDataChannel || gameDataChannel.readyState !== 'open') {
+                        if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
                           const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
                           logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: gdc.label });
-                          setGameDataChannel(gdc);
+                          gameDataChannelRef.current = gdc;
                         }
-                        if(!actionsChannel || actionsChannel.readyState !== 'open') {
+                        if(!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
                             const ac = pc.createDataChannel('actions', { ordered: true });
                             logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: ac.label });
-                            setActionsChannel(ac);
+                            actionsChannelRef.current = ac;
                         }
                         
                         const offer = await pc.createOffer();
@@ -353,8 +336,8 @@ export function useWebRTC(
             ws.onclose = (e) => {
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_CLOSE', { code: e.code, reason: e.reason.toString() });
                 setIsConnected(false);
-                setGameDataChannel(null);
-                setActionsChannel(null);
+                gameDataChannelRef.current = null;
+                actionsChannelRef.current = null;
                 if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                 scheduleReconnect();
             };
@@ -391,7 +374,7 @@ export function useWebRTC(
 
         periodicLogIntervalRef.current = setInterval(() => {
             const gid = gameIdRef.current;
-            if (gid && (gameDataChannel?.readyState === 'open' || actionsChannel?.readyState === 'open')) {
+            if (gid && (gameDataChannelRef.current?.readyState === 'open' || actionsChannelRef.current?.readyState === 'open')) {
                 const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
                 logWebRTCEvent(gid, currentRole, 'NET_TICK', {
                     pps: ppsRef.current,
