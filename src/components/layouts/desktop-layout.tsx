@@ -37,7 +37,6 @@ interface DesktopLayoutProps {
   setTowers: React.Dispatch<React.SetStateAction<Tower[]>>;
   placedTowers: PlacedTower[];
   enemies: Enemy[];
-  attacks: Attack[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   currentPath: Node[];
@@ -45,10 +44,7 @@ interface DesktopLayoutProps {
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
   focusedTower: PlacedTower | null;
-  rows: number;
-  cols: number;
-  startNode: Node;
-  endNode: Node;
+  gameBoardRef: React.RefObject<GameBoardHandle>;
   interactionPrompt: string | null;
   cancelInteractions: () => void;
   onSelectTowerToBuild: (tower: Tower | null) => void;
@@ -88,9 +84,9 @@ interface DesktopLayoutProps {
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
-    resetGame, towers, setTowers, placedTowers, enemies, attacks, damageNumbers, splashRings,
+    resetGame, towers, setTowers, placedTowers, enemies, damageNumbers, splashRings,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, focusedTower,
-    rows, cols, startNode, endNode, interactionPrompt, cancelInteractions,
+    gameBoardRef, interactionPrompt, cancelInteractions,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     justPlacedTowerId,
@@ -119,7 +115,6 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const canStartWave = !isSpectator && (!isCoop || isHost);
   
   const maxLives = difficultyModifiers[difficulty].startLives;
-  const gameBoardRef = React.useRef<GameBoardHandle>(null);
   const showDebugFeatures = isCheating || isCoop;
 
 
@@ -291,7 +286,6 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 ref={gameBoardRef}
                 placedTowers={placedTowers}
                 enemies={enemies}
-                attacks={attacks}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
                 currentPath={currentPath}
@@ -300,10 +294,6 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 cancelInteractions={cancelInteractions}
                 selectedTowerToBuild={selectedTowerToBuild}
                 focusedTower={focusedTower}
-                rows={rows}
-                cols={cols}
-                startNode={startNode}
-                endNode={endNode}
                 lastUpgradedTowerId={lastUpgradedTowerId}
                 justPlacedTowerId={justPlacedTowerId}
                 isCoop={isCoop}

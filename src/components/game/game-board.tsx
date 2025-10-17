@@ -104,7 +104,6 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
 type GameBoardProps = {
   placedTowers: PlacedTower[];
   enemies: Enemy[];
-  attacks: Attack[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   currentPath: Node[];
@@ -310,7 +309,6 @@ const MemoizedTower = React.memo(function GameCell({
 const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({ 
     placedTowers, 
     enemies, 
-    attacks, 
     damageNumbers,
     splashRings,
     currentPath,
@@ -412,10 +410,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, [internalResetView]);
 
   useEffect(() => {
-    incomingAttacksRef.current.push(...attacks);
-  }, [attacks]);
-  
-  useEffect(() => {
     incomingRingsRef.current.push(...splashRings);
   }, [splashRings]);
   
@@ -497,8 +491,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         {
             const q = incomingAttacksRef.current;
             if (q.length) {
-                for (let i = 0; i < q.length; i++) {
-                    const a = q[i];
+                const newAttacks = [];
+                for (const a of q) {
                     const enemyTarget = enemiesById.get(a.targetId);
                     if (!enemyTarget) continue;
 
@@ -568,14 +562,27 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const liveTarget = enemiesById.get(attack.targetId);
             if (liveTarget) {
                 attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
-            } else {
-                attacksPoolRef.current.free(attack);
-                return;
             }
 
             const life = Math.max(1, attack._vfx.life || 1);
             const t = clamp((now - attack._vfx.start) / life, 0, 1);
-            if (t >= 1) { attacksPoolRef.current.free(attack); return; }
+            
+            const tower = towersMap.get(attack.towerId);
+            if (!liveTarget || !tower) {
+                attacksPoolRef.current.free(attack);
+                return;
+            }
+            
+            const distSq = (tower.position.col - liveTarget.position.col) ** 2 + (tower.position.row - liveTarget.position.row) ** 2;
+            if (distSq > tower.range ** 2) {
+                attacksPoolRef.current.free(attack);
+                return;
+            }
+            
+            if (t >= 1) { 
+                attacksPoolRef.current.free(attack); 
+                return; 
+            }
             drawProjectile(ctx, attack, t);
         });
 

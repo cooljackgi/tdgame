@@ -21,6 +21,7 @@ import ScoreboardMiniMap from './ScoreboardMiniMap';
 import type { User } from 'firebase/auth';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import GameBoard, { type GameBoardHandle } from './game-board';
 
 
 export type Player = {
@@ -69,7 +70,6 @@ type GameSessionProps = {
     onLocalAction?: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
     
     // --- VFX State (passed down from parent in CO-OP) ---
-    attacksFromParent?: Attack[];
     damageNumbersFromParent?: DamageNumber[];
     splashRingsFromParent?: SplashRing[];
     lastUpgradedTowerIdFromParent?: string | null;
@@ -114,7 +114,6 @@ export function GameSession(props: GameSessionProps) {
   const [isMuted, setIsMuted] = useState(false);
 
   // --- VFX State ---
-  const [attacks, setAttacks] = useState<Attack[]>([]);
   const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
   const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
   const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
@@ -131,6 +130,7 @@ export function GameSession(props: GameSessionProps) {
   const lastTickRef = useRef(performance.now());
   const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
   const enemyIdCounter = useRef(0);
+  const gameBoardRef = useRef<GameBoardHandle>(null);
 
   // --- Create stable refs for game loop access ---
   const playersRef = useRef(players);
@@ -337,7 +337,7 @@ export function GameSession(props: GameSessionProps) {
                         tower.lastAttack = now;
                         
                         const specId = tower.specId || tower.id;
-                        const projectileType = (specId.includes('-1a') || specId.includes('-2a') || specId.includes('-1b') || specId.includes('-2b')) ? 'arrow' : 'beam';
+                        const projectileType = (specId.includes('1a') || specId.includes('2a') || specId.includes('1b') || specId.includes('2b')) ? 'arrow' : 'beam';
                         
                         newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: projectileType });
                         newFiringTowerIds.add(tower.id);
@@ -356,7 +356,9 @@ export function GameSession(props: GameSessionProps) {
             return towersCopy;
         });
 
-        setAttacks(prev => [...prev.slice(-100), ...newAttacks]);
+        if (newAttacks.length > 0) {
+            gameBoardRef.current?.queueAttacks(newAttacks);
+        }
         setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
         setFiringTowerIds(newFiringTowerIds);
         setTimeout(() => setFiringTowerIds(new Set()), 150);
@@ -486,13 +488,13 @@ export function GameSession(props: GameSessionProps) {
             currentWave={currentWave} totalWaves={waves.length} difficulty={difficulty} 
             handleGameControl={handleGameControl} gameStatus={gameStatus} resetGame={resetGame}
             towers={allTowers} setTowers={() => {}} 
-            placedTowers={placedTowers} enemies={enemies} attacks={props.isCoop ? (props.attacksFromParent || []) : attacks}
+            placedTowers={placedTowers} enemies={enemies} 
             damageNumbers={props.isCoop ? (props.damageNumbersFromParent || []) : damageNumbers} 
             splashRings={props.isCoop ? (props.splashRingsFromParent || []) : splashRings}
             currentPath={currentPath} handlePlaceTower={(row, col) => onLocalAction('build', {row, col})}
             onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower} rows={GRID_ROWS} cols={GRID_COLS}
-            startNode={{row:1, col:1}} endNode={{row: GRID_ROWS, col: GRID_COLS}}
+            focusedTower={focusedTower}
+            gameBoardRef={gameBoardRef}
             interactionPrompt={interactionPrompt} cancelInteractions={cancelInteractions}
             onSelectTowerToBuild={handleSelectTowerToBuild} 
             handleUpgradeTower={(uid) => onLocalAction('upgrade', {row: focusedTower!.position.row, col: focusedTower!.position.col, upgradeId: uid})}

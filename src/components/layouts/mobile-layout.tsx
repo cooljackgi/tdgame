@@ -35,7 +35,6 @@ interface MobileLayoutProps {
   difficulty: Difficulty;
   placedTowers: PlacedTower[];
   enemies: Enemy[];
-  attacks: Attack[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   currentPath: Node[];
@@ -43,10 +42,7 @@ interface MobileLayoutProps {
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
   focusedTower: PlacedTower | null;
-  rows: number;
-  cols: number;
-  startNode: Node;
-  endNode: Node;
+  gameBoardRef: React.RefObject<GameBoardHandle>;
   interactionPrompt: string | null;
   cancelInteractions: () => void;
   handleGameControl: () => void;
@@ -89,9 +85,9 @@ interface MobileLayoutProps {
 
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
-    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies, attacks,
+    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
     damageNumbers, splashRings, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
-    focusedTower, rows, cols, startNode, endNode, interactionPrompt,
+    focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
@@ -108,7 +104,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
-  const gameBoardRef = useRef<GameBoardHandle>(null);
 
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
@@ -143,7 +138,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           ref={gameBoardRef}
           placedTowers={placedTowers}
           enemies={enemies}
-          attacks={attacks}
           damageNumbers={damageNumbers}
           splashRings={splashRings}
           currentPath={currentPath}
@@ -152,10 +146,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           cancelInteractions={cancelInteractions}
           selectedTowerToBuild={selectedTowerToBuild}
           focusedTower={focusedTower}
-          rows={rows}
-          cols={cols}
-          startNode={startNode}
-          endNode={endNode}
           lastUpgradedTowerId={lastUpgradedTowerId}
           isCoop={isCoop}
           playerRole={playerRole}
