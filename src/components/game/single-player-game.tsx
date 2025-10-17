@@ -325,7 +325,7 @@ export default function SinglePlayerGame({
 
             newTowersByCell[cellKey] = {
                 ...towerSpec,
-                id: `tower-${pos.row}-${pos.col}-${Date.now()}`,
+                id: `tower-${pos.row}-${pos.col}-${Date.now() + towerIndex}`,
                 specId: towerSpec.id,
                 position: pos,
                 lastAttack: 0,
@@ -342,7 +342,7 @@ export default function SinglePlayerGame({
     }, []);
 
     const handleLoadTestLayout = useCallback(() => {
-        const testTowers = initialTowers.filter(t => t.tier <= 1 && t.elements.includes('neutral'));
+        const testTowers = initialTowers.filter(t => t.tier === 1 && t.elements.includes('neutral'));
         generateLayout(testTowers);
         toast({ title: 'Test-Layout geladen!', description: 'Ein Labyrinth aus Basistürmen wurde erstellt.' });
     }, [generateLayout, toast]);
@@ -367,7 +367,7 @@ export default function SinglePlayerGame({
             const isCurrentlyIntermission = !spawnerStateRef.current && enemiesRef.current.length === 0;
 
             if (isCurrentlyIntermission) {
-                setWaveStartCountdown(prevTime => {
+                 setWaveStartCountdown(prevTime => {
                     const newTime = prevTime - delta / 1000;
                     if (newTime <= 0) {
                         handleStartNextWaveNow();
@@ -640,3 +640,4 @@ export default function SinglePlayerGame({
     
 
     
+
