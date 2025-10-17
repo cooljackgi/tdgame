@@ -33,26 +33,26 @@ function CoopGame() {
 
   // --- Synced State (via deltas) ---
   const [players, setPlayers] = useState<Player[]>([]);
-  const [gameState, setGameState] = useState<GameState>({ lives: 20 });
-  const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
+  const [gameState, setGameState>({ lives: 20 });
+  const [towersByCell, setTowersByCell>({});
   const [currentWave, setCurrentWave] = useState(0);
-  const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
+  const [gameStatus, setGameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
   const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
-  const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [enemies, setEnemies>([ ]);
   const [spawnedThisWave, setSpawnedThisWave] = useState(0);
 
   // --- Local Client State ---
-  const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
+  const [localPlayerId, setLocalPlayerId<'player1' | 'player2' | 'spectator' | null>(null);
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   
   // --- VFX State (fed by deltas) ---
-  const [attacks, setAttacks] = useState<Attack[]>([]);
-  const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
-  const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
-  const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string|null>(null);
-  const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
-  const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
+  const [attacks, setAttacks>([ ]);
+  const [damageNumbers, setDamageNumbers>([ ]);
+  const [splashRings, setSplashRings>([ ]);
+  const [lastUpgradedTowerId, setLastUpgradedTowerId>([ ]);
+  const [firingTowerIds, setFiringTowerIds(new Set());
+  const [finalGameResult, setFinalGameResult(null);
   
   // --- Stats State ---
   const [fps, setFps] = useState(0);
@@ -60,17 +60,17 @@ function CoopGame() {
   const [totalLeaked, setTotalLeaked] = useState(0);
   
   const rtc = useWebRTC(gameId, isGameHost, user);
-  const gameLoopRef = useRef<number>();
+  const gameLoopRef = useRef();
   const lastTickRef = useRef(performance.now());
   const enemyIdCounter = useRef(0);
-  const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
+  const spawnerStateRef = useRef(null);
 
   // --- Stable Refs for Game Loop ---
   const playersRef = useRef(players);
   const towersByCellRef = useRef(towersByCell);
   const gameStateRef = useRef(gameState);
   const currentWaveRef = useRef(currentWave);
-  const difficultyRef = useRef<Difficulty>('Normal');
+  const difficultyRef = useRef('Normal');
 
   useEffect(() => { playersRef.current = players }, [players]);
   useEffect(() => { towersByCellRef.current = towersByCell }, [towersByCell]);
@@ -81,7 +81,7 @@ function CoopGame() {
   const currentPathRef = useRef(currentPath);
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
 
-  const applyDeltas = useCallback((deltas: GameDelta[]) => {
+  const applyDeltas = useCallback((deltas) => {
     if (deltas.length === 0) return;
     console.log('[CLIENT-RECV]', deltas);
 
@@ -90,7 +90,7 @@ function CoopGame() {
         const payload = delta[1];
         switch(type) {
             case DeltaType.ENEMY_SPAWN: {
-                const newEnemy = payload as Enemy;
+                const newEnemy = payload;
                 setEnemies(prev => [...prev, newEnemy]);
                 break;
             }
@@ -106,7 +106,7 @@ function CoopGame() {
             }
             case DeltaType.ENEMY_DAMAGE: {
                 const [id, damage] = delta.slice(1);
-                setEnemies(prev => prev.map(e => e.id === id ? { ...e, health: e.health - (damage as number), wasHit: true } : e));
+                setEnemies(prev => prev.map(e => e.id === id ? { ...e, health: e.health - damage, wasHit: true } : e));
                 setTimeout(() => setEnemies(prev => prev.map(e => e.id === id ? { ...e, wasHit: false } : e)), 150);
                 break;
             }
@@ -135,8 +135,8 @@ function CoopGame() {
             case DeltaType.TOWER_ATTACK:
                 setAttacks(prev => [...prev.slice(-200), payload]);
                 audioManager.playSfx('shoot', 0.3);
-                setFiringTowerIds(prev => new Set(prev).add((payload as Attack).towerId));
-                setTimeout(() => setFiringTowerIds(prev => { const s = new Set(prev); s.delete((payload as Attack).towerId); return s; }), 150);
+                setFiringTowerIds(prev => new Set(prev).add(payload.towerId));
+                setTimeout(() => setFiringTowerIds(prev => { const s = new Set(prev); s.delete(payload.towerId); return s; }), 150);
                 break;
             case DeltaType.VFX_DAMAGE_NUMBER:
                 setDamageNumbers(prev => [...prev.slice(-100), payload]);
@@ -161,14 +161,14 @@ function CoopGame() {
                  setPlayers(prev => prev.map(p => ({...p, ...(payload[p.id] || {})})));
                 break;
             case DeltaType.TOWER_UPGRADE_VFX:
-                setLastUpgradedTowerId((payload as { towerId: string }).towerId);
+                setLastUpgradedTowerId(payload.towerId);
                 setTimeout(() => setLastUpgradedTowerId(null), 1000);
                 break;
         }
     });
   }, []);
 
-  const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
+  const broadcastGameData = useCallback((deltas, reliable) => {
       if (deltas.length === 0 || !rtc.gameDataChannel) return;
       
       console.log('[HOST-SEND]', deltas);
@@ -182,9 +182,9 @@ function CoopGame() {
   }, [rtc.gameDataChannel, isGameHost, applyDeltas]);
     
   useEffect(() => {
-    let gameUnsubscribe: Unsubscribe | undefined;
+    let gameUnsubscribe;
     
-    const setupListeners = async (uid: string) => {
+    const setupListeners = async (uid) => {
         try {
             const gameDocRef = doc(db, 'games', gameId);
             gameUnsubscribe = onSnapshot(gameDocRef, async (snap) => {
@@ -197,7 +197,7 @@ function CoopGame() {
                 const gameData = snap.data();
                 if (!gameData) return;
                 
-                let currentRole = 'spectator' as Player['id'];
+                let currentRole = 'spectator';
                 if(gameData.player1Id === uid) currentRole = 'player1';
                 else if(gameData.player2Id === uid) currentRole = 'player2';
 
@@ -207,7 +207,7 @@ function CoopGame() {
                         await joinGameCallable({ gameId });
                         toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
                         return;
-                    } catch(e: any) {
+                    } catch(e) {
                        toast({ title: "Beitritt fehlgeschlagen", description: e.message, variant: 'destructive'});
                        router.push('/');
                        return;
@@ -241,7 +241,7 @@ function CoopGame() {
               router.push('/');
             });
             
-        } catch (e:any) {
+        } catch (e) {
             console.error("Error joining/setting up game:", e);
             toast({ title: "Fehler beim Beitreten", description: e.message, variant: 'destructive'});
             router.push('/');
@@ -284,11 +284,11 @@ function CoopGame() {
   
   useEffect(() => {
     if (!rtc.gameDataChannel) return;
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = (event) => {
         try {
             const data = JSON.parse(event.data);
             if (data.type === 'game_delta_batch') {
-                applyDeltas(data.payload as GameDelta[]);
+                applyDeltas(data.payload);
             }
         } catch (e) { console.error("Failed to parse game delta", e)}
     }
@@ -297,7 +297,7 @@ function CoopGame() {
   }, [rtc.gameDataChannel, applyDeltas]);
 
 
-  const handleGameEnd = useCallback(async (result: GameResult) => {
+  const handleGameEnd = useCallback(async (result) => {
     if (gameId && isGameHost && gameStatus !== 'gameover') {
       const logData = { ...result, timestamp: serverTimestamp() };
       await addDoc(collection(db, `games/${gameId}/game_logs`), logData);
@@ -305,7 +305,7 @@ function CoopGame() {
     }
   }, [gameId, isGameHost, gameStatus, broadcastGameData]);
   
-  const handlePlaceTowerHost = useCallback((row: number, col: number, playerId: Player['id'], towerId?: string) => {
+  const handlePlaceTowerHost = useCallback((row, col, playerId, towerId) => {
     if (!towerId) {
         console.error(`[HOST] Build failed: towerId undefined not found.`);
         return;
@@ -327,7 +327,7 @@ function CoopGame() {
     const player = playersRef.current.find(p => p.id === playerId);
     if (!player || player.resources < selectedTowerToBuild.cost) return;
 
-    const newTower: PlacedTower = {
+    const newTower = {
         ...JSON.parse(JSON.stringify(selectedTowerToBuild)), 
         id: `tower-${row}-${col}-${Date.now()}`, 
         specId: selectedTowerToBuild.id, position: { row, col }, lastAttack: 0, health: selectedTowerToBuild.maxHealth, ownerId: player.id,
@@ -342,7 +342,7 @@ function CoopGame() {
     ], true);
   }, [broadcastGameData]);
 
-  const handleUpgradeTowerHost = useCallback((row: number, col: number, upgradeId: string, playerId: Player['id']) => {
+  const handleUpgradeTowerHost = useCallback((row, col, upgradeId, playerId) => {
       const player = playersRef.current.find(p => p.id === playerId);
       const cellKey = `${row}_${col}`;
       const focusedTower = towersByCellRef.current[cellKey];
@@ -357,7 +357,7 @@ function CoopGame() {
 
       if (player.resources < cost) return;
 
-      const newPlacedTower: PlacedTower = { ...JSON.parse(JSON.stringify(focusedTower)), ...JSON.parse(JSON.stringify(upgradeTowerSpec)), specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth };
+      const newPlacedTower = { ...JSON.parse(JSON.stringify(focusedTower)), ...JSON.parse(JSON.stringify(upgradeTowerSpec)), specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth };
       const newTowers = { ...towersByCellRef.current, [cellKey]: newPlacedTower };
       const playerUpdate = { [player.id]: { resources: player.resources - cost } };
       
@@ -368,7 +368,7 @@ function CoopGame() {
       ], true);
   }, [broadcastGameData]);
 
-  const handleSellTowerHost = useCallback((row: number, col: number, playerId: Player['id']) => {
+  const handleSellTowerHost = useCallback((row, col, playerId) => {
       const player = playersRef.current.find(p => p.id === playerId);
       const cellKey = `${row}_${col}`;
       const focusedTower = towersByCellRef.current[cellKey];
@@ -389,16 +389,20 @@ function CoopGame() {
       ], true);
   }, [broadcastGameData]);
 
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+  const onLocalAction = useCallback((action, payload) => {
     if (localPlayerId === 'spectator' || !localPlayerId) return;
   
-    const towerId = (document as any).__SELECTED_TOWER_ID;
+    const towerId = document.__SELECTED_TOWER_ID;
   
     if (isGameHost) {
       switch(action) {
         case 'build': handlePlaceTowerHost(payload.row, payload.col, localPlayerId, towerId); break;
-        case 'upgrade': handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
-        case 'sell': handleSellTowerHost(payload.row, payload.col, localPlayerId); break;
+        case 'upgrade': 
+            handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); 
+            break;
+        case 'sell': 
+            handleSellTowerHost(payload.row, payload.col, localPlayerId); 
+            break;
       }
     } else {
         if (!rtc.actionsChannel || rtc.actionsChannel.readyState !== 'open') return;
@@ -418,7 +422,7 @@ function CoopGame() {
   useEffect(() => {
     if (!rtc.actionsChannel || !isGameHost) return;
 
-    const handleActionMessage = (ev: MessageEvent) => {
+    const handleActionMessage = (ev) => {
         try {
             const m = JSON.parse(ev.data);
             console.log('[HOST-RECV-ACTION]', m);
@@ -448,7 +452,7 @@ function CoopGame() {
   useEffect(() => {
     if (!isGameHost || !gameStatus) return;
 
-    const gameLoop = (now: number) => {
+    const gameLoop = (now) => {
         gameLoopRef.current = requestAnimationFrame(gameLoop);
         
         if (gameStatus !== 'playing' || isIntermission) {
@@ -461,7 +465,7 @@ function CoopGame() {
         lastTickRef.current = now;
         setFps(Math.round(1000 / delta));
         
-        const deltas: GameDelta[] = [];
+        const deltas = [];
         
         // 1. Enemy Spawning
         if (!spawnerStateRef.current) {
@@ -479,8 +483,8 @@ function CoopGame() {
                     spawnerStateRef.current.timer = 0;
                     const difficultyMod = difficultyModifiers[difficultyRef.current];
                     const health = Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
-                    const movementPattern: Enemy['movementPattern'] = spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble';
-                    const newEnemy: Enemy = {
+                    const movementPattern = spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble';
+                    const newEnemy = {
                         id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData, health, maxHealth: health,
                         path: currentPathRef.current, pathIndex: 0, position: {row:1, col:1}, isBlocked: false, effects: [], lastMove: now, wasHit: false, targetNode: {row: GRID_ROWS, col: GRID_COLS}, movementPattern
                     };
@@ -516,11 +520,11 @@ function CoopGame() {
         
         // 3. Enemy Damage & Effects
         const liveEnemyIds = new Set(enemies.map(e => e.id));
-        const healthUpdates = new Map<string, number>();
+        const healthUpdates = new Map();
 
         deltas.forEach(delta => {
             if (delta[0] === DeltaType.TOWER_ATTACK) {
-                const attack = delta[1] as Attack;
+                const attack = delta[1];
                 const tower = Object.values(newTowersByCell).find(t => t.id === attack.towerId);
                 if (tower && liveEnemyIds.has(attack.targetId)) {
                     const currentDamage = healthUpdates.get(attack.targetId) || 0;
@@ -533,7 +537,7 @@ function CoopGame() {
             deltas.push([DeltaType.ENEMY_DAMAGE, enemyId, damage]);
             const enemy = enemies.find(e => e.id === enemyId);
             if(enemy) {
-                const towerThatShot = Object.values(newTowersByCell).find(t => deltas.some(d => d[0] === DeltaType.TOWER_ATTACK && (d[1] as Attack).towerId === t.id && (d[1] as Attack).targetId === enemyId));
+                const towerThatShot = Object.values(newTowersByCell).find(t => deltas.some(d => d[0] === DeltaType.TOWER_ATTACK && d[1].towerId === t.id && d[1].targetId === enemyId));
                 deltas.push([DeltaType.VFX_DAMAGE_NUMBER, { 
                     id: `dmg-${now}-${Math.random()}`, targetId: enemy.id, amount: damage, color: elementProjectileColors[towerThatShot?.elements[0] || 'neutral'] || 'white', position: enemy.position 
                 }]);
@@ -547,7 +551,7 @@ function CoopGame() {
                 if (liveEnemyIds.has(enemy.id)) {
                    deltas.push([DeltaType.ENEMY_DIE, enemy.id]);
                    const bounty = enemy.bounty;
-                   const playerUpdates: Record<string, Partial<Player>> = {};
+                   const playerUpdates = {};
                    playersRef.current.forEach(p => {
                        playerUpdates[p.id] = { resources: (playersRef.current.find(pl => pl.id === p.id)?.resources || 0) + bounty };
                    });
@@ -596,16 +600,16 @@ function CoopGame() {
 
   
   if (loading || !localPlayerId || players.length === 0) {
-    return <div className="flex flex-col items-center justify-center min-h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /><p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
+    return  Verbinde mit Spiel...;
   }
 
   const localPlayer = players.find(p => p.id === localPlayerId);
   if (!localPlayer) {
-     return <div className="flex flex-col items-center justify-center min-h-screen"><Loader2 className="h-16 w-16 animate-spin text-primary" /><p className="ml-4 text-lg">Warte auf Spielerdaten...</p></div>;
+     return  Warte auf Spielerdaten...;
   }
 
   return (
-    <GameSession
+    
         // State
         players={players} setPlayers={setPlayers}
         gameState={gameState} setGameState={setGameState}
@@ -643,10 +647,14 @@ function CoopGame() {
         totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
         onLocalAction={onLocalAction}
         applyDeltas={applyDeltas}
-    />
+    /&gt
+
   );
 }
 
 export default CoopGame;
+
+    
+
 
     
