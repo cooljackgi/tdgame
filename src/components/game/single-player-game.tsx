@@ -6,7 +6,7 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves, generateProceduralWave, waveFormulaCoefficients } from '@/lib/game-data/enemies';
-import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME } from '@/lib/game-data/constants';
+import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
 import { audioManager } from '@/lib/audio/audio-manager';
@@ -311,6 +311,11 @@ export default function SinglePlayerGame({
             ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 6 })),
             ...Array.from({ length: 9 }, (_, i) => ({ row: 11 - i, col: 8 })),
             ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 10 })),
+            // Connectors
+            { row: 2, col: 3 },
+            { row: 11, col: 5 },
+            { row: 2, col: 7 },
+            { row: 11, col: 9 },
         ];
 
         const newTowersByCell: Record<string, PlacedTower> = {};
@@ -351,6 +356,15 @@ export default function SinglePlayerGame({
         generateLayout(initialTowers);
         toast({ title: 'Alle Türme geladen!', description: 'Jeder Turm wurde einmal im Labyrinth platziert.' });
     }, [generateLayout, toast]);
+
+    const handleUnlockAll = useCallback(() => {
+        setPlayers(prev => [{
+            ...prev[0],
+            resources: prev[0].resources + 50000,
+            unlockedElements: ['neutral', ...ALL_PICKABLE_ELEMENTS]
+        }]);
+        toast({ title: 'Chaos aktiviert!', description: 'Alle Elemente freigeschaltet und 50,000 Ressourcen erhalten.' });
+    }, [toast]);
 
 
     useEffect(() => {
@@ -605,7 +619,7 @@ export default function SinglePlayerGame({
                 cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
                 cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
                 cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
-                cheat_unlockAll={() => {}}
+                cheat_unlockAll={handleUnlockAll}
                 firingTowerIds={firingTowerIds} 
                 allTowers={initialTowers}
                 attacks={attacks}
@@ -640,4 +654,5 @@ export default function SinglePlayerGame({
     
 
     
+
 
