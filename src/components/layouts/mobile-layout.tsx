@@ -136,7 +136,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   }
 
   return (
-    <div className="w-full h-[calc(100svh-133px)] flex flex-col">
+    <div className="w-full h-full flex flex-col">
       {/* GAME AREA */}
       <div
         className="relative w-full overflow-hidden flex-grow"

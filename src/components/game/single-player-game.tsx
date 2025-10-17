@@ -19,6 +19,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
+import Header from './header';
 
 
 export default function SinglePlayerGame({
@@ -572,6 +573,15 @@ export default function SinglePlayerGame({
         }
     }, [handleStartNextWaveNow, onGameEnd, user]);
 
+    const toggleMute = () => {
+      setIsMuted(current => {
+        const newMuted = !current;
+        if (newMuted) audioManager.mute();
+        else audioManager.unmute();
+        return newMuted;
+      });
+    };
+
     const LayoutComponent = useMemo(() => isMobile ? MobileLayout : DesktopLayout, [isMobile]);
     
     if (!localPlayer) return null;
@@ -581,58 +591,61 @@ export default function SinglePlayerGame({
     
     return (
         <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
-            <LayoutComponent
-                players={players} 
-                setPlayers={setPlayers} 
-                gameState={gameState} 
-                localPlayer={localPlayer}
-                currentWave={currentWave} 
-                totalWaves={waves.length} 
-                difficulty={difficulty} 
-                handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')} 
-                gameStatus={gameStatus} 
-                resetGame={onExit}
-                towers={initialTowers} 
-                setTowers={() => {}} 
-                placedTowers={placedTowers} 
-                enemies={enemies} 
-                damageNumbers={damageNumbers} 
-                splashRings={splashRings}
-                currentPath={currentPath} 
-                handlePlaceTower={(row, col) => handlePlaceTower(row, col)}
-                onFocusTower={onFocusTower} 
-                selectedTowerToBuild={selectedTowerToBuild}
-                focusedTower={focusedTower}
-                gameBoardRef={gameBoardRef}
-                interactionPrompt={interactionPrompt} 
-                cancelInteractions={cancelInteractions}
-                onSelectTowerToBuild={onSelectTowerToBuild} 
-                handleUpgradeTower={handleUpgradeTower}
-                handleSellTower={handleSellTower}
-                setFocusedTower={setFocusedTower}
-                spawnedThisWave={spawnerStateRef.current?.count || 0}
-                totalEnemiesInWave={spawnerStateRef.current?.waveData.count || 0}
-                totalKilled={totalKilled}
-                totalLeaked={totalLeaked}
-                isIntermission={isIntermission} 
-                waveStartCountdown={Math.ceil(waveStartCountdown)}
-                intermissionTime={INTERMISSION_TIME} 
-                handleStartNextWaveNow={handleStartNextWaveNow}
-                lastUpgradedTowerId={lastUpgradedTowerId}
-                justPlacedTowerId={justPlacedTowerId}
-                isCoop={false} 
-                playerRole="player1"
-                handleLoadTestLayout={handleLoadTestLayout}
-                handleLoadAllTowersLayout={handleLoadAllTowersLayout}
-                isCheating={isCheating} 
-                cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
-                cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
-                cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
-                cheat_unlockAll={handleUnlockAll}
-                firingTowerIds={firingTowerIds} 
-                allTowers={initialTowers}
-                attacks={attacks}
-            />
+            <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} />
+            <div className="flex-grow min-h-0">
+                <LayoutComponent
+                    players={players} 
+                    setPlayers={setPlayers} 
+                    gameState={gameState} 
+                    localPlayer={localPlayer}
+                    currentWave={currentWave} 
+                    totalWaves={waves.length} 
+                    difficulty={difficulty} 
+                    handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')} 
+                    gameStatus={gameStatus} 
+                    resetGame={onExit}
+                    towers={initialTowers} 
+                    setTowers={() => {}} 
+                    placedTowers={placedTowers} 
+                    enemies={enemies} 
+                    damageNumbers={damageNumbers} 
+                    splashRings={splashRings}
+                    currentPath={currentPath} 
+                    handlePlaceTower={(row, col) => handlePlaceTower(row, col)}
+                    onFocusTower={onFocusTower} 
+                    selectedTowerToBuild={selectedTowerToBuild}
+                    focusedTower={focusedTower}
+                    gameBoardRef={gameBoardRef}
+                    interactionPrompt={interactionPrompt} 
+                    cancelInteractions={cancelInteractions}
+                    onSelectTowerToBuild={onSelectTowerToBuild} 
+                    handleUpgradeTower={handleUpgradeTower}
+                    handleSellTower={handleSellTower}
+                    setFocusedTower={setFocusedTower}
+                    spawnedThisWave={spawnerStateRef.current?.count || 0}
+                    totalEnemiesInWave={spawnerStateRef.current?.waveData.count || 0}
+                    totalKilled={totalKilled}
+                    totalLeaked={totalLeaked}
+                    isIntermission={isIntermission} 
+                    waveStartCountdown={Math.ceil(waveStartCountdown)}
+                    intermissionTime={INTERMISSION_TIME} 
+                    handleStartNextWaveNow={handleStartNextWaveNow}
+                    lastUpgradedTowerId={lastUpgradedTowerId}
+                    justPlacedTowerId={justPlacedTowerId}
+                    isCoop={false} 
+                    playerRole="player1"
+                    handleLoadTestLayout={handleLoadTestLayout}
+                    handleLoadAllTowersLayout={handleLoadAllTowersLayout}
+                    isCheating={isCheating} 
+                    cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
+                    cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
+                    cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
+                    cheat_unlockAll={handleUnlockAll}
+                    firingTowerIds={firingTowerIds} 
+                    allTowers={initialTowers}
+                    attacks={attacks}
+                />
+            </div>
 
             <AlertDialog open={gameStatus === 'gameover'}>
                 <AlertDialogContent>
