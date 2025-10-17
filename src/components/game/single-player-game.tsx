@@ -149,9 +149,11 @@ export default function SinglePlayerGame({
         setSelectedTowerToBuild(tower);
     }
     
-    const handlePlaceTower = useCallback((row: number, col: number, towerId: string) => {
+    const handlePlaceTower = useCallback((row: number, col: number) => {
+        if (!selectedTowerToBuild) return;
+
         const player = localPlayerRef.current;
-        const towerSpec = initialTowers.find(t => t.id === towerId);
+        const towerSpec = initialTowers.find(t => t.id === selectedTowerToBuild.id);
 
         if (!player || !towerSpec) return;
 
@@ -187,10 +189,9 @@ export default function SinglePlayerGame({
         setCurrentPath(path);
         setEnemies(prevEnemies => prevEnemies.map(e => ({ ...e, path })));
         setJustPlacedTowerId(newTower.id);
-        setFocusedTower(newTower);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [toast]);
+    }, [selectedTowerToBuild, toast]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -491,7 +492,7 @@ export default function SinglePlayerGame({
                 damageNumbers={damageNumbers} 
                 splashRings={splashRings}
                 currentPath={currentPath} 
-                handlePlaceTower={(row, col) => handlePlaceTower(row, col, selectedTowerToBuild!.id)}
+                handlePlaceTower={(row, col) => handlePlaceTower(row, col)}
                 onFocusTower={onFocusTower} 
                 selectedTowerToBuild={selectedTowerToBuild}
                 focusedTower={focusedTower}
@@ -551,4 +552,3 @@ export default function SinglePlayerGame({
         </div>
     );
 }
-
