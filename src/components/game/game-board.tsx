@@ -20,7 +20,13 @@ const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
 
 
-export type GameBoardHandle = { resetView: () => void, queueAttacks: (attacks: Attack[]) => void };
+export type GameBoardHandle = {
+    resetView: () => void;
+    queueAttacks: (attacks: Attack[]) => void;
+    queueDamageNumbers: (damageNumbers: DamageNumber[]) => void;
+    queueSplashRings: (splashRings: SplashRing[]) => void;
+};
+
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -404,6 +410,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     queueAttacks: (attacksToQueue) => {
         incomingAttacksRef.current.push(...attacksToQueue);
     },
+    queueDamageNumbers: (damageNumbersToQueue) => {
+        incomingDmgRef.current.push(...damageNumbersToQueue);
+    },
+    queueSplashRings: (splashRingsToQueue) => {
+        incomingRingsRef.current.push(...splashRingsToQueue);
+    },
   }));
 
   useEffect(() => {
@@ -654,7 +666,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   
   const ghostTowerPath = useMemo(() => {
     if (!selectedTowerToBuild || !hoveredCell) return null;
-    const newPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...placedTowers.map(t => t.position), hoveredCell], GRID_ROWS, GRID_COLS);
+    const newPath = findPath({row:1,col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...placedTowers.map(t => t.position), hoveredCell], GRID_ROWS, GRID_COLS);
     if (!newPath) return 'invalid';
 
     const startPos = gridToPx({row:1, col:1});

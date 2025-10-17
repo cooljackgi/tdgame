@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -10,7 +11,7 @@ import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
-import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
+import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -56,11 +57,9 @@ export default function CoopGameLoader() {
   const gameBoardRef = useRef<GameBoardHandle>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [hostRevision, setHostRevision] = useState(0);
 
-  // VFX State
-  const [attacks, setAttacks] = useState<Attack[]>([]);
-  const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
-  const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
+  // VFX State (now mostly handled by GameBoard, but kept for simplicity if needed)
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
@@ -99,13 +98,13 @@ export default function CoopGameLoader() {
         setGameStatus(payload.gameStatus);
         break;
       case 'VFX_ATTACK':
-        setAttacks(prev => [...prev, ...payload]);
+        gameBoardRef.current?.queueAttacks(payload);
         break;
       case 'VFX_DAMAGE_NUMBER':
-        setDamageNumbers(prev => [...prev, ...payload]);
+        gameBoardRef.current?.queueDamageNumbers(payload);
         break;
       case 'VFX_SPLASH':
-        setSplashRings(prev => [...prev, ...payload]);
+        gameBoardRef.current?.queueSplashRings(payload);
         break;
       case 'VFX_TOWER_FIRING':
         setFiringTowerIds(new Set(payload));
@@ -115,76 +114,127 @@ export default function CoopGameLoader() {
         setLastUpgradedTowerId(payload.towerId);
         setTimeout(() => setLastUpgradedTowerId(null), 500);
         break;
+      case 'TOWER_PLACE_VFX':
+        setJustPlacedTowerId(payload.towerId);
+        setTimeout(() => setJustPlacedTowerId(null), 400);
+        break;
     }
   }, [isGameHost]);
 
     const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
 
     const broadcastSnapshot = useCallback(() => {
-        if (!isGameHost) return;
-        sendGameDataRef.current('GAME_STATE_SNAPSHOT', {
+        if (!isGameHost || !sendGameDataRef.current) return;
+        
+        const snapshot = {
             players, enemies, towersByCell, gameState,
             currentWave, isIntermission, waveStartCountdown, gameStatus,
-        });
+        };
+        sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
     }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
     
+    // This effect runs on the host to broadcast state changes.
+    useEffect(() => {
+        if (!isGameHost || hostRevision === 0) return;
+        broadcastSnapshot();
+    }, [hostRevision, isGameHost, broadcastSnapshot]);
+    
+    const hostCanPlace = useCallback((row: number, col: number) => {
+        const occupied = Object.values(towersByCell).map(t => t.position);
+        const tentative = [...occupied, { row, col }];
+        const start = { row: 1, col: 1 };
+        const goal  = { row: GRID_ROWS, col: GRID_COLS };
+        return !!findPath(start, goal, tentative, GRID_ROWS, GRID_COLS);
+    }, [towersByCell]);
+
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
         console.log(`[HOST] Executing action: ${action}`, payload);
         
         switch(action){
             case 'build': {
-                const { row, col, towerId } = payload;
+                const { row, col, towerId, playerId } = payload;
+                if (!hostCanPlace(row, col)) {
+                    console.warn(`[HOST] Invalid build request at ${row},${col}. Path blocked.`);
+                    return;
+                }
                 const key = `${row}_${col}`;
                 const towerSpec = initialTowers.find(t => t.id === towerId);
-                if(!towerSpec) return;
+                const builder = players.find(p => p.id === playerId);
+
+                if(!towerSpec || !builder || builder.resources < towerSpec.cost || towersByCell[key]) return;
                 
                 const newTower: PlacedTower = {
                     ...towerSpec,
-                    id: `tower-${row}-${col}-${Date.now()}`,
+                    id: crypto.randomUUID(),
                     specId: towerSpec.id,
                     position: { row, col },
                     lastAttack: 0,
                     health: towerSpec.maxHealth,
-                    ownerId: 'player1', // simplified
+                    ownerId: playerId,
                 };
                 
-                setTowersByCell(prev => prev[key] ? prev : ({ ...prev, [key]: newTower }));
+                setTowersByCell(prev => ({ ...prev, [key]: newTower }));
+                setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources - towerSpec.cost} : p));
+
                 setFocusedTower(null);
                 setSelectedTowerToBuild(null);
+                setJustPlacedTowerId(newTower.id);
+                setTimeout(() => setJustPlacedTowerId(null), 400);
+                if (sendGameDataRef.current) sendGameDataRef.current('TOWER_PLACE_VFX', { towerId: newTower.id });
                 break;
             }
             case 'upgrade': {
-                const { row, col, upgradeId } = payload;
+                const { row, col, upgradeId, playerId } = payload;
                 const key = `${row}_${col}`;
+                const existingTower = towersByCell[key];
                 const upgradeSpec = initialTowers.find(t => t.id === upgradeId);
-                if(!upgradeSpec) return;
+                const upgrader = players.find(p => p.id === playerId);
 
-                setTowersByCell(prev => {
-                    const existing = prev[key];
-                    if(!existing) return prev;
-                    return {...prev, [key]: {...existing, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existing.id } };
-                });
-                setLastUpgradedTowerId(key);
+                if (!existingTower || !upgradeSpec || !upgrader || existingTower.ownerId !== playerId) return;
+                
+                const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
+                if (upgrader.resources < cost) return;
+
+                const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
+
+                setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
+                setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
+                
+                setLastUpgradedTowerId(upgradedTower.id);
                 setTimeout(()=>setLastUpgradedTowerId(null), 500);
+                 if (sendGameDataRef.current) sendGameDataRef.current('TOWER_UPGRADE_VFX', { towerId: upgradedTower.id });
+
                 break;
             }
             case 'sell': {
-                 const { row, col } = payload;
-                setTowersByCell(prev => { const k=`${row}_${col}`; const { [k]:_, ...rest } = prev; return rest; });
-                setFocusedTower(null);
-                break;
+                 const { row, col, playerId } = payload;
+                 const key = `${row}_${col}`;
+                 const towerToSell = towersByCell[key];
+                 if (!towerToSell || towerToSell.ownerId !== playerId) return;
+
+                 const refund = Math.round(towerToSell.cost * 0.75);
+                 setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
+                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
+                 setFocusedTower(null);
+                 break;
             }
-            case 'pick_element': 
-                setPlayers(prev => prev.map(p => p.id === payload.playerId ? {...p, unlockedElements: [...p.unlockedElements, payload.element]} : p));
+            case 'pick_element': {
+                const { playerId, element } = payload;
+                setPlayers(prev => prev.map(p => 
+                  p.id === playerId 
+                    ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
+                    : p
+                ));
                 setGameStatus("playing"); 
                 break;
+            }
             case 'start_wave_now': 
                 setIsIntermission(false); 
                 setWaveStartCountdown(0); 
                 break;
         }
-        setTimeout(broadcastSnapshot, 50);
-    }, [broadcastSnapshot]);
+        setHostRevision(r => r + 1);
+    }, [players, towersByCell, hostCanPlace]);
 
 
     const handleActionData = useCallback((msg: any) => {
@@ -235,13 +285,14 @@ export default function CoopGameLoader() {
   }, [localPlayerId, isGameHost, sendAction]);
   
     const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
-        console.log(`[DISPATCH] Action: ${action}`, payload);
+        console.log(`[DISPATCH] Action: ${action}`, { ...payload, playerId: payload.playerId ?? localPlayerId });
+        const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
         if (isGameHost) {
-            onHostAction(action, payload);
+            onHostAction(action, finalPayload);
         } else {
-            onLocalAction(action, payload);
+            onLocalAction(action, finalPayload);
         }
-    }, [isGameHost, onHostAction, onLocalAction]);
+    }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
 
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
@@ -279,16 +330,21 @@ export default function CoopGameLoader() {
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
+                // Host reads from Firestore, client will get data from host
                 if (currentRole === 'player1') {
-                    setPlayers(normalizePlayers(gameData.players));
-                    setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
-                    setTowersByCell(gameData.towersByCell || {});
-                    setCurrentWave(gameData.currentWave || 0);
-                    setIsIntermission(gameData.isIntermission ?? true);
-                    setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
-                    setGameStatus(gameData.gameStatus || 'waiting');
+                    if(!gameDataLoaded) { // Only on initial load
+                        setPlayers(normalizePlayers(gameData.players));
+                        setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
+                        setTowersByCell(gameData.towersByCell || {});
+                        setCurrentWave(gameData.currentWave || 0);
+                        setIsIntermission(gameData.isIntermission ?? true);
+                        setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
+                        setGameStatus(gameData.gameStatus || 'waiting');
+                        setHostRevision(r => r + 1); // Trigger initial broadcast
+                    }
                 }
                 
+                // P2 needs to see the player list to know who they are, even before snapshot
                 if(currentRole === 'player2' && players.length === 0){
                     setPlayers(normalizePlayers(gameData.players));
                 }
@@ -315,7 +371,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, players.length]);
+  }, [user, gameId, router, toast, players.length, gameDataLoaded]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -373,8 +429,8 @@ export default function CoopGameLoader() {
                 setTowers={() => {}} 
                 placedTowers={placedTowers} 
                 enemies={enemies} 
-                damageNumbers={damageNumbers} 
-                splashRings={splashRings}
+                damageNumbers={[]} 
+                splashRings={[]}
                 currentPath={currentPath} 
                 handlePlaceTower={onPlaceTower}
                 onFocusTower={onFocusTower} 
