@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -113,28 +112,82 @@ export default function CoopGameLoader() {
     // Create a ref to hold the sendGameData function to break circular dependency
     const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
 
+    // Snapshot-Broadcaster (Host -> Client)
+    const broadcastSnapshot = useCallback(() => {
+        sendGameDataRef.current('GAME_STATE_SNAPSHOT', {
+            players, enemies, towersByCell, gameState,
+            currentWave, isIntermission, waveStartCountdown, gameStatus,
+        });
+    }, [players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
+    
+    // Host-seitige Apply-Funktionen (vereinfacht)
+    function applyBuildTower(row:number, col:number, towerId:string) {
+        const key = `${row}_${col}`;
+        const towerSpec = initialTowers.find(t => t.id === towerId);
+        if(!towerSpec) return;
+        
+        const newTower: PlacedTower = {
+            ...towerSpec,
+            id: `tower-${row}-${col}-${Date.now()}`,
+            specId: towerSpec.id,
+            position: { row, col },
+            lastAttack: 0,
+            health: towerSpec.maxHealth,
+            ownerId: 'player1', // simplified
+        };
+        
+        setTowersByCell(prev => prev[key] ? prev : ({ ...prev, [key]: newTower }));
+        setFocusedTower(null);
+        setSelectedTowerToBuild(null);
+    }
+    function applyUpgradeTower(row:number, col:number, upgradeId:string) {
+        const key = `${row}_${col}`;
+        const upgradeSpec = initialTowers.find(t => t.id === upgradeId);
+        if(!upgradeSpec) return;
+
+        setTowersByCell(prev => {
+            const existing = prev[key];
+            if(!existing) return prev;
+            return {...prev, [key]: {...existing, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existing.id } };
+        });
+        setLastUpgradedTowerId(key);
+        setTimeout(()=>setLastUpgradedTowerId(null), 500);
+    }
+    function applySellTower(row:number, col:number) {
+        setTowersByCell(prev => { const k=`${row}_${col}`; const { [k]:_, ...rest } = prev; return rest; });
+        setFocusedTower(null);
+    }
+
+    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
+        // Here, the host would apply logic from game-session. In this simplified fix, we directly mutate state.
+        switch(action){
+            case 'build': applyBuildTower(payload.row, payload.col, payload.towerId); break;
+            case 'upgrade': applyUpgradeTower(payload.row, payload.col, payload.upgradeId); break;
+            case 'sell': applySellTower(payload.row, payload.col); break;
+            case 'pick_element': setPlayers(prev => prev.map(p => p.id === payload.playerId ? {...p, unlockedElements: [...p.unlockedElements, payload.element]} : p)); setGameStatus("playing"); break;
+            case 'start_wave_now': setIsIntermission(false); setWaveStartCountdown(0); break;
+        }
+        // Use a timeout to ensure state has propagated before broadcasting
+        setTimeout(broadcastSnapshot, 50);
+    }, [broadcastSnapshot]);
+
+
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
-
         const { type, payload } = msg;
-        switch(type) {
-            case 'CLIENT_READY':
-                // Client is connected and ready, send them the full current game state.
-                sendGameDataRef.current('GAME_STATE_SNAPSHOT', {
-                    players: players,
-                    enemies: enemies,
-                    towersByCell: towersByCell,
-                    gameState: gameState,
-                    currentWave: currentWave,
-                    isIntermission: isIntermission,
-                    waveStartCountdown: waveStartCountdown,
-                    gameStatus: gameStatus,
-                });
-                break;
+        switch (type) {
+            case 'CLIENT_READY': {
+                broadcastSnapshot();
+                return;
+            }
+            case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
+            case 'UPGRADE_TOWER_REQUEST':    onHostAction('upgrade', payload); return;
+            case 'SELL_TOWER_REQUEST':       onHostAction('sell', payload); return;
+            case 'PICK_ELEMENT_REQUEST':     onHostAction('pick_element', payload); return;
+            case 'START_WAVE_NOW_REQUEST':   onHostAction('start_wave_now', payload); return;
+            default: return;
         }
-    // We remove sendGameData from dependencies and use the ref instead.
-    // All other dependencies are state variables that are stable within the host's context.
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
+    }, [isGameHost, broadcastSnapshot, onHostAction]);
 
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
@@ -165,6 +218,14 @@ export default function CoopGameLoader() {
       }
       sendAction(actionTypeMap[action], { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost, sendAction]);
+  
+    const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
+        if (isGameHost) {
+            onHostAction(action, payload);
+        } else {
+            onLocalAction(action, payload);
+        }
+    }, [isGameHost, onHostAction, onLocalAction]);
 
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
@@ -259,11 +320,11 @@ export default function CoopGameLoader() {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
-  const onPlaceTower = (row: number, col: number, towerId: string) => onLocalAction('build', { row, col, towerId });
-  const onUpgradeTower = (upgradeId: string) => focusedTower && onLocalAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
-  const onSellTower = () => focusedTower && onLocalAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
-  const onElementPick = (element: Element) => onLocalAction('pick_element', { element });
-  const handleStartNextWaveNow = () => onLocalAction('start_wave_now', {});
+  const onPlaceTower = (row: number, col: number, towerId: string) => dispatchAction('build', { row, col, towerId });
+  const onUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+  const onSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
+  const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
+  const handleStartNextWaveNow = () => dispatchAction('start_wave_now', {});
   const onSelectTowerToBuild = (tower: Tower | null) => {
     cancelInteractions();
     setSelectedTowerToBuild(tower);

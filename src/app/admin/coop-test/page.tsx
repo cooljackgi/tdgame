@@ -1,34 +1,43 @@
 
+
 // src/app/admin/coop-test/page.tsx
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { addDoc, collection, serverTimestamp, getDoc, updateDoc, doc } from 'firebase/firestore';
 import { db, functions, auth, onAuthStateChanged } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 import { Button } from '@/components/ui/button';
-import { Loader2, TestTube2, Home, RefreshCw } from 'lucide-react';
+import { Loader2, TestTube2, Home, RefreshCw, Link2 } from 'lucide-react';
 import { difficultyModifiers } from '@/lib/game-data/constants';
 import type { Player } from '@/lib/game-data/types';
 import Link from 'next/link';
 import { httpsCallable } from 'firebase/functions';
 import CoopGame from '@/app/game/[gameId]/page';
+import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
 
 const CLIENT_UID = 'test-client-uid';
 const TEST_GAME_ID_KEY = 'coop-test-game-id';
 
 export default function CoopTestPage() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const { toast } = useToast();
+
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadingMessage, setLoadingMessage] = useState("Authentifiziere Test-Benutzer...");
     const [error, setError] = useState<string | null>(null);
-    const [testGameId, setTestGameId] = useState<string | null>(null);
+    const [testGameId, setTestGameId] = useState<string | null>(searchParams.get('gameId'));
+    const [inviteUrl, setInviteUrl] = useState('');
 
     useEffect(() => {
         const handleAuthState = (currentUser: User | null) => {
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' && !currentUser) {
                 const devUser: User = {
-                    uid: 'dev-user-id',
+                    uid: 'dev-user-id-' + Math.random().toString(36).slice(2),
                     displayName: 'Host-Spieler',
                     email: 'host@example.com',
                     photoURL: `https://i.pravatar.cc/150?u=dev-user-id`,
@@ -53,17 +62,6 @@ export default function CoopTestPage() {
         setLoadingMessage("Erstelle neues Test-Spiel...");
         setError(null);
 
-        // Altes Spiel löschen, falls vorhanden
-        const oldGameId = localStorage.getItem(TEST_GAME_ID_KEY);
-        if (oldGameId) {
-            try {
-                const deleteTestGameCallable = httpsCallable(functions, 'deleteTestGame');
-                await deleteTestGameCallable({ gameId: oldGameId });
-            } catch (e) {
-                console.warn("Could not delete previous test game:", e);
-            }
-        }
-
         try {
             const gameName = `[COOP-TEST] ${new Date().toLocaleTimeString()}`;
             const difficulty = 'Normal';
@@ -71,10 +69,10 @@ export default function CoopTestPage() {
             
             const player1Data: Player = {
                 id: 'player1',
-                name: 'Host-Spieler',
+                name: hostUser.displayName || 'Host-Spieler',
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
-                avatarUrl: `https://i.pravatar.cc/150?u=${hostUser.uid}`,
+                avatarUrl: hostUser.photoURL || `https://i.pravatar.cc/150?u=${hostUser.uid}`,
             };
 
             const gameDocRef = await addDoc(collection(db, 'games'), {
@@ -84,7 +82,7 @@ export default function CoopTestPage() {
                 difficulty: difficulty,
                 gameState: { lives: difficultyMod.startLives },
                 players: { player1: player1Data, player2: null },
-                members: { [hostUser.uid]: true, [CLIENT_UID]: true },
+                members: { [hostUser.uid]: true },
                 gameStatus: 'waiting',
                 currentWave: 0,
                 isIntermission: true,
@@ -96,13 +94,15 @@ export default function CoopTestPage() {
                 isTestGame: true, 
             });
             
-            const joinGameCallable = httpsCallable(functions, 'joinGame');
-            await joinGameCallable({ gameId: gameDocRef.id });
+            // Update URL without reloading the page
+            const newUrl = `${window.location.pathname}?gameId=${gameDocRef.id}`;
+            window.history.pushState({ path: newUrl }, '', newUrl);
 
-            await updateDoc(gameDocRef, { gameStatus: 'playing' });
-            
-            localStorage.setItem(TEST_GAME_ID_KEY, gameDocRef.id);
             setTestGameId(gameDocRef.id);
+            setInviteUrl(window.location.href);
+            
+            // Client does not auto-join in this setup anymore.
+            // Host waits for client to join via invite link.
 
         } catch (e: any) {
             console.error("Failed to create test game:", e);
@@ -117,22 +117,24 @@ export default function CoopTestPage() {
 
         const initialize = async () => {
             setIsLoading(true);
-            setLoadingMessage("Prüfe auf laufendes Test-Spiel...");
-            const existingGameId = localStorage.getItem(TEST_GAME_ID_KEY);
+            setLoadingMessage("Prüfe auf existierendes Spiel...");
+            const gameIdFromUrl = searchParams.get('gameId');
 
-            if (existingGameId) {
-                const gameRef = doc(db, 'games', existingGameId);
-                const gameSnap = await getDoc(gameRef);
+            if (gameIdFromUrl) {
+                 const gameRef = doc(db, 'games', gameIdFromUrl);
+                 const gameSnap = await getDoc(gameRef);
 
                 if (gameSnap.exists() && gameSnap.data().isTestGame) {
-                    setTestGameId(existingGameId);
+                    setTestGameId(gameIdFromUrl);
+                    setInviteUrl(window.location.href);
                     setLoadingMessage("Verbinde mit existierendem Test-Spiel...");
                 } else {
-                    // Spiel existiert nicht mehr, erstelle ein neues
-                    await createTestGame(user);
+                     setError("Das Spiel in der URL wurde nicht gefunden oder ist kein Test-Spiel.");
+                     setLoading(false);
+                     return;
                 }
             } else {
-                // Kein Spiel gespeichert, erstelle ein neues
+                // Kein Spiel in der URL, also sind wir der Host und erstellen eins
                 await createTestGame(user);
             }
             setIsLoading(false);
@@ -140,15 +142,23 @@ export default function CoopTestPage() {
 
         initialize();
 
-    }, [user, createTestGame]);
+    }, [user, createTestGame, searchParams]);
 
 
     const handleRecreate = () => {
         if (user) {
+            // Remove gameId from URL to trigger creation
+            const newUrl = window.location.pathname;
+            window.history.pushState({ path: newUrl }, '', newUrl);
             createTestGame(user);
         } else {
             setError("Authentifizierung läuft, bitte warten.");
         }
+    }
+
+    const copyInviteLink = () => {
+        navigator.clipboard.writeText(inviteUrl);
+        toast({ title: "Einladungslink kopiert!" });
     }
 
     return (
@@ -181,9 +191,16 @@ export default function CoopTestPage() {
             {error && <div className="text-destructive text-center">{error}</div>}
 
             {!isLoading && testGameId && user && (
-                <div className="flex-grow min-h-0">
-                    <CoopGame key={testGameId} />
-                </div>
+                <>
+                    <div className="flex justify-center items-center gap-2">
+                       <p className="text-sm text-muted-foreground">Teile diesen Link mit deinem Testpartner:</p>
+                       <Input readOnly value={inviteUrl} className="max-w-md h-9" />
+                       <Button onClick={copyInviteLink} size="sm"><Link2 className="mr-2 h-4 w-4"/> Kopieren</Button>
+                    </div>
+                    <div className="flex-grow min-h-0">
+                        <CoopGame key={testGameId} />
+                    </div>
+                </>
             )}
         </main>
     );
