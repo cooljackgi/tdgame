@@ -128,7 +128,7 @@ type GameBoardProps = {
 
 type LiveAttack = Attack & { _vfx: { start: number; life: number; fromPx: {x:number, y:number}; toPx: {x:number,y:number} } };
 type LiveDamageNumber = DamageNumber & { start: number; life: number; };
-type LiveSplashRing = SplashRing & { start: time: number; life: number; };
+type LiveSplashRing = SplashRing & { start: number; life: number; };
 
 function createPool<T extends {id: string}>(size: number) {
     const pool: (T & { _active: boolean })[] = Array.from({ length: size }, () => ({ _active: false } as any));
@@ -688,12 +688,21 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const moved = Math.hypot(dx, dy) > 5;
   
     if (moved) return;
-    e.stopPropagation(); // Prevent card click from firing if we're just panning a little
-  
+    
+    // This is the important change: stop the event from bubbling up to parent containers
+    e.stopPropagation(); 
+
     if (hoveredCell && selectedTowerToBuild) {
-      handlePlaceTower(hoveredCell.row, hoveredCell.col);
-    } else if (!selectedTowerToBuild) {
-      cancelInteractions();
+        handlePlaceTower(hoveredCell.row, hoveredCell.col);
+    } else if (hoveredCell && !selectedTowerToBuild) {
+        const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
+        if (towerAtCell) {
+            onFocusTower(towerAtCell);
+        } else {
+            cancelInteractions();
+        }
+    } else {
+        cancelInteractions();
     }
   };
   
@@ -775,6 +784,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const duration = performance.now() - start.time;
 
     if (dist < 10 && duration < 200) { // It's a tap
+        e.stopPropagation();
         if (hoveredCell && selectedTowerToBuild) {
             handlePlaceTower(hoveredCell.row, hoveredCell.col);
         } else if (hoveredCell && !selectedTowerToBuild) {
