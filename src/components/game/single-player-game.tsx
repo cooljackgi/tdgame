@@ -2,15 +2,22 @@
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { GameSession } from '@/components/game/game-session';
 import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import { waves } from '@/lib/game-data/enemies';
+import { waves, generateProceduralWave, waveFormulaCoefficients } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
 import { audioManager } from '@/lib/audio/audio-manager';
 import type { GameBoardHandle } from './game-board';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { DesktopLayout } from '@/components/layouts/desktop-layout';
+import { MobileLayout } from '@/components/layouts/mobile-layout';
+import { ElementPickDialog } from './element-pick-dialog';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import ScoreboardMiniMap from './ScoreboardMiniMap';
 
 
 export default function SinglePlayerGame({
@@ -29,6 +36,7 @@ export default function SinglePlayerGame({
     user: User | null
 }) {
     const { toast } = useToast();
+    const isMobile = useIsMobile();
 
     // --- Core Game State ---
     const [players, setPlayers] = useState<Player[]>([]);
@@ -38,12 +46,18 @@ export default function SinglePlayerGame({
     const [difficulty, setDifficulty] = useState(initialDifficulty);
     const [enemies, setEnemies] = useState<Enemy[]>([]);
     const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('playing');
+    const [currentPath, setCurrentPath] = useState<Node[]>([]);
+    const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
+    const [hasInteracted, setHasInteracted] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+    const [finalGameResult, setFinalGameResult] = useState<any | null>(null);
+
 
     // --- VFX State ---
     const [attacks, setAttacks] = useState<Attack[]>([]);
@@ -51,16 +65,16 @@ export default function SinglePlayerGame({
     const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     
+    // --- Stats State ---
+    const [totalKilled, setTotalKilled] = useState(0);
+    const [totalLeaked, setTotalLeaked] = useState(0);
+
     // --- Game Loop Refs ---
     const gameLoopRef = useRef<number>();
     const lastTickRef = useRef(performance.now());
     const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
     const enemyIdCounter = useRef(0);
     const gameBoardRef = useRef<GameBoardHandle>(null);
-
-    const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
-    const [currentPath, setCurrentPath] = useState<Node[]>([]);
-
 
     // --- Refs for stable access in game loop ---
     const playersRef = useRef(players);
@@ -83,7 +97,7 @@ export default function SinglePlayerGame({
     useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
 
 
-    useMemo(() => {
+    useEffect(() => {
         if (initialSavedGame) {
             setPlayers([initialSavedGame.players.player1]);
             setGameState(initialSavedGame.gameState);
@@ -117,6 +131,7 @@ export default function SinglePlayerGame({
     }, [initialSavedGame, initialDifficulty, user]);
     
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
+    const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
     const onFocusTower = (tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
@@ -132,12 +147,10 @@ export default function SinglePlayerGame({
         setFocusedTower(null);
         setSelectedTowerToBuild(tower);
     }
-
-    const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
-
-    const handlePlaceTower = useCallback((row: number, col: number) => {
+    
+    const handlePlaceTower = useCallback((row: number, col: number, towerId: string) => {
         const player = localPlayerRef.current;
-        const towerSpec = selectedTowerToBuild;
+        const towerSpec = initialTowers.find(t => t.id === towerId);
 
         if (!player || !towerSpec) return;
 
@@ -171,23 +184,20 @@ export default function SinglePlayerGame({
         setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - towerSpec.cost }]);
         setCurrentPath(path);
-        // Update path for existing enemies
-        setEnemies(prevEnemies => prevEnemies.map(e => ({ ...e, path: path })));
+        setEnemies(prevEnemies => prevEnemies.map(e => ({ ...e, path })));
 
         setJustPlacedTowerId(newTower.id);
         setFocusedTower(newTower);
         setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [toast, selectedTowerToBuild]);
+    }, [toast]);
 
-    const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string) => {
+    const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
-        const cellKey = `${row}_${col}`;
-        const focusedTower = towersByCellRef.current[cellKey];
-
         if (!player || !focusedTower) return;
         
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
         if (!upgradeTowerSpec) return;
         
@@ -208,22 +218,20 @@ export default function SinglePlayerGame({
         setFocusedTower(newPlacedTower);
         setLastUpgradedTowerId(newPlacedTower.id);
         setTimeout(() => setLastUpgradedTowerId(null), 500);
-    }, [toast]);
+    }, [toast, focusedTower]);
 
-    const handleSellTower = useCallback((row: number, col: number) => {
+    const handleSellTower = useCallback(() => {
         const player = localPlayerRef.current;
-        const cellKey = `${row}_${col}`;
-        const focusedTower = towersByCellRef.current[cellKey];
-
         if (!player || !focusedTower) return;
-
+        
+        const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const refund = Math.round(focusedTower.cost * refundPercentage);
         
         setTowersByCell(prev => { const newTowers = { ...prev }; delete newTowers[cellKey]; return newTowers; });
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + refund }]);
         setFocusedTower(null);
-    }, []);
+    }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
         setPlayers(prev => [{ ...prev[0], unlockedElements: [...prev[0].unlockedElements, element] }]);
@@ -237,8 +245,14 @@ export default function SinglePlayerGame({
         setGameStatus('gameover');
         if (!isCheating) {
             localStorage.removeItem(LOCAL_STORAGE_KEY);
+            if (user?.uid) {
+                 try {
+                    await addDoc(collection(db, "scores"), { ...result, date: serverTimestamp() });
+                } catch(e) { console.error("Failed to save score", e); }
+            }
         }
-    }, [isCheating]);
+        setFinalGameResult({ ...result, date: new Date().toISOString() });
+    }, [isCheating, user]);
 
     const handleStartNextWaveNow = useCallback(() => {
       if (spawnerStateRef.current || enemiesRef.current.length > 0) return;
@@ -270,14 +284,13 @@ export default function SinglePlayerGame({
             const isCurrentlyIntermission = !spawnerStateRef.current && enemiesRef.current.length === 0;
 
             if (isCurrentlyIntermission) {
-                setWaveStartCountdown(prev => {
-                    const newTime = prev - delta / 1000;
-                    if (newTime <= 0) {
-                        handleStartNextWaveNow();
-                        return 0;
-                    }
-                    return newTime;
-                });
+                const newTime = waveStartCountdown - delta / 1000;
+                 if (newTime <= 0) {
+                    handleStartNextWaveNow();
+                    setWaveStartCountdown(0);
+                 } else {
+                    setWaveStartCountdown(newTime);
+                 }
             }
 
 
@@ -318,7 +331,6 @@ export default function SinglePlayerGame({
             const newDamageNumbers: DamageNumber[] = [];
             const newFiringTowerIds = new Set<string>();
 
-            // Tower attack logic
             for (const tower of Object.values(towersByCellRef.current)) {
                 if (now - tower.lastAttack >= tower.attackSpeed && enemiesRef.current.length > 0) {
                     let target: Enemy | null = null;
@@ -356,7 +368,7 @@ export default function SinglePlayerGame({
                             amount: damage,
                             targetId: target.id,
                             color: '#ffffff',
-                        });
+                        } as DamageNumber);
                     }
                 }
             }
@@ -399,7 +411,7 @@ export default function SinglePlayerGame({
                             const damage = (burnEffect.potency ?? 0) * updatedEnemy.maxHealth;
                             updatedEnemy.health -= damage;
                             burnEffect.lastTick = now;
-                            newDamageNumbers.push({ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' });
+                            newDamageNumbers.push({ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
                         }
                     }
                     updatedEnemy.wasHit = false;
@@ -416,12 +428,14 @@ export default function SinglePlayerGame({
                 }
 
                 if (livesLost > 0) {
+                    setTotalLeaked(prev => prev + livesLost);
                     setGameState(prev => ({...prev, lives: prev.lives - livesLost }));
                     if (gameStateRef.current.lives - livesLost <= 0) {
-                        onGameEnd({ /* ... */ });
+                        onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anonymous', difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
                     }
                 }
                 if (resourcesGained > 0) {
+                    setTotalKilled(prev => prev + (prevEnemies.length - stillAlive.length - livesLost));
                     setPlayers(prev => [{...prev[0], resources: prev[0].resources + resourcesGained}]);
                 }
                 return stillAlive;
@@ -439,14 +453,7 @@ export default function SinglePlayerGame({
                     setWaveStartCountdown(INTERMISSION_TIME);
                   }
                 } else {
-                    onGameEnd({
-                      playerName: localPlayerRef.current?.name || 'Spieler',
-                      playerUid: user?.uid || 'anonymous',
-                      difficulty: difficultyRef.current,
-                      wave: currentWaveRef.current + 1,
-                      won: true,
-                      finalTowers: towersByCellRef.current
-                    });
+                    onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anonymous', difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: true, finalTowers: towersByCellRef.current });
                 }
             }
             
@@ -457,53 +464,90 @@ export default function SinglePlayerGame({
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
     }, []);
-    
-    const onUpgradeTowerAction = (row: number, col: number, upgradeId: string) => {
-        handleUpgradeTower(row, col, upgradeId);
-    };
 
-    const onSellTowerAction = (row: number, col: number) => {
-        handleSellTower(row, col);
-    };
+    const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+    
+    if (!localPlayer) return null;
+    
+    const isIntermission = !spawnerStateRef.current && enemies.length === 0;
+    const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
     
     return (
-        <GameSession
-            isCoop={false}
-            isGameHost={true}
-            localPlayerId="player1"
-            isCheating={isCheating}
-            user={user}
-            allTowers={initialTowers}
-            players={players}
-            setPlayers={setPlayers}
-            gameState={gameState}
-            setGameState={setGameState}
-            towersByCell={towersByCell}
-            setTowersByCell={setTowersByCell}
-            enemies={enemies}
-            setEnemies={setEnemies}
-            currentWave={currentWave}
-            setCurrentWave={setCurrentWave}
-            difficulty={difficulty}
-            gameStatus={gameStatus}
-            setGameStatus={setGameStatus}
-            initialEnemies={enemies}
-            onExit={onExit}
-            onFocusTower={onFocusTower}
-            cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={onSelectTowerToBuild}
-            onElementPick={handleElementPick}
-            onStartNextWaveNow={handleStartNextWaveNow}
-            waveStartCountdown={Math.ceil(waveStartCountdown)}
-            justPlacedTowerId={justPlacedTowerId}
-            lastUpgradedTowerId={lastUpgradedTowerId}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
-            onPlaceTower={handlePlaceTower}
-            onUpgradeTower={(upgradeId) => focusedTower && handleUpgradeTower(focusedTower.position.row, focusedTower.position.col, upgradeId)}
-            onSellTower={() => focusedTower && handleSellTower(focusedTower.position.row, focusedTower.position.col)}
-            gameBoardRef={gameBoardRef}
-            attacks={attacks}
-        />
+        <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
+            <LayoutComponent
+                players={players} 
+                setPlayers={setPlayers} 
+                gameState={gameState} 
+                localPlayer={localPlayer}
+                currentWave={currentWave} 
+                totalWaves={waves.length} 
+                difficulty={difficulty} 
+                handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')} 
+                gameStatus={gameStatus} 
+                resetGame={onExit}
+                towers={initialTowers} 
+                setTowers={() => {}} 
+                placedTowers={placedTowers} 
+                enemies={enemies} 
+                damageNumbers={damageNumbers} 
+                splashRings={splashRings}
+                currentPath={currentPath} 
+                handlePlaceTower={(row, col) => handlePlaceTower(row, col, selectedTowerToBuild!.id)}
+                onFocusTower={onFocusTower} 
+                selectedTowerToBuild={selectedTowerToBuild}
+                focusedTower={focusedTower}
+                gameBoardRef={gameBoardRef}
+                interactionPrompt={interactionPrompt} 
+                cancelInteractions={cancelInteractions}
+                onSelectTowerToBuild={onSelectTowerToBuild} 
+                handleUpgradeTower={handleUpgradeTower}
+                handleSellTower={handleSellTower}
+                setFocusedTower={setFocusedTower}
+                spawnedThisWave={spawnerStateRef.current?.count || 0}
+                totalEnemiesInWave={spawnerStateRef.current?.waveData.count || 0}
+                totalKilled={totalKilled}
+                totalLeaked={totalLeaked}
+                isIntermission={isIntermission} 
+                waveStartCountdown={Math.ceil(waveStartCountdown)}
+                intermissionTime={INTERMISSION_TIME} 
+                handleStartNextWaveNow={handleStartNextWaveNow}
+                lastUpgradedTowerId={lastUpgradedTowerId}
+                justPlacedTowerId={justPlacedTowerId}
+                isCoop={false} 
+                playerRole="player1"
+                handleLoadTestLayout={() => {}} 
+                handleLoadAllTowersLayout={() => {}}
+                isCheating={isCheating} 
+                cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
+                cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
+                cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
+                cheat_unlockAll={() => {}}
+                firingTowerIds={firingTowerIds} 
+                allTowers={initialTowers}
+            />
+
+            <AlertDialog open={gameStatus === 'gameover'}>
+                <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{gameState.lives > 0 ? "Sieg!" : "Game Over"}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                    {gameState.lives <= 0 ? "Du hast alle Leben verloren." : "Herzlichen Glückwunsch, du hast alle Wellen besiegt!"} Du hast Welle {currentWave + 1} erreicht.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                {(finalGameResult)?.finalTowers && (
+                    <div className="flex flex-col items-center gap-2"><p className="text-sm font-semibold text-muted-foreground">Dein finales Spielfeld:</p><ScoreboardMiniMap towersByCell={(finalGameResult)!.finalTowers!} /></div>
+                )}
+                <AlertDialogFooter><AlertDialogAction onClick={onExit}>Zum Hauptmenü</AlertDialogAction></AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            
+            <ElementPickDialog
+                isOpen={gameStatus === 'picking-element'}
+                unlockedElements={new Set(localPlayer.unlockedElements)}
+                onElementPick={handleElementPick}
+                playerName={localPlayer.name}
+                currentWave={currentWave}
+            />
+        </div>
     );
 }

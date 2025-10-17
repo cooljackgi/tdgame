@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import type { User } from 'firebase/auth';
 import { onAuthStateChanged, auth, functions } from '@/lib/firebase';
@@ -9,27 +9,35 @@ import { doc, onSnapshot, Unsubscribe, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, GameDelta, Tower } from '@/lib/game-data/types';
-import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, LOCAL_STORAGE_KEY } from '@/lib/game-data/constants';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, GameDelta, Tower, Element, Node, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
+import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
-import { GameSession } from './game-session';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import { useWebRTC, type NetMsg } from '@/hooks/use-webrtc';
+import { useWebRTC } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { DesktopLayout } from '@/components/layouts/desktop-layout';
+import { MobileLayout } from '@/components/layouts/mobile-layout';
+import { waves } from '@/lib/game-data/enemies';
+import type { GameBoardHandle } from './game-board';
+import { ElementPickDialog } from './element-pick-dialog';
 
 
 export default function CoopGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
   const router = useRouter();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Core Game State
   const [players, setPlayers] = useState<Player[]>([]);
   const [gameState, setGameState] = useState<GameState>({ lives: 20 });
   const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
+  const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
@@ -38,127 +46,85 @@ export default function CoopGameLoader() {
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
   const [gameDataLoaded, setGameDataLoaded] = useState(false);
   
+  // UI State
+  const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+  const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
+  const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
+  const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
+  const gameBoardRef = useRef<GameBoardHandle>(null);
+
+  // VFX State
+  const [attacks, setAttacks] = useState<Attack[]>([]);
+  const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
+  const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
+  const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
+  
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
+  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
+  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, placedTowers.map(t => t.position), 12, 12) || [], [placedTowers]);
+  const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
 
-  const handleGameData = useCallback((msg: NetMsg) => {
-    // Only client should process game data from host
-    if (!isGameHost && msg.type === 'GAME_DELTAS') {
-      applyDeltas(msg.payload);
+  const onFocusTower = (tower: PlacedTower) => {
+    setSelectedTowerToBuild(null);
+    setFocusedTower(tower);
+  };
+
+  const cancelInteractions = () => {
+    setSelectedTowerToBuild(null);
+    setFocusedTower(null);
+  };
+  
+  const handleGameData = useCallback((msg: any) => {
+    if (isGameHost) return;
+    const { type, payload } = msg;
+
+    switch(type) {
+      case 'GAME_STATE_SNAPSHOT':
+        setPlayers(payload.players);
+        setEnemies(payload.enemies);
+        setTowersByCell(payload.towersByCell);
+        setGameState(payload.gameState);
+        setCurrentWave(payload.currentWave);
+        setIsIntermission(payload.isIntermission);
+        setWaveStartCountdown(payload.waveStartCountdown);
+        setGameStatus(payload.gameStatus);
+        break;
+      case 'VFX_ATTACK':
+        setAttacks(prev => [...prev, ...payload]);
+        break;
+      case 'VFX_DAMAGE_NUMBER':
+        setDamageNumbers(prev => [...prev, ...payload]);
+        break;
+      case 'VFX_SPLASH':
+        setSplashRings(prev => [...prev, ...payload]);
+        break;
+      case 'VFX_TOWER_FIRING':
+        setFiringTowerIds(new Set(payload));
+        setTimeout(() => setFiringTowerIds(new Set()), 150);
+        break;
+      case 'TOWER_UPGRADE_VFX':
+        setLastUpgradedTowerId(payload.towerId);
+        setTimeout(() => setLastUpgradedTowerId(null), 500);
+        break;
     }
   }, [isGameHost]);
 
-  const handleActionData = useCallback((msg: NetMsg) => {
-    // Only host should process actions from client
-    if (isGameHost && msg.payload.playerId !== 'player1') {
-      const { action, payload, playerId } = msg;
-      const { row, col, towerId, upgradeId } = payload;
-      
-      switch (action) {
-          case 'BUILD_TOWER':
-              handleRequestBuildTower(row, col, towerId, playerId);
-              break;
-          case 'UPGRADE_TOWER':
-              handleRequestUpgradeTower(row, col, upgradeId, playerId);
-              break;
-          case 'SELL_TOWER':
-              handleRequestSellTower(row, col, playerId);
-              break;
-      }
-    }
-  }, [isGameHost]);
+  const handleActionData = useCallback((msg: any) => {
+    // Host logic for actions will be here
+  }, []);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
 
-  const applyDeltas = useCallback((deltas: GameDelta[]) => {
-      // Placeholder for client-side delta application
-  }, []);
-
-  const handleRequestBuildTower = (row: number, col: number, towerId: string, playerId: 'player1' | 'player2') => {
-      if(!isGameHost) return; // Only host validates
-      const player = players.find(p => p.id === playerId);
-      const towerSpec = initialTowers.find(t => t.id === towerId);
-      
-      if (!player || !towerSpec || player.resources < towerSpec.cost) return;
-
-      const cellKey = `${row}_${col}`;
-      if (towersByCell[cellKey]) return;
-
-      const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
-      if (!findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...currentPlacedTowers, {row, col}], GRID_ROWS, GRID_COLS)) {
-        return;
+  // This is the function clients call to request an action from the host
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+      if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
+      const actionTypeMap = {
+        build: 'BUILD_TOWER_REQUEST',
+        upgrade: 'UPGRADE_TOWER_REQUEST',
+        sell: 'SELL_TOWER_REQUEST'
       }
-
-      // If valid, update host state (which will then be broadcast via deltas)
-      const newTower: PlacedTower = JSON.parse(JSON.stringify({
-          ...towerSpec, id: `tower-${row}-${col}-${Date.now()}`, specId: towerSpec.id,
-          position: { row, col }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: player.id,
-      }));
-      
-      const newTowersByCell = { ...towersByCell, [cellKey]: newTower };
-      const newPlayers = players.map(p => p.id === playerId ? {...p, resources: p.resources - newTower.cost} : p);
-
-      if(gameId) {
-          updateDoc(doc(db, 'games', gameId), {
-              towersByCell: newTowersByCell,
-              players: { player1: newPlayers[0], player2: newPlayers[1] }
-          });
-      }
-  };
-
-  const handleRequestUpgradeTower = (row: number, col: number, upgradeId: string, playerId: 'player1' | 'player2') => {
-      if(!isGameHost) return;
-      const player = players.find(p => p.id === playerId);
-      const cellKey = `${row}_${col}`;
-      const focusedTower = towersByCell[cellKey];
-
-      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
-
-      const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
-      if (!upgradeTowerSpec) return;
-
-      const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
-      const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
-
-      if (player.resources < cost) return;
-
-      const newPlacedTower: PlacedTower = JSON.parse(JSON.stringify({ 
-          ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
-      }));
-      
-      const newTowersByCell = {...towersByCell, [cellKey]: newPlacedTower };
-      const newPlayers = players.map(p => p.id === playerId ? {...p, resources: p.resources - cost} : p);
-      
-      if(gameId) {
-          updateDoc(doc(db, 'games', gameId), {
-              towersByCell: newTowersByCell,
-              players: { player1: newPlayers[0], player2: newPlayers[1] }
-          });
-      }
-  };
-  
-  const handleRequestSellTower = (row: number, col: number, playerId: 'player1' | 'player2') => {
-      if(!isGameHost) return;
-      const player = players.find(p => p.id === playerId);
-      const cellKey = `${row}_${col}`;
-      const focusedTower = towersByCell[cellKey];
-
-      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
-
-      const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
-      const refund = Math.round(focusedTower.cost * refundPercentage);
-
-      const newTowersByCell = { ...towersByCell };
-      delete newTowersByCell[cellKey];
-      const newPlayers = players.map(p => p.id === playerId ? {...p, resources: p.resources + refund} : p);
-      
-       if(gameId) {
-          updateDoc(doc(db, 'games', gameId), {
-              towersByCell: newTowersByCell,
-              players: { player1: newPlayers[0], player2: newPlayers[1] }
-          });
-      }
-  };
-
+      sendAction(actionTypeMap[action], { ...payload, playerId: localPlayerId });
+  }, [localPlayerId, isGameHost, sendAction]);
 
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
@@ -195,13 +161,17 @@ export default function CoopGameLoader() {
 
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
-                setPlayers(normalizePlayers(gameData.players));
-                setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
-                setGameStatus(gameData.gameStatus || 'waiting');
-                setCurrentWave(gameData.currentWave || 0);
-                setIsIntermission(gameData.isIntermission ?? true);
-                setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
-                setTowersByCell(gameData.towersByCell || {});
+                
+                // Only host reads from Firestore directly. Client gets data from WebRTC.
+                if (currentRole === 'player1') {
+                    setPlayers(normalizePlayers(gameData.players));
+                    setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
+                    setTowersByCell(gameData.towersByCell || {});
+                    setCurrentWave(gameData.currentWave || 0);
+                    setIsIntermission(gameData.isIntermission ?? true);
+                    setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
+                    setGameStatus(gameData.gameStatus || 'waiting');
+                }
                 
                 setGameDataLoaded(true);
                 setLoading(false);
@@ -239,55 +209,87 @@ export default function CoopGameLoader() {
     return () => authUnsubscribe();
   }, [router, toast]);
   
-
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-      if (!localPlayerId || localPlayerId === 'spectator') return;
-
-      const fullPayload = { ...payload, playerId: localPlayerId };
-      
-      if (isGameHost) {
-          // Host executes action directly
-           const { row, col, towerId, upgradeId } = payload;
-            switch(action) {
-                case 'build': handleRequestBuildTower(row, col, towerId, localPlayerId); break;
-                case 'upgrade': handleRequestUpgradeTower(row, col, upgradeId, localPlayerId); break;
-                case 'sell': handleRequestSellTower(row, col, localPlayerId); break;
-            }
-      } else {
-          // Client sends action to host
-          sendAction(action.toUpperCase() + '_TOWER', fullPayload);
-      }
-  }, [localPlayerId, isGameHost, sendAction]);
-  
-  if (loading || !gameDataLoaded || !localPlayerId || players.length === 0) {
+  if (loading || !gameDataLoaded || !localPlayerId || players.length === 0 || !localPlayer) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
-  const activeUser = user || { displayName: 'Spieler', photoURL: null, uid: 'unknown-uid' };
+  const onPlaceTower = (row: number, col: number, towerId: string) => onLocalAction('build', { row, col, towerId });
+  const onUpgradeTower = (upgradeId: string) => focusedTower && onLocalAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+  const onSellTower = () => focusedTower && onLocalAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
+  const onElementPick = (element: Element) => onLocalAction('pick_element', { element });
+  const handleStartNextWaveNow = () => onLocalAction('start_wave_now', {});
+  const onSelectTowerToBuild = (tower: Tower | null) => {
+    cancelInteractions();
+    setSelectedTowerToBuild(tower);
+  };
+  
+  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
 
   return (
-    <GameSession 
-        initialPlayers={players}
-        initialGameState={gameState}
-        initialTowersByCell={towersByCell}
-        initialEnemies={[]} // Enemies are managed by the host
-        initialCurrentWave={currentWave}
-        initialDifficulty={difficulty}
-        initialIsIntermission={isIntermission}
-        initialWaveStartCountdown={waveStartCountdown}
-        isCoop={true}
-        isGameHost={isGameHost}
-        localPlayerId={localPlayerId}
-        user={activeUser as User}
-        onExit={() => router.push('/')}
-        onLocalAction={onLocalAction}
-        allTowers={initialTowers}
-        isWsConnected={isConnected}
-        hostPacketsPerSecond={isGameHost ? stats.sentPacketsPerSecond : stats.packetsPerSecond}
-        hostBytesSentPerSecond={isGameHost ? stats.sentBytesPerSecond : stats.bytesPerSecond}
-        clientPacketsPerSecond={!isGameHost ? stats.sentPacketsPerSecond : stats.packetsPerSecond}
-        clientBytesReceivedPerSecond={!isGameHost ? stats.sentBytesPerSecond : stats.bytesPerSecond}
-        averagePacketSize={stats.averagePacketSize}
-    />
+    <div className="flex flex-col h-full bg-background text-foreground font-body">
+      <LayoutComponent
+          players={players} 
+          setPlayers={setPlayers} 
+          gameState={gameState} 
+          localPlayer={localPlayer}
+          currentWave={currentWave} 
+          totalWaves={waves.length} 
+          difficulty={difficulty} 
+          handleGameControl={() => {}} 
+          gameStatus={gameStatus} 
+          resetGame={() => router.push('/')}
+          towers={initialTowers} 
+          setTowers={() => {}} 
+          placedTowers={placedTowers} 
+          enemies={enemies} 
+          damageNumbers={damageNumbers} 
+          splashRings={splashRings}
+          currentPath={currentPath} 
+          handlePlaceTower={onPlaceTower}
+          onFocusTower={onFocusTower} 
+          selectedTowerToBuild={selectedTowerToBuild}
+          focusedTower={focusedTower}
+          gameBoardRef={gameBoardRef}
+          interactionPrompt={""} 
+          cancelInteractions={cancelInteractions}
+          onSelectTowerToBuild={onSelectTowerToBuild} 
+          handleUpgradeTower={onUpgradeTower}
+          handleSellTower={onSellTower}
+          setFocusedTower={setFocusedTower}
+          spawnedThisWave={0} 
+          totalEnemiesInWave={0}
+          totalKilled={0}
+          totalLeaked={0}
+          isIntermission={isIntermission} 
+          waveStartCountdown={waveStartCountdown}
+          intermissionTime={INTERMISSION_TIME} 
+          handleStartNextWaveNow={handleStartNextWaveNow}
+          lastUpgradedTowerId={lastUpgradedTowerId}
+          justPlacedTowerId={justPlacedTowerId}
+          isCoop={true} 
+          playerRole={localPlayerId}
+          handleLoadTestLayout={() => {}} 
+          handleLoadAllTowersLayout={() => {}}
+          isCheating={false} 
+          cheat_unlockAll={() => {}}
+          firingTowerIds={firingTowerIds} 
+          allTowers={initialTowers}
+          isWsConnected={isConnected} 
+          hostPacketsPerSecond={stats.sentPacketsPerSecond} 
+          hostBytesSentPerSecond={stats.sentBytesPerSecond}
+          clientPacketsPerSecond={stats.packetsPerSecond}
+          clientBytesReceivedPerSecond={stats.bytesPerSecond}
+          averagePacketSize={stats.averagePacketSize}
+        />
+        {localPlayer && (
+            <ElementPickDialog
+                isOpen={gameStatus === 'picking-element' && localPlayer.id === 'player1'}
+                unlockedElements={new Set(localPlayer.unlockedElements)}
+                onElementPick={onElementPick}
+                playerName={localPlayer.name}
+                currentWave={currentWave}
+            />
+        )}
+    </div>
   );
 }
