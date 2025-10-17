@@ -403,26 +403,32 @@ export function GameSession(props: GameSessionProps) {
 
 
   const handlePlaceTower = (row: number, col: number) => {
-      if (selectedTowerToBuild && props.onPlaceTower) {
-        props.onPlaceTower(row, col, selectedTowerToBuild.id);
-      } else if(selectedTowerToBuild) {
-        props.onLocalAction('build', { row, col, towerId: selectedTowerToBuild!.id })
+      if (selectedTowerToBuild) {
+        if (props.onPlaceTower) {
+            props.onPlaceTower(row, col, selectedTowerToBuild.id);
+        } else {
+            props.onLocalAction('build', { row, col, towerId: selectedTowerToBuild.id });
+        }
       }
   }
 
   const handleUpgradeTower = (upgradeId: string) => {
-      if(focusedTower && props.onUpgradeTower) {
-        props.onUpgradeTower(focusedTower, upgradeId);
-      } else if (focusedTower) {
-        props.onLocalAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+      if(focusedTower) {
+        if (props.onUpgradeTower) {
+            props.onUpgradeTower(focusedTower, upgradeId);
+        } else {
+            props.onLocalAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+        }
       }
   };
 
   const handleSellTower = () => {
-    if(focusedTower && props.onSellTower) {
-      props.onSellTower(focusedTower);
-    } else if (focusedTower) {
-      props.onLocalAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col });
+    if(focusedTower) {
+        if (props.onSellTower) {
+            props.onSellTower(focusedTower);
+        } else {
+            props.onLocalAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col });
+        }
     }
   };
 
