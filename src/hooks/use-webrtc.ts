@@ -78,6 +78,14 @@ export function useWebRTC(
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>();
     const helloIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>();
     
+    // Stabilize callbacks with refs to prevent re-renders and circular dependencies
+    const onGameDataMessageRef = useRef(onGameDataMessage);
+    const onActionMessageRef = useRef(onActionMessage);
+    useEffect(() => {
+        onGameDataMessageRef.current = onGameDataMessage;
+        onActionMessageRef.current = onActionMessage;
+    }, [onGameDataMessage, onActionMessage]);
+
     // Stats refs
     const packetCountRef = useRef(0);
     const byteCountRef = useRef(0);
@@ -110,7 +118,7 @@ export function useWebRTC(
             gameDc.addEventListener('close', checkConnection);
             gameDc.onmessage = (event) => {
                 const msg: NetMsg = JSON.parse(event.data);
-                onGameDataMessage(msg);
+                onGameDataMessageRef.current(msg);
                 packetCountRef.current++;
                 byteCountRef.current += event.data.length;
             };
@@ -120,7 +128,7 @@ export function useWebRTC(
             actDc.addEventListener('close', checkConnection);
             actDc.onmessage = (event) => {
                 const msg: NetMsg = JSON.parse(event.data);
-                onActionMessage(msg);
+                onActionMessageRef.current(msg);
                  packetCountRef.current++;
                 byteCountRef.current += event.data.length;
             };
@@ -138,7 +146,7 @@ export function useWebRTC(
                 actDc.removeEventListener('close', checkConnection);
             }
         }
-    }, [gameDataChannel, actionsChannel, onGameDataMessage, onActionMessage]);
+    }, [gameDataChannel, actionsChannel]);
     
     const sendGameData = useCallback((type: string, payload: any) => {
         if (gameDataChannel && gameDataChannel.readyState === 'open') {

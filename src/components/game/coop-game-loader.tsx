@@ -109,6 +109,9 @@ export default function CoopGameLoader() {
     }
   }, [isGameHost]);
 
+    // Create a ref to hold the sendGameData function to break circular dependency
+    const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
+
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
 
@@ -116,7 +119,7 @@ export default function CoopGameLoader() {
         switch(type) {
             case 'CLIENT_READY':
                 // Client is connected and ready, send them the full current game state.
-                sendGameData('GAME_STATE_SNAPSHOT', {
+                sendGameDataRef.current('GAME_STATE_SNAPSHOT', {
                     players: players,
                     enemies: enemies,
                     towersByCell: towersByCell,
@@ -128,10 +131,18 @@ export default function CoopGameLoader() {
                 });
                 break;
         }
-    }, [isGameHost, sendGameData, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
+    // We remove sendGameData from dependencies and use the ref instead.
+    // All other dependencies are state variables that are stable within the host's context.
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
 
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
+
+  // Update the ref whenever the sendGameData function from the hook changes.
+  useEffect(() => {
+    sendGameDataRef.current = sendGameData;
+  }, [sendGameData]);
+
 
   // When the client connects, it should inform the host it's ready.
   useEffect(() => {
