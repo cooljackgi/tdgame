@@ -9,7 +9,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, GameDelta, Tower, Element, Node, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -109,11 +109,37 @@ export default function CoopGameLoader() {
     }
   }, [isGameHost]);
 
-  const handleActionData = useCallback((msg: any) => {
-    // Host logic for actions will be here
-  }, []);
+    const handleActionData = useCallback((msg: any) => {
+        if (!isGameHost) return;
+
+        const { type, payload } = msg;
+        switch(type) {
+            case 'CLIENT_READY':
+                // Client is connected and ready, send them the full current game state.
+                sendGameData('GAME_STATE_SNAPSHOT', {
+                    players: players,
+                    enemies: enemies,
+                    towersByCell: towersByCell,
+                    gameState: gameState,
+                    currentWave: currentWave,
+                    isIntermission: isIntermission,
+                    waveStartCountdown: waveStartCountdown,
+                    gameStatus: gameStatus,
+                });
+                break;
+        }
+    }, [isGameHost, sendGameData, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
+
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
+
+  // When the client connects, it should inform the host it's ready.
+  useEffect(() => {
+      if (isConnected && !isGameHost && localPlayerId === 'player2') {
+          console.log('[CLIENT] Connected to host, sending CLIENT_READY...');
+          sendAction('CLIENT_READY', {});
+      }
+  }, [isConnected, isGameHost, localPlayerId, sendAction]);
 
   // This is the function clients call to request an action from the host
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
@@ -173,6 +199,12 @@ export default function CoopGameLoader() {
                     setGameStatus(gameData.gameStatus || 'waiting');
                 }
                 
+                // For a client, we still need to get the initial player list to identify ourselves
+                // before the host sends the full snapshot.
+                if(currentRole === 'player2' && players.length === 0){
+                    setPlayers(normalizePlayers(gameData.players));
+                }
+
                 setGameDataLoaded(true);
                 setLoading(false);
             }, (error) => {
@@ -195,7 +227,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast]);
+  }, [user, gameId, router, toast, players.length]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -284,7 +316,6 @@ export default function CoopGameLoader() {
         {localPlayer && (
             <ElementPickDialog
                 isOpen={gameStatus === 'picking-element' && localPlayer.id === 'player1'}
-                unlockedElements={new Set(localPlayer.unlockedElements)}
                 onElementPick={onElementPick}
                 playerName={localPlayer.name}
                 currentWave={currentWave}
