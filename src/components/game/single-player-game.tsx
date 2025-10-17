@@ -1,13 +1,15 @@
 
 "use client";
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { GameSession } from '@/components/game/game-session';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, waves } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
+import { audioManager } from '@/lib/audio/audio-manager';
+import type { GameBoardHandle } from './game-board';
 
 export default function SinglePlayerGame({
     difficulty: initialDifficulty,
@@ -26,18 +28,54 @@ export default function SinglePlayerGame({
 }) {
     const { toast } = useToast();
 
+    // --- Core Game State ---
     const [players, setPlayers] = useState<Player[]>([]);
     const [gameState, setGameState] = useState<GameState>({ lives: 20 });
     const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
     const [currentWave, setCurrentWave] = useState(0);
     const [difficulty, setDifficulty] = useState(initialDifficulty);
-    const [enemies, setEnemies] = useState<any[]>([]);
+    const [enemies, setEnemies] = useState<Enemy[]>([]);
     const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('playing');
     
+    // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
+
+    // --- VFX State ---
+    const [attacks, setAttacks] = useState<Attack[]>([]);
+    const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
+    const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
+    const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
+    
+    // --- Game Loop Refs ---
+    const gameLoopRef = useRef<number>();
+    const lastTickRef = useRef(performance.now());
+    const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
+    const enemyIdCounter = useRef(0);
+    const gameBoardRef = useRef<GameBoardHandle>(null);
+
+    const isIntermission = useMemo(() => enemies.length === 0 && !spawnerStateRef.current, [enemies]);
+    const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
+
+    // --- Refs for stable access in game loop ---
+    const playersRef = useRef(players);
+    const towersByCellRef = useRef(towersByCell);
+    const enemiesRef = useRef(enemies);
+    const gameStateRef = useRef(gameState);
+    const currentWaveRef = useRef(currentWave);
+    const difficultyRef = useRef(difficulty);
+    const gameStatusRef = useRef(gameStatus);
+    const localPlayerRef = useRef<Player | undefined>(undefined);
+
+    useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
+    useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
+    useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
+    useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+    useEffect(() => { currentWaveRef.current = currentWave; }, [currentWave]);
+    useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
+    useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
 
     useMemo(() => {
         if (initialSavedGame) {
@@ -73,59 +111,49 @@ export default function SinglePlayerGame({
         const placedTowers = Object.values(towersByCell);
         return findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) ?? []
     }, [towersByCell]);
+    
+    const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
 
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        const player = players[0];
-        if (!selectedTowerToBuild || !player) return;
-
-        const cellKey = `${row}_${col}`;
-        const placedTowersArray = Object.values(towersByCell);
-
-        if (placedTowersArray.some(t => t.position.row === row && t.position.col === col)) return;
+        if (!selectedTowerToBuild || !localPlayerRef.current) return;
+        if (Object.values(towersByCellRef.current).some(t => t.position.row === row && t.position.col === col)) return;
         if ((row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS)) return;
 
-        if (player.resources < selectedTowerToBuild.cost) {
+        if (localPlayerRef.current.resources < selectedTowerToBuild.cost) {
             toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive' });
             return;
         }
 
-        const newBlockedPositions = [...placedTowersArray.map(t => t.position), { row, col }];
-        const newPath = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, newBlockedPositions, GRID_ROWS, GRID_COLS);
-
-        if (!newPath) {
+        const newBlockedPositions = [...Object.values(towersByCellRef.current).map(t => t.position), { row, col }];
+        if (!findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, newBlockedPositions, GRID_ROWS, GRID_COLS)) {
             toast({ title: 'Ungültiger Bauplatz', description: 'Der Weg für die Gegner darf nicht blockiert werden.', variant: 'destructive' });
             return;
         }
-
+        
         const newTower: PlacedTower = {
-            ...selectedTowerToBuild,
-            id: `tower-${row}-${col}-${Date.now()}`,
-            specId: selectedTowerToBuild.id,
-            position: { row, col },
-            lastAttack: performance.now() - 99999,
-            health: selectedTowerToBuild.maxHealth,
-            ownerId: player.id,
+            ...selectedTowerToBuild, id: `tower-${row}-${col}-${Date.now()}`, specId: selectedTowerToBuild.id,
+            position: { row, col }, lastAttack: performance.now() - 99999, health: selectedTowerToBuild.maxHealth, ownerId: localPlayerRef.current.id,
         };
 
-        setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
+        setTowersByCell(prev => ({ ...prev, [`${row}_${col}`]: newTower }));
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - newTower.cost }]);
         setJustPlacedTowerId(newTower.id);
         setFocusedTower(newTower);
         setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [selectedTowerToBuild, towersByCell, players, toast]);
+    }, [selectedTowerToBuild, toast]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         if (!focusedTower) return;
-        const player = players[0];
+        const player = localPlayerRef.current;
         if(!player) return;
         
         const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
         if (!upgradeTowerSpec) return;
         
-        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
         
         if (player.resources < cost) {
@@ -143,44 +171,181 @@ export default function SinglePlayerGame({
         setFocusedTower(newPlacedTower);
         setLastUpgradedTowerId(newPlacedTower.id);
         setTimeout(() => setLastUpgradedTowerId(null), 500);
-    }, [players, difficulty, focusedTower, toast]);
+    }, [focusedTower, toast]);
 
     const handleSellTower = useCallback(() => {
         if (!focusedTower) return;
-        const player = players[0];
+        const player = localPlayerRef.current;
         if(!player) return;
 
-        const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
+        const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const refund = Math.round(focusedTower.cost * refundPercentage);
         
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
-        setTowersByCell(prev => {
-            const newTowers = { ...prev };
-            delete newTowers[cellKey];
-            return newTowers;
-        });
+        setTowersByCell(prev => { const newTowers = { ...prev }; delete newTowers[cellKey]; return newTowers; });
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + refund }]);
         setFocusedTower(null);
-    }, [players, difficulty, focusedTower]);
+    }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
-        setPlayers(prev => {
-            const newPlayers = [...prev];
-            newPlayers[0] = {
-                ...newPlayers[0],
-                unlockedElements: [...newPlayers[0].unlockedElements, element]
-            };
-            return newPlayers;
-        });
-        const nextWave = currentWave + 1;
-        setCurrentWave(nextWave);
+        setPlayers(prev => [{ ...prev[0], unlockedElements: [...prev[0].unlockedElements, element] }]);
+        setCurrentWave(prev => prev + 1);
         setGameStatus('playing');
-        
-        // Directly trigger next intermission state
-        // This was missing from GameSession, so we manage it here for SP
-        // setState directly in GameSession
-    }, [currentWave]);
+        setWaveStartCountdown(INTERMISSION_TIME);
+    }, []);
 
+    const onGameEnd = useCallback(async (result: any) => {
+        if(gameStatusRef.current === 'gameover') return;
+        setGameStatus('gameover');
+        if (!isCheating) {
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            if(user) {
+                try {
+                    await addDoc(collection(db, "scores"), { ...result, date: serverTimestamp() });
+                } catch(e) { console.error("Failed to save score", e); }
+            }
+        }
+    }, [isCheating, user]);
+
+
+     // --- GAME LOOP ---
+    useEffect(() => {
+        const gameLoop = (now: number) => {
+            gameLoopRef.current = requestAnimationFrame(gameLoop);
+            if (gameStatusRef.current !== 'playing') {
+                lastTickRef.current = now;
+                return;
+            }
+            const delta = now - lastTickRef.current;
+            if (delta < 1000/65) return; // ~60fps cap
+            lastTickRef.current = now;
+
+            const isCurrentlyIntermission = enemiesRef.current.length === 0 && !spawnerStateRef.current;
+
+            if (isCurrentlyIntermission) {
+                setWaveStartCountdown(prev => {
+                    if (prev <= 0) return 0;
+                    const newTime = prev - delta / 1000;
+                    if (newTime <= 0) {
+                        audioManager.playWaveMusic();
+                        return 0;
+                    }
+                    return newTime;
+                });
+                return;
+            }
+        
+            if (waveStartCountdown > 0) {
+                if (!spawnerStateRef.current) {
+                    const waveData = waves[currentWaveRef.current];
+                    if(waveData) {
+                        spawnerStateRef.current = { count: 0, timer: 0, waveData: waveData.enemies };
+                    }
+                }
+                setWaveStartCountdown(0);
+            }
+            
+            if (spawnerStateRef.current && currentPath.length > 0) {
+                spawnerStateRef.current.timer += delta;
+                if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
+                    if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
+                        spawnerStateRef.current.timer = 0;
+                        const difficultyMod = difficultyModifiers[difficultyRef.current];
+                        const health = Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
+                        const newEnemy: Enemy = {
+                            id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData,
+                            health, maxHealth: health, path: currentPath, pathIndex: 0, position: {row: 1, col: 1},
+                            isBlocked: false, effects: [], lastMove: now, wasHit: false, targetNode: {row: GRID_ROWS, col: GRID_COLS},
+                            movementPattern: spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble'
+                        };
+                        setEnemies(prev => [...prev, newEnemy]);
+                    }
+                }
+            }
+
+            let livesLost = 0;
+            let newDamageNumbers: DamageNumber[] = [];
+            let newAttacks: Attack[] = [];
+            let newFiringTowerIds = new Set<string>();
+
+            setEnemies(currentEnemies => {
+                const nextEnemies = currentEnemies.filter(enemy => {
+                    if (enemy.health <= 0) {
+                        setPlayers(prev => [{...prev[0], resources: prev[0].resources + enemy.bounty}]);
+                        return false;
+                    }
+                    if (enemy.pathIndex >= currentPath.length - 1) {
+                        livesLost++;
+                        return false;
+                    }
+                    return true;
+                }).map(enemy => {
+                    const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
+                    const effectiveSpeed = enemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+                    if (now - enemy.lastMove >= 1000 / effectiveSpeed) {
+                        return {...enemy, pathIndex: enemy.pathIndex + 1, position: currentPath[enemy.pathIndex + 1], lastMove: now, wasHit: false};
+                    }
+                    return {...enemy, wasHit: false};
+                });
+                return nextEnemies;
+            });
+            
+            if (livesLost > 0) {
+                setGameState(prev => ({ ...prev, lives: Math.max(0, prev.lives - livesLost) }));
+                if (gameStateRef.current.lives - livesLost <= 0) {
+                     onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anon', date: new Date().toISOString(), difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
+                }
+            }
+            
+            Object.values(towersByCellRef.current).forEach(tower => {
+                if (tower.damage > 0 && now - tower.lastAttack >= tower.attackSpeed) {
+                    const targets = enemiesRef.current.filter(e => {
+                        const distSq = (tower.position.col - e.position.col) ** 2 + (tower.position.row - e.position.row) ** 2;
+                        return distSq <= tower.range ** 2;
+                    });
+                    if (targets.length > 0) {
+                        const mainTarget = targets.sort((a, b) => b.pathIndex - a.pathIndex)[0];
+                        tower.lastAttack = now;
+                        const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') || tower.specId.includes('-1b') || tower.specId.includes('-2b') ? 'arrow' : 'beam';
+                        newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: projectileType });
+                        newFiringTowerIds.add(tower.id);
+                        audioManager.playSfx('shoot', 0.3);
+                        
+                        setEnemies(currentEnemies => currentEnemies.map(e => {
+                           if (e.id === mainTarget.id) {
+                               newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, targetId: e.id, amount: tower.damage, color: 'white', position: e.position });
+                               return {...e, health: e.health - tower.damage, wasHit: true};
+                           }
+                           return e;
+                        }));
+                    }
+                }
+            });
+            
+            if (newAttacks.length > 0) gameBoardRef.current?.queueAttacks(newAttacks);
+            if (newDamageNumbers.length > 0) setDamageNumbers(prev => [...prev.slice(-50), ...newDamageNumbers]);
+            setFiringTowerIds(newFiringTowerIds);
+            setTimeout(() => setFiringTowerIds(new Set()), 150);
+
+            if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.length === 0) {
+                spawnerStateRef.current = null;
+                const nextWave = currentWaveRef.current + 1;
+                if (nextWave >= waves.length) {
+                    onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anon', date: new Date().toISOString(), difficulty: difficultyRef.current, wave: waves.length, won: true, finalTowers: towersByCellRef.current });
+                } else {
+                     if ((nextWave + 1) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 5) {
+                        setGameStatus('picking-element');
+                    } else {
+                        setCurrentWave(nextWave);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                    }
+                }
+            }
+        };
+
+        gameLoopRef.current = requestAnimationFrame(gameLoop);
+        return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
+    }, [currentPath, onGameEnd, user, waveStartCountdown]);
 
     return (
         <GameSession
@@ -192,7 +357,7 @@ export default function SinglePlayerGame({
             user={user}
             allTowers={initialTowers}
             
-            // State
+            // State (passing them down)
             players={players}
             setPlayers={setPlayers}
             gameState={gameState}
@@ -207,9 +372,9 @@ export default function SinglePlayerGame({
             gameStatus={gameStatus}
             setGameStatus={setGameStatus}
             
-            // Initial State for child
-            initialEnemies={initialSavedGame?.enemies || []}
-            
+            // Direct state for children
+            initialEnemies={enemies}
+
             // Callbacks
             onExit={onExit}
             onPlaceTower={handlePlaceTower}
@@ -221,15 +386,14 @@ export default function SinglePlayerGame({
                 setFocusedTower(null);
             }}
             onSelectTowerToBuild={setSelectedTowerToBuild}
+            onElementPick={handleElementPick}
             
             // VFX State
             justPlacedTowerId={justPlacedTowerId}
             lastUpgradedTowerId={lastUpgradedTowerId}
             selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}
-            
-            // Element Pick
-            onElementPick={handleElementPick}
         />
-    )
+    );
 }
+
