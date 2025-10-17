@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
@@ -185,10 +186,8 @@ export default function SinglePlayerGame({
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - towerSpec.cost }]);
         setCurrentPath(path);
         setEnemies(prevEnemies => prevEnemies.map(e => ({ ...e, path })));
-
         setJustPlacedTowerId(newTower.id);
         setFocusedTower(newTower);
-        setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
     }, [toast]);
@@ -524,6 +523,7 @@ export default function SinglePlayerGame({
                 cheat_unlockAll={() => {}}
                 firingTowerIds={firingTowerIds} 
                 allTowers={initialTowers}
+                attacks={attacks}
             />
 
             <AlertDialog open={gameStatus === 'gameover'}>
@@ -551,3 +551,4 @@ export default function SinglePlayerGame({
         </div>
     );
 }
+

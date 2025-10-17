@@ -72,6 +72,7 @@ interface DesktopLayoutProps {
   cheat_unlockAll: () => void;
   firingTowerIds: Set<string>;
   allTowers: Tower[];
+  attacks?: Attack[];
   // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -101,6 +102,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     cheat_unlockAll,
     firingTowerIds,
     allTowers,
+    attacks,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -286,6 +288,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 ref={gameBoardRef}
                 placedTowers={placedTowers}
                 enemies={enemies}
+                attacks={attacks || []}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
                 currentPath={currentPath}
