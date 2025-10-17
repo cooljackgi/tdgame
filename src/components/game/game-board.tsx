@@ -46,12 +46,12 @@ const LERP_FACTOR = 1.0;
 function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
   let targetPos: { x: number, y: number };
 
-  if (path.length === 0) {
+  if (!enemy.path || enemy.path.length === 0) {
     targetPos = gridToPx(enemy.position);
   } else {
-    const currentIndex = Math.min(enemy.pathIndex, path.length - 1);
-    const a = path[currentIndex];
-    const b = path[currentIndex + 1] ?? a;
+    const currentIndex = Math.min(enemy.pathIndex, enemy.path.length - 1);
+    const a = enemy.path[currentIndex];
+    const b = enemy.path[currentIndex + 1] ?? a;
     
     if (!a) {
       targetPos = gridToPx(enemy.position);
@@ -121,7 +121,8 @@ type GameBoardProps = {
   onUpgradeTower: (upgradeId: string) => void;
   onSellTower: () => void;
   allTowers: Tower[];
-  localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined
+  localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined;
+  attacks: Attack[];
 };
 
 
@@ -309,6 +310,7 @@ const MemoizedTower = React.memo(function GameCell({
 const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({ 
     placedTowers, 
     enemies, 
+    attacks,
     damageNumbers,
     splashRings,
     currentPath,
@@ -410,6 +412,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, [internalResetView]);
 
   useEffect(() => {
+    incomingAttacksRef.current.push(...(attacks || []));
+  }, [attacks]);
+
+  useEffect(() => {
     incomingRingsRef.current.push(...splashRings);
   }, [splashRings]);
   
@@ -491,7 +497,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         {
             const q = incomingAttacksRef.current;
             if (q.length) {
-                const newAttacks = [];
                 for (const a of q) {
                     const enemyTarget = enemiesById.get(a.targetId);
                     if (!enemyTarget) continue;
@@ -697,7 +702,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   
     if (moved) return;
     
-    // This is the important change: stop the event from bubbling up to parent containers
     e.stopPropagation(); 
 
     if (hoveredCell && selectedTowerToBuild) {
@@ -1128,7 +1132,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           </div>
         </div>
         
-        {/* Layer 20: VFX Canvas, placed after the world div */}
         <canvas 
             ref={fxCanvasRef} 
             className="absolute inset-0 pointer-events-none" 
@@ -1153,14 +1156,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
-    
-
-    
-
-
-
-
-    
-
-    
