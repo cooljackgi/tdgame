@@ -62,16 +62,19 @@ type GameSessionProps = {
     // --- Control Functions from Parent ---
     onExit: () => void;
     
+    // --- CO-OP / SINGLE-PLAYER ACTION HANDLER ---
+    onLocalAction: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
+    
     // --- CO-OP ONLY Props ---
     broadcastGameData?: (deltas: GameDelta[], reliable?: boolean) => void;
     applyDeltas?: (deltas: GameDelta[]) => void;
     onGameEnd?: (result: GameResult) => void;
-    onLocalAction?: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
     
     // --- VFX State (passed down from parent in CO-OP) ---
     damageNumbersFromParent?: DamageNumber[];
     splashRingsFromParent?: SplashRing[];
     lastUpgradedTowerIdFromParent?: string | null;
+    justPlacedTowerIdFromParent?: string | null;
     firingTowerIdsFromParent?: Set<string>;
     
     // --- Stats (passed down from parent in CO-OP) ---
@@ -116,6 +119,7 @@ export function GameSession(props: GameSessionProps) {
   const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
   const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
   const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
+  const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
 
   // --- Stats State ---
@@ -165,11 +169,13 @@ export function GameSession(props: GameSessionProps) {
         setDifficulty(props.initialDifficulty);
         setIsIntermission(props.initialIsIntermission);
         setWaveStartCountdown(props.initialWaveStartCountdown);
+        setJustPlacedTowerId(props.justPlacedTowerIdFromParent || null);
     }
   }, [
       props.isCoop, props.initialPlayers, props.initialGameState, 
       props.initialTowersByCell, props.initialCurrentWave, 
-      props.initialDifficulty, props.initialIsIntermission, props.initialWaveStartCountdown
+      props.initialDifficulty, props.initialIsIntermission, props.initialWaveStartCountdown,
+      props.justPlacedTowerIdFromParent,
   ]);
 
 
@@ -199,9 +205,9 @@ export function GameSession(props: GameSessionProps) {
     }
   }, [props.isCoop, props.user, props.isCheating]);
 
-  // Single Player Game Loop
+  // Game Loop: Only for Single-Player and Co-op Host
   useEffect(() => {
-    if (props.isCoop) return;
+    if (!props.isGameHost) return;
 
     const gameLoop = (now: number) => {
         gameLoopRef.current = requestAnimationFrame(gameLoop);
@@ -352,7 +358,7 @@ export function GameSession(props: GameSessionProps) {
     
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
-  }, [props.isCoop, currentPath, handleGameEnd, saveGameState]);
+  }, [props.isGameHost, currentPath, handleGameEnd, saveGameState]);
 
 
   useEffect(() => {
@@ -395,9 +401,7 @@ export function GameSession(props: GameSessionProps) {
   }, [localPlayer, toast]);
 
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-      if (props.onLocalAction) {
-          props.onLocalAction(action, payload);
-      }
+    props.onLocalAction(action, payload);
   }, [props.onLocalAction]);
 
  const handleLoadTestLayout = useCallback(() => {
@@ -506,6 +510,7 @@ export function GameSession(props: GameSessionProps) {
             isIntermission={isIntermission} waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME} handleStartNextWaveNow={handleStartNextWaveNow}
             lastUpgradedTowerId={props.isCoop ? (props.lastUpgradedTowerIdFromParent || null) : lastUpgradedTowerId}
+            justPlacedTowerId={justPlacedTowerId}
             isCoop={props.isCoop} playerRole={props.localPlayerId}
             handleLoadTestLayout={handleLoadTestLayout} handleLoadAllTowersLayout={handleLoadAllTowersLayout}
             isCheating={!!props.isCheating} cheat_addResources={() => {}} cheat_skipWaves={() => {}} cheat_heal={() => {}} cheat_unlockAll={() => {}}
