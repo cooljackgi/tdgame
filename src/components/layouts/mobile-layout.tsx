@@ -137,6 +137,26 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   return (
     <div className="w-full h-full flex flex-col">
+      {/* HEADER */}
+      <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
+        <div className="mx-auto w-full max-w-md p-2">
+           <div className="grid grid-cols-2 gap-2">
+            {players.map((p) => p && (
+              <div key={p.id} className="min-w-0">
+                <PlayerStats
+                  player={p}
+                  lives={gameState.lives}
+                  maxLives={maxLives}
+                  isCompact
+                  isLocalPlayer={p.id === localPlayer.id}
+                  isCoop={isCoop}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      
       {/* GAME AREA */}
       <div
         className="relative w-full overflow-hidden flex-grow"
@@ -178,7 +198,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       {/* BOTTOM BAR */}
       <div
         className="flex-shrink-0 border-t bg-card/80 backdrop-blur-sm"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0)' }}
       >
         <div className="mx-auto w-full max-w-md p-2 space-y-2">
           {/* PROMPT - Moved here */}
@@ -193,22 +213,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 )}
             </div>
            )}
-
-           {/* PLAYER BAR */}
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {players.map((p) => p && (
-              <div key={p.id} className="min-w-0">
-                <PlayerStats
-                  player={p}
-                  lives={gameState.lives}
-                  maxLives={maxLives}
-                  isCompact
-                  isLocalPlayer={p.id === localPlayer.id}
-                  isCoop={isCoop}
-                />
-              </div>
-            ))}
-          </div>
 
           <div className="grid grid-cols-3 gap-2">
             {/* Build / Upgrade Sheet */}
