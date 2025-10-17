@@ -81,7 +81,7 @@ function CoopGame() {
   useEffect(() => { currentWaveRef.current = currentWave }, [currentWave]);
   useEffect(() => { difficultyRef.current = difficulty }, [difficulty]);
   
-  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
+  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, Object.values(towersByCell), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
   const currentPathRef = useRef(currentPath);
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
 
@@ -407,26 +407,30 @@ function CoopGame() {
   }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower]);
 
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-    if (localPlayerId === 'spectator') return;
+    if (localPlayerId === 'spectator' || !localPlayerId) return;
   
+    // Always get the currently selected tower from the global scope.
     const towerId = (document as any).__SELECTED_TOWER_ID;
   
     if (isGameHost) {
+      // Host executes the action directly
       switch(action) {
-        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId!, towerId); break;
-        case 'upgrade': handleUpgradeTower(payload.row, payload.col, payload.upgradeId, localPlayerId!); break;
-        case 'sell': handleSellTower(payload.row, payload.col, localPlayerId!); break;
+        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId, towerId); break;
+        case 'upgrade': handleUpgradeTower(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
+        case 'sell': handleSellTower(payload.row, payload.col, localPlayerId); break;
       }
     } else {
+      // Client sends a request to the host
       switch(action) {
         case 'build': 
-          rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { row: payload.row, col: payload.col, towerId: towerId, playerId: localPlayerId! }); 
+          // Ensure towerId is included in the payload for the client's request
+          rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { ...payload, towerId, playerId: localPlayerId }); 
           break;
         case 'upgrade': 
-          rtc.sendActionRequest(String(DeltaType.UPGRADE_TOWER_REQUEST), { row: payload.row, col: payload.col, upgradeId: payload.upgradeId, playerId: localPlayerId! }); 
+          rtc.sendActionRequest(String(DeltaType.UPGRADE_TOWER_REQUEST), { ...payload, playerId: localPlayerId }); 
           break;
         case 'sell': 
-          rtc.sendActionRequest(String(DeltaType.SELL_TOWER_REQUEST), { row: payload.row, col: payload.col, playerId: localPlayerId! }); 
+          rtc.sendActionRequest(String(DeltaType.SELL_TOWER_REQUEST), { ...payload, playerId: localPlayerId }); 
           break;
       }
     }

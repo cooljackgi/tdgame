@@ -414,7 +414,9 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
     const sendActionRequest = useCallback((type: string, payload: any) => {
         if (isHostRef.current || isMonitorRef.current) return;
-        sendMessage({ type, payload });
+        const message = { type, payload };
+        console.log('[CLIENT-SEND-ACTION]', message);
+        sendMessage(message);
     }, [sendMessage]);
 
     return { lastMessage, sendMessage, sendActionRequest, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
