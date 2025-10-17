@@ -114,11 +114,14 @@ export default function SinglePlayerGame({
     
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
 
-
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild || !localPlayerRef.current) return;
-        if (Object.values(towersByCellRef.current).some(t => t.position.row === row && t.position.col === col)) return;
-        if ((row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS)) return;
+        
+        const cellIsBlocked = Object.values(towersByCellRef.current).some(t => t.position.row === row && t.position.col === col);
+        if (cellIsBlocked) return;
+        
+        const isStartOrEnd = (row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS);
+        if (isStartOrEnd) return;
 
         if (localPlayerRef.current.resources < selectedTowerToBuild.cost) {
             toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive' });
@@ -132,8 +135,13 @@ export default function SinglePlayerGame({
         }
         
         const newTower: PlacedTower = {
-            ...selectedTowerToBuild, id: `tower-${row}-${col}-${Date.now()}`, specId: selectedTowerToBuild.id,
-            position: { row, col }, lastAttack: performance.now() - 99999, health: selectedTowerToBuild.maxHealth, ownerId: localPlayerRef.current.id,
+            ...selectedTowerToBuild,
+            id: `tower-${row}-${col}-${Date.now()}`,
+            specId: selectedTowerToBuild.id,
+            position: { row, col },
+            lastAttack: performance.now() - 99999,
+            health: selectedTowerToBuild.maxHealth,
+            ownerId: localPlayerRef.current.id,
         };
 
         setTowersByCell(prev => ({ ...prev, [`${row}_${col}`]: newTower }));
@@ -207,6 +215,25 @@ export default function SinglePlayerGame({
         }
     }, [isCheating, user]);
 
+    // NEU: manueller Wave-Start aus dem UI (Button)
+    const handleStartNextWaveNow = useCallback(() => {
+      // nicht doppelt starten / nur im Intermission
+      if (spawnerStateRef.current || enemiesRef.current.length > 0) return;
+
+      const waveData = waves[currentWaveRef.current];
+      if (!waveData) return;
+
+      // Spawner initialisieren
+      spawnerStateRef.current = {
+        count: 0,
+        timer: 0,
+        waveData: waveData.enemies, // erwartet { count, spawnDelay, health, ... }
+      };
+
+      setWaveStartCountdown(0);
+      audioManager.playWaveMusic();
+    }, []);
+
 
      // --- GAME LOOP ---
     useEffect(() => {
@@ -227,24 +254,15 @@ export default function SinglePlayerGame({
                     if (prev <= 0) return 0;
                     const newTime = prev - delta / 1000;
                     if (newTime <= 0) {
-                        audioManager.playWaveMusic();
+                        // Auto-start (can be disabled if we only want manual start)
+                        // handleStartNextWaveNow(); 
                         return 0;
                     }
                     return newTime;
                 });
-                return;
+                // return; // Kommentiere das aus, um Auto-Start nach Countdown zu ermöglichen
             }
         
-            if (waveStartCountdown > 0) {
-                if (!spawnerStateRef.current) {
-                    const waveData = waves[currentWaveRef.current];
-                    if(waveData) {
-                        spawnerStateRef.current = { count: 0, timer: 0, waveData: waveData.enemies };
-                    }
-                }
-                setWaveStartCountdown(0);
-            }
-            
             if (spawnerStateRef.current && currentPath.length > 0) {
                 spawnerStateRef.current.timer += delta;
                 if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
@@ -259,6 +277,7 @@ export default function SinglePlayerGame({
                             movementPattern: spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble'
                         };
                         setEnemies(prev => [...prev, newEnemy]);
+                        spawnerStateRef.current!.count += 1;
                     }
                 }
             }
@@ -345,7 +364,7 @@ export default function SinglePlayerGame({
 
         gameLoopRef.current = requestAnimationFrame(gameLoop);
         return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
-    }, [currentPath, onGameEnd, user, waveStartCountdown]);
+    }, [currentPath, onGameEnd, user, handleStartNextWaveNow]);
 
     return (
         <GameSession
@@ -387,6 +406,8 @@ export default function SinglePlayerGame({
             }}
             onSelectTowerToBuild={setSelectedTowerToBuild}
             onElementPick={handleElementPick}
+            onStartNextWaveNow={handleStartNextWaveNow}
+            waveStartCountdown={Math.ceil(waveStartCountdown)}
             
             // VFX State
             justPlacedTowerId={justPlacedTowerId}
@@ -396,4 +417,3 @@ export default function SinglePlayerGame({
         />
     );
 }
-

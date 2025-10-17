@@ -75,6 +75,8 @@ type GameSessionProps = {
     cancelInteractions: () => void;
     onSelectTowerToBuild: (tower: Tower | null) => void;
     onElementPick: (element: Element) => void;
+    onStartNextWaveNow?: () => void;   // NEU
+    waveStartCountdown?: number;       // NEU
     
     // --- VFX State & Interaction State (passed down from parent) ---
     selectedTowerToBuild: Tower | null;
@@ -102,7 +104,7 @@ export function GameSession(props: GameSessionProps) {
       enemies, setEnemies, currentWave, setCurrentWave, difficulty, gameStatus, setGameStatus,
       isCoop, isGameHost, localPlayerId, isCheating, user, allTowers, initialEnemies,
       onExit, onPlaceTower, onUpgradeTower, onSellTower, onFocusTower, cancelInteractions,
-      onSelectTowerToBuild, onElementPick,
+      onSelectTowerToBuild, onElementPick, onStartNextWaveNow,
       selectedTowerToBuild, focusedTower, justPlacedTowerId, lastUpgradedTowerId,
       isWsConnected, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize
   } = props;
@@ -128,18 +130,9 @@ export function GameSession(props: GameSessionProps) {
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
   const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
   
-  const isIntermission = useMemo(() => enemies.length === 0, [enemies]); // Simplified for pass-through
-  const waveStartCountdown = useMemo(() => {
-    // This is now just a display value derived from parent state
-    if (isIntermission) {
-      if (isCoop) {
-        // Find a way to get this from parent in coop
-        return INTERMISSION_TIME; 
-      }
-      return props.waveStartCountdown || INTERMISSION_TIME;
-    }
-    return 0;
-  }, [isIntermission, isCoop, props.waveStartCountdown]);
+  const isIntermission = useMemo(() => enemies.length === 0, [enemies]);
+  const waveStartCountdown = props.waveStartCountdown ?? INTERMISSION_TIME;
+
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
     if (gameStatus !== 'gameover') {
@@ -166,8 +159,8 @@ export function GameSession(props: GameSessionProps) {
   }, [setGameStatus]);
 
   const handleStartNextWaveNow = useCallback(() => {
-     // This logic is now handled by the parent (single-player-game or coop-loader)
-  }, []);
+    onStartNextWaveNow?.();
+  }, [onStartNextWaveNow]);
   
   if (!localPlayer) return null;
 
@@ -200,7 +193,7 @@ export function GameSession(props: GameSessionProps) {
             totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
             totalKilled={totalKilled} 
             totalLeaked={totalLeaked}
-            isIntermission={isIntermission} waveStartCountdown={Math.ceil(waveStartCountdown)}
+            isIntermission={isIntermission} waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME} handleStartNextWaveNow={handleStartNextWaveNow}
             lastUpgradedTowerId={lastUpgradedTowerId}
             justPlacedTowerId={justPlacedTowerId}
