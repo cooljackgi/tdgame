@@ -682,6 +682,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    e.stopPropagation();
     isPanningRef.current = false;
     const dx = e.clientX - panStartRef.current.x;
     const dy = e.clientY - panStartRef.current.y;
