@@ -3,9 +3,9 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { GameSession } from '@/components/game/game-session';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import { difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
+import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, waves } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,22 +26,19 @@ export default function SinglePlayerGame({
 }) {
     const { toast } = useToast();
 
-    // The single-player component now manages its own state, just like the coop-loader.
     const [players, setPlayers] = useState<Player[]>([]);
     const [gameState, setGameState] = useState<GameState>({ lives: 20 });
     const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
     const [currentWave, setCurrentWave] = useState(0);
     const [difficulty, setDifficulty] = useState(initialDifficulty);
-    const [enemies, setEnemies] = useState<any[]>([]); // Let GameSession manage this internally for SP
-    const [isIntermission, setIsIntermission] = useState(true);
-    const [waveStartCountdown, setWaveStartCountdown] = useState(999);
+    const [enemies, setEnemies] = useState<any[]>([]);
+    const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('playing');
     
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
+    const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
 
-
-    // This useMemo block correctly sets up the initial state ONCE.
     useMemo(() => {
         if (initialSavedGame) {
             setPlayers([initialSavedGame.players.player1]);
@@ -50,8 +47,7 @@ export default function SinglePlayerGame({
             setEnemies(initialSavedGame.enemies);
             setCurrentWave(initialSavedGame.currentWave);
             setDifficulty(initialSavedGame.difficulty);
-            setIsIntermission(true);
-            setWaveStartCountdown(15);
+            setGameStatus('playing');
             return;
         }
 
@@ -70,9 +66,13 @@ export default function SinglePlayerGame({
         setEnemies([]);
         setCurrentWave(0);
         setDifficulty(initialDifficulty);
-        setIsIntermission(true);
-        setWaveStartCountdown(999);
+        setGameStatus('playing');
     }, [initialSavedGame, initialDifficulty, user]);
+    
+    const currentPath = useMemo(() => {
+        const placedTowers = Object.values(towersByCell);
+        return findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) ?? []
+    }, [towersByCell]);
 
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
@@ -103,7 +103,7 @@ export default function SinglePlayerGame({
             id: `tower-${row}-${col}-${Date.now()}`,
             specId: selectedTowerToBuild.id,
             position: { row, col },
-            lastAttack: performance.now() - 99999, // Allow immediate attack
+            lastAttack: performance.now() - 99999,
             health: selectedTowerToBuild.maxHealth,
             ownerId: player.id,
         };
@@ -134,13 +134,15 @@ export default function SinglePlayerGame({
         }
 
         const newPlacedTower: PlacedTower = { 
-            ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
+            ...focusedTower, ...upgradeTowerSpec, id: focusedTower.id, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
         };
         
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         setTowersByCell(prev => ({ ...prev, [cellKey]: newPlacedTower }));
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - cost }]);
         setFocusedTower(newPlacedTower);
+        setLastUpgradedTowerId(newPlacedTower.id);
+        setTimeout(() => setLastUpgradedTowerId(null), 500);
     }, [players, difficulty, focusedTower, toast]);
 
     const handleSellTower = useCallback(() => {
@@ -160,16 +162,24 @@ export default function SinglePlayerGame({
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + refund }]);
         setFocusedTower(null);
     }, [players, difficulty, focusedTower]);
-
-    const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-        if (action === 'build') {
-            handlePlaceTower(payload.row, payload.col);
-        } else if (action === 'upgrade') {
-            handleUpgradeTower(payload.upgradeId);
-        } else if (action === 'sell') {
-            handleSellTower();
-        }
-    }, [handlePlaceTower, handleUpgradeTower, handleSellTower]);
+    
+    const handleElementPick = useCallback((element: Element) => {
+        setPlayers(prev => {
+            const newPlayers = [...prev];
+            newPlayers[0] = {
+                ...newPlayers[0],
+                unlockedElements: [...newPlayers[0].unlockedElements, element]
+            };
+            return newPlayers;
+        });
+        const nextWave = currentWave + 1;
+        setCurrentWave(nextWave);
+        setGameStatus('playing');
+        
+        // Directly trigger next intermission state
+        // This was missing from GameSession, so we manage it here for SP
+        // setState directly in GameSession
+    }, [currentWave]);
 
 
     return (
@@ -182,28 +192,44 @@ export default function SinglePlayerGame({
             user={user}
             allTowers={initialTowers}
             
-            // Initial State
-            initialPlayers={players}
-            initialGameState={gameState}
-            initialTowersByCell={towersByCell}
-            initialEnemies={enemies}
-            initialCurrentWave={currentWave}
-            initialDifficulty={difficulty}
-            initialIsIntermission={isIntermission}
-            initialWaveStartCountdown={waveStartCountdown}
-            justPlacedTowerIdFromParent={justPlacedTowerId}
-            selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
+            // State
+            players={players}
+            setPlayers={setPlayers}
+            gameState={gameState}
+            setGameState={setGameState}
+            towersByCell={towersByCell}
+            setTowersByCell={setTowersByCell}
+            enemies={enemies}
+            setEnemies={setEnemies}
+            currentWave={currentWave}
+            setCurrentWave={setCurrentWave}
+            difficulty={difficulty}
+            gameStatus={gameStatus}
+            setGameStatus={setGameStatus}
+            
+            // Initial State for child
+            initialEnemies={initialSavedGame?.enemies || []}
             
             // Callbacks
             onExit={onExit}
-            onLocalAction={onLocalAction}
+            onPlaceTower={handlePlaceTower}
+            onUpgradeTower={handleUpgradeTower}
+            onSellTower={handleSellTower}
             onFocusTower={setFocusedTower}
             cancelInteractions={() => {
                 setSelectedTowerToBuild(null);
                 setFocusedTower(null);
             }}
             onSelectTowerToBuild={setSelectedTowerToBuild}
+            
+            // VFX State
+            justPlacedTowerId={justPlacedTowerId}
+            lastUpgradedTowerId={lastUpgradedTowerId}
+            selectedTowerToBuild={selectedTowerToBuild}
+            focusedTower={focusedTower}
+            
+            // Element Pick
+            onElementPick={handleElementPick}
         />
     )
 }
