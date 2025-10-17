@@ -400,86 +400,65 @@ export function GameSession(props: GameSessionProps) {
       }
   }, [props.onLocalAction]);
 
- const longestPathLayout: Node[] = [];
-  for (let row = 1; row <= GRID_ROWS; row++) {
-    if (row % 2 !== 0) { // Odd rows (1, 3, 5...) go left to right
-      for (let col = 1; col <= GRID_COLS; col++) {
-        if (row === 1 && col === 1) continue;
-        if (row === GRID_ROWS && col === GRID_COLS) continue;
-        if (col < GRID_COLS) {
-            longestPathLayout.push({ row, col });
-        }
-      }
-    } else { // Even rows (2, 4, 6...) go right to left
-      for (let col = GRID_COLS; col >= 1; col--) {
-        if (row === 2 && col === GRID_COLS) continue;
-        if (col > 1) {
-            longestPathLayout.push({ row, col });
-        }
-      }
-    }
-  }
-
-
-  const handleLoadTestLayout = useCallback(() => {
-    // A serpentine path to create the longest possible route
-    const serpent: Node[] = [];
-    for (let r = 1; r <= GRID_ROWS; r++) {
-      if (r % 2 !== 0) { // Move right on odd rows
-        for (let c = 1; c < GRID_COLS; c++) serpent.push({ row: r, col: c });
-      } else { // Move left on even rows
-        for (let c = GRID_COLS; c > 1; c--) serpent.push({ row: r, col: c });
-      }
-    }
-    const finalLayout = serpent.filter(
-        p => !(p.row === 1 && p.col === 1) && !(p.row === GRID_ROWS && p.col === GRID_COLS)
-    );
-
+ const handleLoadTestLayout = useCallback(() => {
     const newTowersByCell: Record<string, PlacedTower> = {};
     const towerSpec = allTowers.find(t => t.id === 'neutral-0');
     if (!towerSpec) return;
 
-    finalLayout.forEach((pos, i) => {
-      const cellKey = `${pos.row}_${pos.col}`;
-      newTowersByCell[cellKey] = {
-        ...towerSpec,
-        id: `tower-serpent-${i}`, specId: towerSpec.id, position: pos,
-        lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-      };
-    });
+    for (let r = 1; r <= GRID_ROWS; r++) {
+        if (r % 2 !== 0) { // Odd rows, leave col 12 free
+            for (let c = 1; c < GRID_COLS; c++) {
+                const cellKey = `${r}_${c}`;
+                newTowersByCell[cellKey] = {
+                    ...towerSpec, id: `tower-test-${r}-${c}`, specId: towerSpec.id,
+                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
+                };
+            }
+        } else { // Even rows, leave col 1 free
+            for (let c = 2; c <= GRID_COLS; c++) {
+                 const cellKey = `${r}_${c}`;
+                newTowersByCell[cellKey] = {
+                    ...towerSpec, id: `tower-test-${r}-${c}`, specId: towerSpec.id,
+                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
+                };
+            }
+        }
+    }
 
     setTowersByCell(newTowersByCell);
-    toast({ title: "Längstes Test-Layout geladen!" });
+    toast({ title: "Serpentinen-Testlayout geladen!" });
   }, [allTowers, localPlayer?.id, toast]);
   
   const handleLoadAllTowersLayout = useCallback(() => {
-    // A serpentine path to create the longest possible route
-    const serpent: Node[] = [];
-    for (let r = 1; r <= GRID_ROWS; r++) {
-      if (r % 2 !== 0) { // Move right on odd rows
-        for (let c = 1; c < GRID_COLS; c++) serpent.push({ row: r, col: c });
-      } else { // Move left on even rows
-        for (let c = GRID_COLS; c > 1; c--) serpent.push({ row: r, col: c });
-      }
-    }
-    const finalLayout = serpent.filter(
-        p => !(p.row === 1 && p.col === 1) && !(p.row === GRID_ROWS && p.col === GRID_COLS)
-    );
-
-    const baseTowers = allTowers.filter(t => t.isBase);
     const newTowersByCell: Record<string, PlacedTower> = {};
+    const baseTowers = allTowers.filter(t => t.isBase);
+    let towerIndex = 0;
 
-    finalLayout.forEach((pos, i) => {
-      const towerSpec = baseTowers[i % baseTowers.length];
-      if (!towerSpec) return;
-      const cellKey = `${pos.row}_${pos.col}`;
-      newTowersByCell[cellKey] = {
-        ...towerSpec,
-        id: `tower-all-${i}`, specId: towerSpec.id, position: pos,
-        lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-      };
-    });
-
+    for (let r = 1; r <= GRID_ROWS; r++) {
+        if (r % 2 !== 0) { // Odd rows
+            for (let c = 1; c < GRID_COLS; c++) {
+                const towerSpec = baseTowers[towerIndex % baseTowers.length];
+                if (!towerSpec) continue;
+                const cellKey = `${r}_${c}`;
+                newTowersByCell[cellKey] = {
+                    ...towerSpec, id: `tower-all-${r}-${c}`, specId: towerSpec.id,
+                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
+                };
+                towerIndex++;
+            }
+        } else { // Even rows
+            for (let c = 2; c <= GRID_COLS; c++) {
+                const towerSpec = baseTowers[towerIndex % baseTowers.length];
+                if (!towerSpec) continue;
+                const cellKey = `${r}_${c}`;
+                newTowersByCell[cellKey] = {
+                    ...towerSpec, id: `tower-all-${r}-${c}`, specId: towerSpec.id,
+                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
+                };
+                towerIndex++;
+            }
+        }
+    }
     setTowersByCell(newTowersByCell);
     toast({ title: "Alle Basis-Türme im Serpentinen-Layout geladen!" });
   }, [allTowers, localPlayer?.id, toast]);
