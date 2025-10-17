@@ -29,8 +29,8 @@ type WebRTCEvent =
 
 
 /**
- * Logs a structured WebRTC event to a dedicated sub-collection in Firestore.
- * This is designed for debugging P2P connection issues.
+ * Logs a structured WebRTC event to a dedicated sub-collection in Firestore
+ * AND outputs it to the browser console for live debugging.
  * 
  * @param gameId The ID of the game session.
  * @param role The role of the client ('host' or 'client').
@@ -43,9 +43,21 @@ export async function logWebRTCEvent(
     event: WebRTCEvent, 
     details?: object | string | null
 ) {
-    // Silently fail if there's no gameId, as logging is not possible.
+    const finalDetails = details ?? null;
+    
+    // --- Console Logging ---
+    // Log to console immediately for live debugging.
+    console.log(`[WebRTC Log - ${role.toUpperCase()}]`, {
+      event: event,
+      details: finalDetails,
+      gameId: gameId,
+      timestamp: new Date().toISOString()
+    });
+
+    // --- Firestore Logging (as before) ---
+    // Silently fail if there's no gameId, as remote logging is not possible.
     if (!gameId) {
-        console.warn("[WebRTC Logging] Aborted: Missing gameId.");
+        // We already console.log above, so no need for a warning here.
         return;
     };
     
@@ -61,13 +73,13 @@ export async function logWebRTCEvent(
             clientTs: Date.now(), // Add client-side timestamp for latency analysis.
             type: event, // Use 'type' to match game_session logs
             role,
-            details: details ?? null, // Ensure details is not undefined.
+            details: finalDetails, // Ensure details is not undefined.
         };
 
         await addDoc(logCollectionRef, logEntry);
 
     } catch (error) {
         // Log to console if Firestore write fails, to avoid breaking the app flow.
-        console.error(`[WebRTC Logging] Failed to log event for game ${gameId}:`, error);
+        console.error(`[WebRTC Logging] Failed to save log to Firestore for game ${gameId}:`, error);
     }
 }
