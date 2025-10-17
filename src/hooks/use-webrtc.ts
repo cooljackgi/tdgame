@@ -51,8 +51,8 @@ export function useWebRTC(
     isHost: boolean, 
     user: User | null, 
     isMonitor: boolean = false,
-    onGameDataMessage: (msg: NetMsg) => void,
-    onActionMessage: (msg: NetMsg) => void,
+    onGameDataMessage?: (msg: NetMsg) => void,
+    onActionMessage?: (msg: NetMsg) => void,
 ): UseWebRTCReturn {
     const [isConnected, setIsConnected] = useState(false);
     
@@ -85,8 +85,11 @@ export function useWebRTC(
     const onActionMessageRef = useRef(onActionMessage);
     useEffect(() => {
         onGameDataMessageRef.current = onGameDataMessage;
+    }, [onGameDataMessage]);
+     useEffect(() => {
         onActionMessageRef.current = onActionMessage;
-    }, [onGameDataMessage, onActionMessage]);
+    }, [onActionMessage]);
+
 
     // Stats refs
     const packetCountRef = useRef(0);
@@ -191,26 +194,31 @@ export function useWebRTC(
             const currentGid = gameIdRef.current;
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
             
-            dc.onopen = () => {
+            const handleOpen = () => {
                 const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
                 const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
-                setIsConnected(isGameOpen && isActionsOpen);
+                if(isGameOpen && isActionsOpen) setIsConnected(true);
             };
 
-            dc.onclose = () => {
-                const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
-                const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
-                setIsConnected(isGameOpen && isActionsOpen);
+            const handleClose = () => {
+                setIsConnected(false);
             };
+
+            dc.onopen = handleOpen;
+            dc.onclose = handleClose;
 
             dc.onmessage = (event) => {
-                const msg: NetMsg = JSON.parse(event.data);
-                packetCountRef.current++;
-                byteCountRef.current += event.data.length;
-                if (dc.label === 'game_data') {
-                    onGameDataMessageRef.current(msg);
-                } else if (dc.label === 'actions') {
-                    onActionMessageRef.current(msg);
+                try {
+                    const msg: NetMsg = JSON.parse(event.data);
+                    packetCountRef.current++;
+                    byteCountRef.current += event.data.length;
+                    if (dc.label === 'game_data' && onGameDataMessageRef.current) {
+                        onGameDataMessageRef.current(msg);
+                    } else if (dc.label === 'actions' && onActionMessageRef.current) {
+                        onActionMessageRef.current(msg);
+                    }
+                } catch(e) {
+                    console.error("Failed to parse RTC message:", e);
                 }
             };
             
