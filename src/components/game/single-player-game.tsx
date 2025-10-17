@@ -89,7 +89,7 @@ export default function SinglePlayerGame({
     const saveGameState = useCallback(() => {
         if (gameStatus === 'gameover' || isCheating) return;
         const stateToSave: GameSaveState = {
-            players: playersRef.current,
+            players: { player1: playersRef.current[0], player2: null }, // Adjusted for single-player save
             gameState: gameStateRef.current, 
             towersByCell: towersByCellRef.current, 
             enemies: enemiesRef.current, 
@@ -656,6 +656,3 @@ export default function SinglePlayerGame({
     </div>
     )
 }
-
-
-    

@@ -64,7 +64,6 @@ type GameSessionProps = {
     isGameHost: boolean;
     localPlayerId: Player['id'] | null;
     broadcastGameData: (deltas: GameDelta[], reliable?: boolean) => void;
-    sendActionRequest?: (type: string, payload: any) => void;
     applyDeltas: (deltas: GameDelta[]) => void;
     onGameEnd: (result: GameResult) => void;
     onExit: () => void;
@@ -106,7 +105,7 @@ export default function GameSession({
     
     // Control
     isCoop, isGameHost, localPlayerId,
-    broadcastGameData, sendActionRequest, applyDeltas, onGameEnd, onExit, onLocalAction,
+    broadcastGameData, applyDeltas, onGameEnd, onExit, onLocalAction,
 
     // VFX
     attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
@@ -203,8 +202,9 @@ export default function GameSession({
   const handlePlaceTower = useCallback((row: number, col: number) => {
     if (localPlayerId === 'spectator' || !selectedTowerToBuild) return;
     onLocalAction('build', { row, col });
-    cancelInteractions();
-  }, [localPlayerId, selectedTowerToBuild, onLocalAction, cancelInteractions]);
+    // Keep tower selected for multi-build
+    // cancelInteractions();
+  }, [localPlayerId, selectedTowerToBuild, onLocalAction]);
   
   const handleUpgradeTower = useCallback((upgradeId: string) => {
       if (localPlayerId === 'spectator' || !focusedTower) return;

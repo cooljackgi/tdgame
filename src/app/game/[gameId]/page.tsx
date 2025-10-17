@@ -388,7 +388,7 @@ function CoopGame() {
   }, [broadcastGameData]);
 
   useEffect(() => {
-    if (!actionsChannel || !isGameHost) return;
+    if (!actionsChannel) return;
 
     const handleActionMessage = (ev: MessageEvent) => {
         try {
@@ -414,7 +414,7 @@ function CoopGame() {
 
     actionsChannel.addEventListener('message', handleActionMessage);
     return () => actionsChannel.removeEventListener('message', handleActionMessage);
-  }, [actionsChannel, isGameHost, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
+  }, [actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
 
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
     if (localPlayerId === 'spectator' || !localPlayerId) return;
@@ -640,6 +640,7 @@ function CoopGame() {
         totalKilled={totalKilled} setTotalKilled={setTotalKilled}
         totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
         onLocalAction={onLocalAction}
+        applyDeltas={applyDeltas}
     />
   );
 }
