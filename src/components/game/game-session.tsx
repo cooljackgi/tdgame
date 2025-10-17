@@ -4,11 +4,11 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Header from '@/components/game/header';
-import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect, MovementPattern } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import { difficultyModifiers, elementProjectileColors, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
+import { difficultyModifiers, elementProjectileColors, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS, LOCAL_STORAGE_KEY } from '@/lib/game-data/constants';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
@@ -18,6 +18,10 @@ import { ElementPickDialog } from '@/components/game/element-pick-dialog';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
+import type { User } from 'firebase/auth';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
 
 export type Player = {
   id: 'player1' | 'player2' | 'spectator';
@@ -39,263 +43,466 @@ const towersToArray = (towersByCell: Record<string, PlacedTower> | undefined): P
 }
 
 type GameSessionProps = {
-    players: Player[];
-    setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
-    gameState: GameState;
-    setGameState: React.Dispatch<React.SetStateAction<GameState>>;
-    towersByCell: Record<string, PlacedTower>;
-    setTowersByCell: React.Dispatch<React.SetStateAction<Record<string, PlacedTower>>>;
-    currentWave: number;
-    setCurrentWave: React.Dispatch<React.SetStateAction<number>>;
-    gameStatus: GameStatus;
-    setGameStatus: React.Dispatch<React.SetStateAction<GameStatus>>;
-    difficulty: Difficulty;
-    setDifficulty: React.Dispatch<React.SetStateAction<Difficulty>>;
-    isIntermission: boolean;
-    setIsIntermission: React.Dispatch<React.SetStateAction<boolean>>;
-    waveStartCountdown: number;
-    setWaveStartCountdown: React.Dispatch<React.SetStateAction<number>>;
-    currentPath: Node[];
-    enemies: Enemy[];
-    setEnemies: (val: Enemy[] | ((prev: Enemy[]) => Enemy[])) => void;
-    spawnedThisWave: number;
-    setSpawnedThisWave: (val: number | ((prev: number) => number)) => void;
+    // --- Initial State & Config ---
+    initialPlayers: Player[];
+    initialGameState: GameState;
+    initialTowersByCell: Record<string, PlacedTower>;
+    initialEnemies: Enemy[];
+    initialCurrentWave: number;
+    initialDifficulty: Difficulty;
+    initialIsIntermission: boolean;
+    initialWaveStartCountdown: number;
+
     isCoop: boolean;
     isGameHost: boolean;
     localPlayerId: Player['id'] | null;
-    broadcastGameData: (deltas: GameDelta[], reliable?: boolean) => void;
-    applyDeltas: (deltas: GameDelta[]) => void;
-    onGameEnd: (result: GameResult) => void;
+    isCheating?: boolean;
+    user: User | null;
+
+    // --- Control Functions from Parent ---
     onExit: () => void;
-    attacks: Attack[];
-    damageNumbers: DamageNumber[];
-    splashRings: SplashRing[];
-    lastUpgradedTowerId: string | null;
-    setLastUpgradedTowerId: (id: string | null) => void;
-    setFiringTowerIds: (val: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
-    firingTowerIds: Set<string>;
-    fps: number;
-    setFps: (fps: number) => void;
+    
+    // --- CO-OP ONLY Props ---
+    broadcastGameData?: (deltas: GameDelta[], reliable?: boolean) => void;
+    applyDeltas?: (deltas: GameDelta[]) => void;
+    onGameEnd?: (result: GameResult) => void;
+    onLocalAction?: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
+    
+    // --- VFX State (passed down from parent in CO-OP) ---
+    attacksFromParent?: Attack[];
+    damageNumbersFromParent?: DamageNumber[];
+    splashRingsFromParent?: SplashRing[];
+    lastUpgradedTowerIdFromParent?: string | null;
+    firingTowerIdsFromParent?: Set<string>;
+    
+    // --- Stats (passed down from parent in CO-OP) ---
+    fpsFromParent?: number;
     isWsConnected?: boolean;
     hostPacketsPerSecond?: number;
     hostBytesSentPerSecond?: number;
     clientPacketsPerSecond?: number;
     clientBytesReceivedPerSecond?: number;
     averagePacketSize?: number;
-    finalGameResult?: GameResult | null;
-    totalKilled: number;
-    setTotalKilled: (value: number | ((prev: number) => number)) => void;
-    totalLeaked: number;
-    setTotalLeaked: (value: number | ((prev: number) => number)) => void;
-    onLocalAction: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
+    finalGameResultFromParent?: GameResult | null;
+    totalKilledFromParent?: number;
+    totalLeakedFromParent?: number;
 }
 
-export default function GameSession({ 
-    players, setPlayers,
-    gameState, setGameState,
-    towersByCell, setTowersByCell,
-    currentWave, setCurrentWave,
-    gameStatus, setGameStatus,
-    difficulty, setDifficulty,
-    isIntermission, setIsIntermission,
-    waveStartCountdown, setWaveStartCountdown,
-    currentPath,
-    enemies, setEnemies,
-    spawnedThisWave, setSpawnedThisWave,
-    
-    // Control
-    isCoop, isGameHost, localPlayerId,
-    broadcastGameData, applyDeltas, onGameEnd, onExit, onLocalAction,
-
-    // VFX
-    attacks, damageNumbers, splashRings, lastUpgradedTowerId, setLastUpgradedTowerId, firingTowerIds, setFiringTowerIds,
-
-    // Stats
-    fps, setFps,
-    isWsConnected, hostPacketsPerSecond, hostBytesSentPerSecond, clientPacketsPerSecond, clientBytesReceivedPerSecond, averagePacketSize,
-    finalGameResult,
-    totalKilled, setTotalKilled,
-    totalLeaked, setTotalLeaked,
-}: GameSessionProps) {
+export default function GameSession(props: GameSessionProps) {
   
   const { toast } = useToast();
   const isMobile = useIsMobile();
   
-  const allTowers = useMemo(() => initialTowers.map(t => ({...t})), []);
-  const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
+  // --- Core Game State ---
+  const [players, setPlayers] = useState(props.initialPlayers);
+  const [gameState, setGameState] = useState(props.initialGameState);
+  const [towersByCell, setTowersByCell] = useState(props.initialTowersByCell);
+  const [enemies, setEnemies] = useState(props.initialEnemies);
+  const [currentWave, setCurrentWave] = useState(props.initialCurrentWave);
+  const [difficulty, setDifficulty] = useState(props.initialDifficulty);
+  const [isIntermission, setIsIntermission] = useState(props.initialIsIntermission);
+  const [waveStartCountdown, setWaveStartCountdown] = useState(props.initialWaveStartCountdown);
+  const [gameStatus, setGameStatus] = useState<GameStatus>('playing');
+  const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
 
+  // --- UI/Interaction State ---
   const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
   const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
-  
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [justPlacedTowerId, setJustPlacedTowerId] = useState<string|null>(null);
+
+  // --- VFX State ---
+  const [attacks, setAttacks] = useState<Attack[]>([]);
+  const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
+  const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
+  const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
+  const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
+
+  // --- Stats State ---
+  const [fps, setFps] = useState(0);
+  const [totalKilled, setTotalKilled] = useState(0);
+  const [totalLeaked, setTotalLeaked] = useState(0);
+
+  // --- Game Loop Refs ---
+  const gameLoopRef = useRef<number>();
+  const lastTickRef = useRef(performance.now());
+  const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
+  const enemyIdCounter = useRef(0);
+
+  // --- Create stable refs for game loop access ---
+  const playersRef = useRef(players);
+  const towersByCellRef = useRef(towersByCell);
+  const enemiesRef = useRef(enemies);
+  const gameStateRef = useRef(gameState);
+  const currentWaveRef = useRef(currentWave);
+  const difficultyRef = useRef(difficulty);
+  const gameStatusRef = useRef(gameStatus);
+  const isIntermissionRef = useRef(isIntermission);
   
-  const difficultyMod = difficultyModifiers[difficulty];
-  const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
+  useEffect(() => { playersRef.current = players; }, [players]);
+  useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
+  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  useEffect(() => { currentWaveRef.current = currentWave; }, [currentWave]);
+  useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
+  useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
+  useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
+  
+  const allTowers = useMemo(() => initialTowers.map(t => ({...t})), []);
+  const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
+  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
+  const localPlayer = useMemo(() => players.find(p => p.id === props.localPlayerId), [players, props.localPlayerId]);
 
-  const START_NODE = { row: 1, col: 1 };
-  const END_NODE = { row: GRID_ROWS, col: GRID_COLS };
-
-  const toggleMute = useCallback(() => {
-    setIsMuted(prev => {
-        const newMutedState = !prev;
-        if (newMutedState) audioManager.mute();
-        else {
-            audioManager.unmute();
-            if (gameStatus === 'playing' && !isIntermission) audioManager.playWaveMusic();
+  const onLocalAction = (action: 'build' | 'upgrade' | 'sell', payload: any) => {
+    if (props.isCoop && props.onLocalAction) {
+        props.onLocalAction(action, payload);
+    } else {
+        // Handle single-player actions directly
+        const selectedTowerId = (document as any).__SELECTED_TOWER_ID;
+        const { row, col, upgradeId } = payload;
+        switch(action) {
+            case 'build': handlePlaceTower(row, col, 'player1', selectedTowerId); break;
+            case 'upgrade': handleUpgradeTower(row, col, upgradeId, 'player1'); break;
+            case 'sell': handleSellTower(row, col, 'player1'); break;
         }
-        return newMutedState;
-    });
-  }, [gameStatus, isIntermission]);
-
-  const handleInteraction = async () => {
-    if (!hasInteracted) {
-      await audioManager.init();
-      setHasInteracted(true);
     }
   };
-  
-  const resetGame = useCallback(() => {
-    audioManager.stopMusic();
-    onExit();
-  }, [onExit]);
 
-  const handleGameControl = useCallback(() => {
-    if (localPlayerId === 'spectator') return;
-    audioManager.playSfx('build_tower');
+  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id'], towerId: string) => {
+    const selectedTowerToBuild = allTowers.find(t => t.id === towerId);
+    if (!selectedTowerToBuild) return;
 
-    if (!isGameHost) {
-      toast({ title: 'Nur der Host kann das Spiel steuern.' });
-      return;
-    }
+    const cellKey = `${row}_${col}`;
+    if (towersByCellRef.current[cellKey]) return;
     
-    let stateUpdate: Partial<any> = {};
-    if (gameStatus === 'playing') stateUpdate = { gameStatus: 'paused' };
-    else if (gameStatus === 'paused' || gameStatus === 'waiting') {
-       stateUpdate = { gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 };
-    } else return;
-    
-    broadcastGameData([[DeltaType.GAME_STATE_UPDATE, stateUpdate]]);
-
-  }, [gameStatus, isGameHost, toast, localPlayerId, broadcastGameData]);
-
-  const handleStartNextWaveNow = useCallback(() => {
-    if (isIntermission && gameStatus === 'playing' && isGameHost) {
-        broadcastGameData([[DeltaType.GAME_STATE_UPDATE, { isIntermission: false, waveStartCountdown: 0 }]]);
+    const currentPlacedTowers = Object.values(towersByCellRef.current).map(t => t.position);
+    if (!findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...currentPlacedTowers, {row, col}], GRID_ROWS, GRID_COLS)) {
+        return;
     }
-  }, [isIntermission, gameStatus, isGameHost, broadcastGameData]);
 
-  const onFocusTower = useCallback((tower: PlacedTower) => {
-    setSelectedTowerToBuild(null);
-    setFocusedTower(tower);
-    audioManager.playSfx('build_tower');
+    const player = playersRef.current.find(p => p.id === playerId);
+    if (!player || player.resources < selectedTowerToBuild.cost) return;
+
+    const newTower: PlacedTower = JSON.parse(JSON.stringify({
+        ...selectedTowerToBuild, id: `tower-${row}-${col}-${Date.now()}`, specId: selectedTowerToBuild.id,
+        position: { row, col }, lastAttack: 0, health: selectedTowerToBuild.maxHealth, ownerId: player.id,
+    }));
+    
+    setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
+    setPlayers(prevPlayers => prevPlayers.map(p => p.id === playerId ? {...p, resources: p.resources - newTower.cost} : p));
+  }, [allTowers]);
+
+  const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string, playerId: Player['id']) => {
+      const player = playersRef.current.find(p => p.id === playerId);
+      const cellKey = `${row}_${col}`;
+      const focusedTower = towersByCellRef.current[cellKey];
+
+      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
+
+      const upgradeTowerSpec = allTowers.find(t => t.id === upgradeId);
+      if (!upgradeTowerSpec) return;
+
+      const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
+      const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
+
+      if (player.resources < cost) return;
+
+      const newPlacedTower: PlacedTower = JSON.parse(JSON.stringify({ 
+          ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
+      }));
+      
+      setTowersByCell(prev => ({...prev, [cellKey]: newPlacedTower }));
+      setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources - cost} : p));
+      setLastUpgradedTowerId(newPlacedTower.id);
+      setTimeout(() => setLastUpgradedTowerId(null), 1000);
+  }, [allTowers]);
+
+  const handleSellTower = useCallback((row: number, col: number, playerId: Player['id']) => {
+      const player = playersRef.current.find(p => p.id === playerId);
+      const cellKey = `${row}_${col}`;
+      const focusedTower = towersByCellRef.current[cellKey];
+
+      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
+
+      const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
+      const refund = Math.round(focusedTower.cost * refundPercentage);
+
+      setTowersByCell(prev => {
+          const next = {...prev};
+          delete next[cellKey];
+          return next;
+      });
+      setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources + refund} : p));
   }, []);
 
-  const cancelInteractions = useCallback(() => {
-    if (localPlayerId === 'spectator') return;
-    if (selectedTowerToBuild || focusedTower) audioManager.playSfx('build_tower');
-    setSelectedTowerToBuild(null);
-    setFocusedTower(null);
-  }, [localPlayerId, selectedTowerToBuild, focusedTower]);
+  const saveGameState = useCallback(() => {
+    if (gameStatusRef.current === 'gameover' || props.isCheating || props.isCoop) return;
+    const stateToSave: GameSaveState = {
+        players: { player1: playersRef.current[0], player2: null },
+        gameState: gameStateRef.current, towersByCell: towersByCellRef.current,
+        enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current
+    };
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+    toast({ title: 'Spiel gespeichert!' });
+  }, [props.isCheating, props.isCoop, toast]);
 
-  const handlePlaceTower = useCallback((row: number, col: number) => {
-    if (localPlayerId === 'spectator' || !selectedTowerToBuild) return;
-    onLocalAction('build', { row, col });
-    // Keep tower selected for multi-build
-    // cancelInteractions();
-  }, [localPlayerId, selectedTowerToBuild, onLocalAction]);
-  
-  const handleUpgradeTower = useCallback((upgradeId: string) => {
-      if (localPlayerId === 'spectator' || !focusedTower) return;
-      if (focusedTower.ownerId !== localPlayerId) {
-          toast({ title: "Upgrade nicht möglich", description: "Du kannst nur deine eigenen Türme upgraden.", variant: "destructive" });
-          return;
-      }
-      onLocalAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
-      cancelInteractions();
-  }, [localPlayerId, focusedTower, onLocalAction, cancelInteractions, toast]);
-  
-  const handleSellTower = useCallback(() => {
-      if (localPlayerId === 'spectator' || !focusedTower) return;
-      if (focusedTower.ownerId !== localPlayerId) {
-          toast({ title: "Verkauf nicht möglich", description: "Du kannst nur deine eigenen Türme verkaufen.", variant: "destructive" });
-          return;
-      }
-      onLocalAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
-      cancelInteractions();
-  }, [localPlayerId, focusedTower, onLocalAction, cancelInteractions, toast]);
+  const handleGameEnd = useCallback(async (result: GameResult) => {
+    if (gameStatusRef.current !== 'gameover') {
+        setGameStatus('gameover');
+        if (!props.isCoop) {
+            localStorage.removeItem(LOCAL_STORAGE_KEY);
+            if (props.user && !props.isCheating) {
+                try {
+                    await addDoc(collection(db, "scores"), { ...result, date: serverTimestamp() });
+                } catch(e) { console.error("Failed to save score", e); }
+            }
+        }
+        setFinalGameResult({ ...result, date: new Date().toISOString() });
+    }
+  }, [props.isCoop, props.user, props.isCheating]);
 
+  // Single Player Game Loop
+  useEffect(() => {
+    if (props.isCoop) return;
+
+    const gameLoop = (now: number) => {
+        gameLoopRef.current = requestAnimationFrame(gameLoop);
+        if (gameStatusRef.current !== 'playing') {
+            lastTickRef.current = now;
+            return;
+        }
+
+        const delta = now - lastTickRef.current;
+        if (delta < 1000/65) return; // ~60fps cap
+        lastTickRef.current = now;
+        setFps(Math.round(1000 / delta));
+        
+        if (isIntermissionRef.current) {
+            setWaveStartCountdown(prev => {
+                const newTime = prev - delta / 1000;
+                if (newTime <= 0) {
+                    setIsIntermission(false);
+                    audioManager.playWaveMusic();
+                    return 0;
+                }
+                return newTime;
+            });
+            return;
+        }
+
+        if (!spawnerStateRef.current) {
+            const waveData = waves[currentWaveRef.current];
+            if (waveData) {
+                spawnerStateRef.current = { count: 0, timer: 0, waveData: waveData.enemies };
+                setSpawnedThisWave(0);
+            }
+        }
+        if (spawnerStateRef.current && currentPath.length > 0) {
+            spawnerStateRef.current.timer += delta;
+            if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
+                if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
+                    spawnerStateRef.current.timer = 0;
+                    const difficultyMod = difficultyModifiers[difficultyRef.current];
+                    const health = Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
+                    const newEnemy: Enemy = {
+                        id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`, ...spawnerStateRef.current.waveData,
+                        health, maxHealth: health, path: currentPath, pathIndex: 0, position: {row: 1, col: 1},
+                        isBlocked: false, effects: [], lastMove: now, wasHit: false, targetNode: {row: GRID_ROWS, col: GRID_COLS},
+                        movementPattern: spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble'
+                    };
+                    setEnemies(prev => [...prev, newEnemy]);
+                    setSpawnedThisWave(prev => prev + 1);
+                    spawnerStateRef.current.count++;
+                }
+            }
+        }
+
+        const newAttacks: Attack[] = [];
+        const newDamageNumbers: DamageNumber[] = [];
+        const newFiringTowerIds = new Set<string>();
+
+        setTowersByCell(currentTowers => {
+            const towersCopy = { ...currentTowers };
+            Object.values(towersCopy).forEach(tower => {
+                if (now - tower.lastAttack >= tower.attackSpeed) {
+                    const targets = enemiesRef.current.filter(e => {
+                        const distSq = (tower.position.col - e.position.col) ** 2 + (tower.position.row - e.position.row) ** 2;
+                        return distSq <= tower.range ** 2;
+                    });
+                    if (targets.length > 0) {
+                        const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
+                        tower.lastAttack = now;
+                        newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: 'beam' });
+                        newFiringTowerIds.add(tower.id);
+                        audioManager.playSfx('shoot', 0.3);
+                        
+                        setEnemies(currentEnemies => currentEnemies.map(e => {
+                           if (e.id === mainTarget.id) {
+                               newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, targetId: e.id, amount: tower.damage, color: elementProjectileColors[tower.elements[0]] || 'white', position: e.position });
+                               return {...e, health: e.health - tower.damage, wasHit: true};
+                           }
+                           return e;
+                        }));
+                    }
+                }
+            });
+            return towersCopy;
+        });
+
+        setAttacks(prev => [...prev.slice(-100), ...newAttacks]);
+        setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
+        setFiringTowerIds(newFiringTowerIds);
+        setTimeout(() => setFiringTowerIds(new Set()), 150);
+
+        let livesLost = 0;
+        setEnemies(currentEnemies => {
+            const nextEnemies = [];
+            for (const enemy of currentEnemies) {
+                if (enemy.health <= 0) {
+                    setPlayers(prev => prev.map(p => ({...p, resources: p.resources + enemy.bounty})));
+                    setTotalKilled(k => k + 1);
+                    continue;
+                }
+                if (enemy.pathIndex >= currentPath.length - 1) {
+                    livesLost++;
+                    setTotalLeaked(l => l + 1);
+                    continue;
+                }
+                const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
+                const effectiveSpeed = enemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+                
+                let updatedEnemy = enemy;
+                if (now - enemy.lastMove >= 1000 / effectiveSpeed) {
+                    const newPathIndex = enemy.pathIndex + 1;
+                    updatedEnemy = {...enemy, pathIndex: newPathIndex, position: currentPath[newPathIndex], lastMove: now, wasHit: false};
+                }
+                nextEnemies.push({...updatedEnemy, wasHit: false});
+            }
+            return nextEnemies;
+        });
+
+        if (livesLost > 0) {
+            setGameState(prev => {
+                const newLives = prev.lives - livesLost;
+                if (newLives <= 0) {
+                    handleGameEnd({ playerName: playersRef.current[0].name, playerUid: playersRef.current[0].id, date: new Date().toISOString(), difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
+                    return { lives: 0 };
+                }
+                return { lives: newLives };
+            });
+        }
+        
+        if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.length === 0) {
+            spawnerStateRef.current = null;
+            const nextWave = currentWaveRef.current + 1;
+            if (nextWave >= waves.length) {
+                handleGameEnd({ playerName: playersRef.current[0].name, playerUid: playersRef.current[0].id, date: new Date().toISOString(), difficulty: difficultyRef.current, wave: waves.length, won: true, finalTowers: towersByCellRef.current });
+            } else {
+                if ((nextWave + 1) % 5 === 0 && ALL_PICKABLE_ELEMENTS.some(e => !playersRef.current[0].unlockedElements.includes(e))) {
+                    setGameStatus('picking-element');
+                } else {
+                    setCurrentWave(nextWave);
+                    setIsIntermission(true);
+                    setWaveStartCountdown(INTERMISSION_TIME);
+                    saveGameState();
+                }
+            }
+        }
+    };
+    
+    gameLoopRef.current = requestAnimationFrame(gameLoop);
+    return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
+  }, [props.isCoop, currentPath, handleGameEnd, saveGameState]);
+
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (gameStatusRef.current !== 'gameover' && !props.isCheating && !props.isCoop) {
+        saveGameState();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [saveGameState, props.isCheating, props.isCoop]);
+
+
+  const toggleMute = useCallback(() => setIsMuted(prev => { audioManager.isMuted = !prev; return !prev; }), []);
+  const handleInteraction = useCallback(async () => { if (!hasInteracted) { await audioManager.init(); setHasInteracted(true); } }, [hasInteracted]);
+  const resetGame = useCallback(() => { audioManager.stopMusic(); props.onExit(); }, [props.onExit]);
+  const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); audioManager.playSfx('build_tower'); }, []);
+
+  const handleGameControl = useCallback(() => {
+    audioManager.playSfx('build_tower');
+    setGameStatus(prev => (prev === 'playing' ? 'paused' : 'playing'));
+  }, []);
+
+  const handleStartNextWaveNow = useCallback(() => {
+    if (isIntermission && gameStatus === 'playing') {
+        setIsIntermission(false);
+        setWaveStartCountdown(0);
+        audioManager.playWaveMusic();
+    }
+  }, [isIntermission, gameStatus]);
+
+  const onFocusTower = useCallback((tower: PlacedTower) => { setSelectedTowerToBuild(null); setFocusedTower(tower); audioManager.playSfx('build_tower'); }, []);
   const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
-    const currentLocalPlayer = players.find(p => p.id === localPlayerId);
-    if (!currentLocalPlayer || (tower && currentLocalPlayer.resources < tower.cost)) {
-      if(tower) toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
-      if (tower === null) {
-          setSelectedTowerToBuild(null);
-          if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = null;
-      }
+    if (localPlayer && tower && localPlayer.resources < tower.cost) {
+      toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
       return;
     }
-    if (selectedTowerToBuild?.id === tower?.id) { 
-        setSelectedTowerToBuild(null); 
-        if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = null;
-        return; 
-    }
-    setSelectedTowerToBuild(tower);
+    setSelectedTowerToBuild(prev => prev?.id === tower?.id ? null : tower);
+    if(tower) (document as any).__SELECTED_TOWER_ID = tower.id;
     setFocusedTower(null);
-    if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = tower?.id;
-  }, [players, localPlayerId, toast, selectedTowerToBuild]);
-  
-  const handleElementPick = (element: Element) => {
-    if (localPlayerId === 'spectator' || !localPlayer) return;
-    
-    const playerUpdate = { [localPlayer.id]: { unlockedElements: [...localPlayer.unlockedElements, element] }};
-    const stateUpdate = { gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME, currentWave: currentWave + 1, spawnedThisWave: 0 };
+  }, [localPlayer, toast]);
 
-    broadcastGameData([
-        [DeltaType.PLAYER_UPDATE, playerUpdate],
-        [DeltaType.GAME_STATE_UPDATE, stateUpdate]
-    ]);
+  const handleElementPick = (element: Element) => {
+    setPlayers(prev => [{...prev[0], unlockedElements: [...prev[0].unlockedElements, element]}]);
+    setCurrentWave(prev => prev + 1);
+    setIsIntermission(true);
+    setWaveStartCountdown(INTERMISSION_TIME);
+    setGameStatus('playing');
+    saveGameState();
   };
   
   if (!localPlayer) return null;
 
-  const isSpectator = localPlayerId === 'spectator';
+  const isSpectator = props.localPlayerId === 'spectator';
   const interactionPrompt = isSpectator ? 'Du schaust zu.' : selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
-    
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
-      <Header isMobile={isMobile} onExit={resetGame} fps={fps} isMuted={isMuted} toggleMute={toggleMute} />
+      <Header isMobile={isMobile} onExit={resetGame} fps={props.isCoop ? (props.fpsFromParent || 0) : fps} isMuted={isMuted} toggleMute={toggleMute} />
       <main className="flex-grow md:p-6 h-[calc(100%-69px)]">
         <LayoutComponent
-            players={players} setPlayers={setPlayers}
-            gameState={gameState} localPlayer={localPlayer}
-            currentWave={currentWave} totalWaves={waves.length}
-            difficulty={difficulty} handleGameControl={handleGameControl}
-            gameStatus={gameStatus} resetGame={resetGame}
+            players={players} setPlayers={setPlayers} gameState={gameState} localPlayer={localPlayer}
+            currentWave={currentWave} totalWaves={waves.length} difficulty={difficulty} 
+            handleGameControl={handleGameControl} gameStatus={gameStatus} resetGame={resetGame}
             towers={allTowers} setTowers={() => {}} 
-            placedTowers={placedTowers} enemies={enemies} attacks={attacks}
-            damageNumbers={damageNumbers} splashRings={splashRings}
-            currentPath={currentPath} handlePlaceTower={handlePlaceTower}
+            placedTowers={placedTowers} enemies={enemies} attacks={props.isCoop ? (props.attacksFromParent || []) : attacks}
+            damageNumbers={props.isCoop ? (props.damageNumbersFromParent || []) : damageNumbers} 
+            splashRings={props.isCoop ? (props.splashRingsFromParent || []) : splashRings}
+            currentPath={currentPath} handlePlaceTower={(row, col) => onLocalAction('build', {row, col})}
             onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower} rows={GRID_ROWS} cols={GRID_COLS}
-            startNode={START_NODE} endNode={END_NODE}
+            startNode={{row:1, col:1}} endNode={{row: GRID_ROWS, col: GRID_COLS}}
             interactionPrompt={interactionPrompt} cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={handleSelectTowerToBuild} handleUpgradeTower={handleUpgradeTower}
-            handleSellTower={handleSellTower} setFocusedTower={setFocusedTower}
+            onSelectTowerToBuild={handleSelectTowerToBuild} 
+            handleUpgradeTower={(uid) => onLocalAction('upgrade', {row: focusedTower!.position.row, col: focusedTower!.position.col, upgradeId: uid})}
+            handleSellTower={() => onLocalAction('sell', {row: focusedTower!.position.row, col: focusedTower!.position.col})}
+            setFocusedTower={setFocusedTower}
             spawnedThisWave={spawnedThisWave} totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
-            totalKilled={totalKilled} totalLeaked={totalLeaked}
+            totalKilled={props.isCoop ? (props.totalKilledFromParent || 0) : totalKilled} 
+            totalLeaked={props.isCoop ? (props.totalLeakedFromParent || 0) : totalLeaked}
             isIntermission={isIntermission} waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME} handleStartNextWaveNow={handleStartNextWaveNow}
-            lastUpgradedTowerId={lastUpgradedTowerId} justPlacedTowerId={justPlacedTowerId}
-            isCoop={isCoop} playerRole={localPlayerId}
+            lastUpgradedTowerId={props.isCoop ? (props.lastUpgradedTowerIdFromParent || null) : lastUpgradedTowerId}
+            isCoop={props.isCoop} playerRole={props.localPlayerId}
             handleLoadTestLayout={() => {}} handleLoadAllTowersLayout={() => {}}
-            isCheating={false} cheat_addResources={() => {}} cheat_skipWaves={() => {}} cheat_heal={() => {}} cheat_unlockAll={() => {}}
-            firingTowerIds={firingTowerIds} allTowers={allTowers}
-            isWsConnected={isWsConnected} hostPacketsPerSecond={hostPacketsPerSecond} clientPacketsPerSecond={clientPacketsPerSecond}
-            averagePacketSize={averagePacketSize} hostBytesSentPerSecond={hostBytesSentPerSecond} clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
+            isCheating={!!props.isCheating} cheat_addResources={() => {}} cheat_skipWaves={() => {}} cheat_heal={() => {}} cheat_unlockAll={() => {}}
+            firingTowerIds={props.isCoop ? (props.firingTowerIdsFromParent || new Set()) : firingTowerIds} allTowers={allTowers}
+            isWsConnected={props.isWsConnected} hostPacketsPerSecond={props.hostPacketsPerSecond} clientPacketsPerSecond={props.clientPacketsPerSecond}
+            averagePacketSize={props.averagePacketSize} hostBytesSentPerSecond={props.hostBytesSentPerSecond} clientBytesReceivedPerSecond={props.clientBytesReceivedPerSecond}
           />
       </main>
       
@@ -307,8 +514,8 @@ export default function GameSession({
               {gameState.lives <= 0 ? "Du hast alle Leben verloren." : "Herzlichen Glückwunsch, du hast alle Wellen besiegt!"} Du hast Welle {currentWave + 1} erreicht.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {finalGameResult?.finalTowers && (
-             <div className="flex flex-col items-center gap-2"><p className="text-sm font-semibold text-muted-foreground">Dein finales Spielfeld:</p><ScoreboardMiniMap towersByCell={finalGameResult.finalTowers} /></div>
+          {(props.isCoop ? props.finalGameResultFromParent : finalGameResult)?.finalTowers && (
+             <div className="flex flex-col items-center gap-2"><p className="text-sm font-semibold text-muted-foreground">Dein finales Spielfeld:</p><ScoreboardMiniMap towersByCell={(props.isCoop ? props.finalGameResultFromParent : finalGameResult)!.finalTowers!} /></div>
           )}
           <AlertDialogFooter><AlertDialogAction onClick={resetGame}>Zum Hauptmenü</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
