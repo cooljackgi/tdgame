@@ -345,7 +345,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const [hoveredCell, setHoveredCell] = useState<Node|null>(null);
 
   const towerCooldownsRef = useRef(new Map<string, number>());
-  const lastKnownEnemyPosRef = useRef<Map<string, { x: number; y: number; expires: number }>>(new Map());
   
   const boardDimensions = useMemo(() => {
     const boardWidth = GRID_COLS * CELL_SIZE;
@@ -491,60 +490,44 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         const enemiesById = new Map(enemies.map(e => [e.id, e]));
         for (const enemy of enemies) {
-            const pos = getEnemyWorldPos(enemy, now, enemy.path || currentPath);
-            lastKnownEnemyPosRef.current.set(enemy.id, { x: pos.x, y: pos.y, expires: now + 350 });
+            getEnemyWorldPos(enemy, now, enemy.path || currentPath);
         }
         
-        for (const [id, val] of lastKnownEnemyPosRef.current) {
-            if (val.expires < now) lastKnownEnemyPosRef.current.delete(id);
-        }
+        const towersMap = new Map(placedTowers.map(t => [t.id, t]));
 
         {
             const q = incomingAttacksRef.current;
             if (q.length) {
-                const towersMap = new Map(placedTowers.map(t => [t.id, t]));
-                
                 for (let i = 0; i < q.length; i++) {
                     const a = q[i];
-                    const tower = towersMap.get(a.towerId);
-                    if (!tower && !a.isChain) continue;
-            
+                    const enemyTarget = enemiesById.get(a.targetId);
+                    // This is the core fix: only create VFX if the target exists
+                    if (!enemyTarget) continue;
+
                     let fromPx: {x:number, y:number} | null = null;
                     if (a.isChain && a.chainSourceId) {
-                        const liveSrc = interpolatedEnemyPositions.get(a.chainSourceId);
-                        const lastKnownSrc = lastKnownEnemyPosRef.current.get(a.chainSourceId);
-                        if (liveSrc || lastKnownSrc) fromPx = (liveSrc ?? lastKnownSrc)!;
-                    } else if (tower) {
-                        const towerCenter = gridToPx(tower.position);
-                        const specId = tower.specId || tower.id;
-                        const towerVariant = 
-                            specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
-                            specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
-                            "basic";
-                        
-                        const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
-                        const size = CELL_SIZE * 0.8;
-                        const xOffset = (muzzle.x / 100) * size - (size / 2);
-                        const yOffset = (muzzle.y / 100) * size - (size / 2);
-
-                        fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
+                        fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
+                    } else {
+                        const tower = towersMap.get(a.towerId);
+                        if (tower) {
+                            const towerCenter = gridToPx(tower.position);
+                            const specId = tower.specId || tower.id;
+                            const towerVariant = 
+                                specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
+                                specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
+                                "basic";
+                            
+                            const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
+                            const size = CELL_SIZE * 0.8;
+                            const xOffset = (muzzle.x / 100) * size - (size / 2);
+                            const yOffset = (muzzle.y / 100) * size - (size / 2);
+    
+                            fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
+                        }
                     }
                     if (!fromPx) continue;
                     
-                    const enemyTarget = enemiesById.get(a.targetId);
-                    let toPx : {x:number, y:number} | null = null;
-
-                    if (enemyTarget) {
-                        toPx = getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath);
-                    } else {
-                        const lastKnown = lastKnownEnemyPosRef.current.get(a.targetId);
-                        if(lastKnown) {
-                            toPx = lastKnown;
-                        } else {
-                            toPx = gridToPx(a.targetPosition);
-                        }
-                    }
-
+                    const toPx = getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath);
                     if (!toPx) continue;
             
                     const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
@@ -612,8 +595,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             
             let p = interpolatedEnemyPositions.get(dn.targetId!);
             if (!p) {
-              const lastKnown = lastKnownEnemyPosRef.current.get(dn.targetId!);
-              p = lastKnown ? lastKnown : gridToPx(dn.position);
+              p = gridToPx(dn.position);
             }
 
             const yOffset = dn.isCrit ? 25 : 15;
@@ -1173,3 +1155,6 @@ export default GameBoard;
     
 
 
+
+
+    
