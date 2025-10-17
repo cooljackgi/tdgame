@@ -129,9 +129,9 @@ export default function SinglePlayerGame({
         () => findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []
     );
 
-    const handlePlaceTower = useCallback((row: number, col: number) => {
+    const handlePlaceTower = useCallback((row: number, col: number, towerId: string) => {
         const player = localPlayerRef.current;
-        const towerSpec = selectedTowerToBuild;
+        const towerSpec = initialTowers.find(t => t.id === towerId);
         if (!player || !towerSpec) return;
 
         const currentTowers = Object.values(towersByCellRef.current);
@@ -169,7 +169,7 @@ export default function SinglePlayerGame({
         setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [selectedTowerToBuild, toast]);
+    }, [toast]);
 
     const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -302,15 +302,73 @@ export default function SinglePlayerGame({
                   }
               }
             }
+            
+            const attacksToQueue: Attack[] = [];
+            const newDamageNumbers: DamageNumber[] = [];
+            const newFiringTowerIds = new Set<string>();
+
+            // Tower attack logic
+            for (const tower of Object.values(towersByCellRef.current)) {
+                if (now - tower.lastAttack >= tower.attackSpeed && enemiesRef.current.length > 0) {
+                    let target: Enemy | null = null;
+                    let minDistanceSq = tower.range * tower.range;
+
+                    for (const enemy of enemiesRef.current) {
+                        const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                        if (distSq <= minDistanceSq) {
+                            minDistanceSq = distSq;
+                            target = enemy;
+                        }
+                    }
+
+                    if (target) {
+                        tower.lastAttack = now;
+                        newFiringTowerIds.add(tower.id);
+                        
+                        const attackId = crypto.randomUUID();
+                        const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
+
+                        attacksToQueue.push({
+                            id: attackId,
+                            towerId: tower.id,
+                            targetId: target.id,
+                            targetPosition: target.position,
+                            elements: tower.elements,
+                            projectile: projectileType,
+                        });
+
+                        const damage = tower.damage;
+                        target.health -= Math.max(0, damage - target.armor);
+                        target.wasHit = true;
+                        newDamageNumbers.push({
+                            id: crypto.randomUUID(),
+                            amount: damage,
+                            position: target.position,
+                            color: '#ffffff',
+                        });
+                    }
+                }
+            }
+
+            if (newFiringTowerIds.size > 0) {
+                setFiringTowerIds(newFiringTowerIds);
+                setTimeout(() => setFiringTowerIds(new Set()), 150);
+            }
+            if (attacksToQueue.length > 0 && gameBoardRef.current) {
+                gameBoardRef.current.queueAttacks(attacksToQueue);
+            }
+            
+            if (newDamageNumbers.length > 0) {
+                setDamageNumbers(prev => [...prev, ...newDamageNumbers]);
+            }
 
             setEnemies(prevEnemies => {
                 const stillAlive: Enemy[] = [];
                 let livesLost = 0;
                 let resourcesGained = 0;
-                const newDamageNumbers: DamageNumber[] = [];
 
                 for (const enemy of prevEnemies) {
-                    let updatedEnemy = { ...enemy, effects: [...enemy.effects] }; // Shallow copy effects
+                    let updatedEnemy = { ...enemy, effects: [...enemy.effects] };
                     
                     const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
                     const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
@@ -324,7 +382,6 @@ export default function SinglePlayerGame({
                       }
                     }
 
-                    // Apply effects like burn
                     const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn' && e.expires > now);
                     if (burnEffect && burnEffect.expires > now) {
                         if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
@@ -334,6 +391,7 @@ export default function SinglePlayerGame({
                             newDamageNumbers.push({ id: crypto.randomUUID(), amount: damage, position: updatedEnemy.position, color: '#f97316' });
                         }
                     }
+                    updatedEnemy.wasHit = false;
 
                     if (updatedEnemy.pathIndex >= currentPath.length - 1) {
                         livesLost += 1;
@@ -346,11 +404,11 @@ export default function SinglePlayerGame({
                     stillAlive.push(updatedEnemy);
                 }
 
-                if (newDamageNumbers.length > 0) {
-                    setDamageNumbers(prev => [...prev, ...newDamageNumbers]);
-                }
                 if (livesLost > 0) {
                     setGameState(prev => ({...prev, lives: prev.lives - livesLost }));
+                    if (gameStateRef.current.lives - livesLost <= 0) {
+                        onGameEnd({ /* ... */ });
+                    }
                 }
                 if (resourcesGained > 0) {
                     setPlayers(prev => [{...prev[0], resources: prev[0].resources + resourcesGained}]);
@@ -422,10 +480,10 @@ export default function SinglePlayerGame({
             lastUpgradedTowerId={lastUpgradedTowerId}
             selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}
-            onPlaceTower={(r, c, tId) => handlePlaceTower(r, c)}
+            onPlaceTower={(r, c, tId) => handlePlaceTower(r, c, tId)}
             onUpgradeTower={(r, c, uId) => handleUpgradeTower(r, c, uId)}
             onSellTower={(r, c) => handleSellTower(r, c)}
+            gameBoardRef={gameBoardRef}
         />
     );
 }
-
