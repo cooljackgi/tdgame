@@ -130,6 +130,41 @@ export function useWebRTC(
         }
     }, []);
 
+    const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
+        const handleOpen = () => {
+            const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
+            const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
+            if (isGameOpen && isActionsOpen) setIsConnected(true);
+        };
+
+        const handleClose = () => {
+            setIsConnected(false);
+        };
+
+        dc.onopen = handleOpen;
+        dc.onclose = handleClose;
+
+        dc.onmessage = (event) => {
+            try {
+                const msg: NetMsg = JSON.parse(event.data);
+                packetCountRef.current++;
+                byteCountRef.current += event.data.length;
+                if (dc.label === 'game_data' && onGameDataMessageRef.current) {
+                    onGameDataMessageRef.current(msg);
+                } else if (dc.label === 'actions' && onActionMessageRef.current) {
+                    onActionMessageRef.current(msg);
+                }
+            } catch (e) {
+                console.error("Failed to parse RTC message:", e);
+            }
+        };
+
+        if (dc.label === 'game_data') {
+            gameDataChannelRef.current = dc;
+        } else if (dc.label === 'actions') {
+            actionsChannelRef.current = dc;
+        }
+    }, []);
 
     const createPeerConnection = useCallback(() => {
         const gid = gameIdRef.current;
@@ -193,44 +228,11 @@ export function useWebRTC(
             const dc = event.channel;
             const currentGid = gameIdRef.current;
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
-            
-            const handleOpen = () => {
-                const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
-                const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
-                if(isGameOpen && isActionsOpen) setIsConnected(true);
-            };
-
-            const handleClose = () => {
-                setIsConnected(false);
-            };
-
-            dc.onopen = handleOpen;
-            dc.onclose = handleClose;
-
-            dc.onmessage = (event) => {
-                try {
-                    const msg: NetMsg = JSON.parse(event.data);
-                    packetCountRef.current++;
-                    byteCountRef.current += event.data.length;
-                    if (dc.label === 'game_data' && onGameDataMessageRef.current) {
-                        onGameDataMessageRef.current(msg);
-                    } else if (dc.label === 'actions' && onActionMessageRef.current) {
-                        onActionMessageRef.current(msg);
-                    }
-                } catch(e) {
-                    console.error("Failed to parse RTC message:", e);
-                }
-            };
-            
-            if (dc.label === 'game_data') {
-                gameDataChannelRef.current = dc;
-            } else if (dc.label === 'actions') {
-                actionsChannelRef.current = dc;
-            }
+            setupDataChannelEvents(dc);
         };
 
         return pc;
-    }, []);
+    }, [setupDataChannelEvents]);
     
     useEffect(() => {
         let stopped = false;
@@ -298,12 +300,12 @@ export function useWebRTC(
                         if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
                           const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
                           logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: gdc.label });
-                          gameDataChannelRef.current = gdc;
+                          setupDataChannelEvents(gdc); // Setup handlers for host
                         }
                         if(!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
                             const ac = pc.createDataChannel('actions', { ordered: true });
                             logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: ac.label });
-                            actionsChannelRef.current = ac;
+                            setupDataChannelEvents(ac); // Setup handlers for host
                         }
                         
                         const offer = await pc.createOffer();
