@@ -302,6 +302,57 @@ export default function SinglePlayerGame({
       audioManager.playWaveMusic();
     }, []);
 
+    // --- CHEAT/DEBUG FUNCTIONS ---
+    const generateLayout = useCallback((towersToPlace: Tower[]) => {
+        const mazePath: Node[] = [
+            // Vertical lines
+            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 2 })),
+            ...Array.from({ length: 9 }, (_, i) => ({ row: 11 - i, col: 4 })),
+            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 6 })),
+            ...Array.from({ length: 9 }, (_, i) => ({ row: 11 - i, col: 8 })),
+            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 10 })),
+        ];
+
+        const newTowersByCell: Record<string, PlacedTower> = {};
+        const blockedPositions: Node[] = [];
+        let towerIndex = 0;
+
+        for (const pos of mazePath) {
+            if (towerIndex >= towersToPlace.length) break;
+
+            const towerSpec = towersToPlace[towerIndex % towersToPlace.length];
+            const cellKey = `${pos.row}_${pos.col}`;
+
+            newTowersByCell[cellKey] = {
+                ...towerSpec,
+                id: `tower-${pos.row}-${pos.col}-${Date.now()}`,
+                specId: towerSpec.id,
+                position: pos,
+                lastAttack: 0,
+                health: towerSpec.maxHealth,
+                ownerId: 'player1',
+            };
+            blockedPositions.push(pos);
+            towerIndex++;
+        }
+
+        setTowersByCell(newTowersByCell);
+        const newPath = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, blockedPositions, GRID_ROWS, GRID_COLS) ?? [];
+        setCurrentPath(newPath);
+    }, []);
+
+    const handleLoadTestLayout = useCallback(() => {
+        const testTowers = initialTowers.filter(t => t.tier <= 1 && t.elements.includes('neutral'));
+        generateLayout(testTowers);
+        toast({ title: 'Test-Layout geladen!', description: 'Ein Labyrinth aus Basistürmen wurde erstellt.' });
+    }, [generateLayout, toast]);
+
+    const handleLoadAllTowersLayout = useCallback(() => {
+        generateLayout(initialTowers);
+        toast({ title: 'Alle Türme geladen!', description: 'Jeder Turm wurde einmal im Labyrinth platziert.' });
+    }, [generateLayout, toast]);
+
+
     useEffect(() => {
         const gameLoop = () => {
             const now = performance.now();
@@ -548,8 +599,8 @@ export default function SinglePlayerGame({
                 justPlacedTowerId={justPlacedTowerId}
                 isCoop={false} 
                 playerRole="player1"
-                handleLoadTestLayout={() => {}} 
-                handleLoadAllTowersLayout={() => {}}
+                handleLoadTestLayout={handleLoadTestLayout}
+                handleLoadAllTowersLayout={handleLoadAllTowersLayout}
                 isCheating={isCheating} 
                 cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
                 cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
