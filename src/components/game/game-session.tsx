@@ -335,7 +335,11 @@ export function GameSession(props: GameSessionProps) {
                     if (targets.length > 0) {
                         const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
                         tower.lastAttack = now;
-                        newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: 'beam' });
+                        
+                        const specId = tower.specId || tower.id;
+                        const projectileType = (specId.includes('-1a') || specId.includes('-2a') || specId.includes('-1b') || specId.includes('-2b')) ? 'arrow' : 'beam';
+                        
+                        newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: projectileType });
                         newFiringTowerIds.add(tower.id);
                         audioManager.playSfx('shoot', 0.3);
                         
@@ -534,3 +538,5 @@ export function GameSession(props: GameSessionProps) {
     </div>
   );
 }
+
+    

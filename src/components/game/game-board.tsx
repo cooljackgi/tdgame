@@ -481,7 +481,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         ctx.scale(zoomRef.current, zoomRef.current);
         
         const currentEnemyIds = new Set(enemies.map(e => e.id));
-        
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
                 interpolatedEnemyPositions.delete(id);
@@ -501,29 +500,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 for (let i = 0; i < q.length; i++) {
                     const a = q[i];
                     const enemyTarget = enemiesById.get(a.targetId);
-                    // This is the core fix: only create VFX if the target exists
                     if (!enemyTarget) continue;
 
                     let fromPx: {x:number, y:number} | null = null;
+                    const tower = towersMap.get(a.towerId);
+                    if (!tower) continue;
+
                     if (a.isChain && a.chainSourceId) {
                         fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
                     } else {
-                        const tower = towersMap.get(a.towerId);
-                        if (tower) {
-                            const towerCenter = gridToPx(tower.position);
-                            const specId = tower.specId || tower.id;
-                            const towerVariant = 
-                                specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
-                                specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
-                                "basic";
-                            
-                            const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
-                            const size = CELL_SIZE * 0.8;
-                            const xOffset = (muzzle.x / 100) * size - (size / 2);
-                            const yOffset = (muzzle.y / 100) * size - (size / 2);
-    
-                            fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
-                        }
+                        const towerCenter = gridToPx(tower.position);
+                        const specId = tower.specId || tower.id;
+                        const towerVariant = 
+                            specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
+                            specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
+                            "basic";
+                        
+                        const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
+                        const size = CELL_SIZE * 0.8;
+                        const xOffset = (muzzle.x / 100) * size - (size / 2);
+                        const yOffset = (muzzle.y / 100) * size - (size / 2);
+
+                        fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
                     }
                     if (!fromPx) continue;
                     
@@ -567,11 +565,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         attacksPoolRef.current.forEachActive(attack => {
             if (!attack._vfx) return;
 
-            if (attack.targetId) {
-                const liveTarget = enemiesById.get(attack.targetId);
-                if (liveTarget) {
-                    attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
-                }
+            const liveTarget = enemiesById.get(attack.targetId);
+            if (liveTarget) {
+                attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
+            } else {
+                attacksPoolRef.current.free(attack);
+                return;
             }
 
             const life = Math.max(1, attack._vfx.life || 1);
@@ -594,9 +593,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
             
             let p = interpolatedEnemyPositions.get(dn.targetId!);
-            if (!p) {
-              p = gridToPx(dn.position);
-            }
+            if (!p) return; // Don't draw damage numbers for dead enemies
 
             const yOffset = dn.isCrit ? 25 : 15;
             const size = dn.isCrit ? 16 : 12;
@@ -1156,5 +1153,7 @@ export default GameBoard;
 
 
 
+
+    
 
     
