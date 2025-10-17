@@ -14,7 +14,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { ElementPickDialog } from '@/components/game/element-pick-dialog';
+import { ElementPickDialog } from './element-pick-dialog';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
@@ -156,87 +156,23 @@ export function GameSession(props: GameSessionProps) {
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
   const localPlayer = useMemo(() => players.find(p => p.id === props.localPlayerId), [players, props.localPlayerId]);
 
-  const onLocalAction = (action: 'build' | 'upgrade' | 'sell', payload: any) => {
-    if (props.isCoop && props.onLocalAction) {
-        props.onLocalAction(action, payload);
-    } else {
-        // Handle single-player actions directly
-        const selectedTowerId = (document as any).__SELECTED_TOWER_ID;
-        const { row, col, upgradeId } = payload;
-        switch(action) {
-            case 'build': handlePlaceTower(row, col, 'player1', selectedTowerId); break;
-            case 'upgrade': handleUpgradeTower(row, col, upgradeId, 'player1'); break;
-            case 'sell': handleSellTower(row, col, 'player1'); break;
-        }
+  useEffect(() => {
+    // Sync state from props for coop mode
+    if (props.isCoop) {
+        setPlayers(props.initialPlayers);
+        setGameState(props.initialGameState);
+        setTowersByCell(props.initialTowersByCell);
+        setCurrentWave(props.initialCurrentWave);
+        setDifficulty(props.initialDifficulty);
+        setIsIntermission(props.initialIsIntermission);
+        setWaveStartCountdown(props.initialWaveStartCountdown);
     }
-  };
+  }, [
+      props.isCoop, props.initialPlayers, props.initialGameState, 
+      props.initialTowersByCell, props.initialCurrentWave, 
+      props.initialDifficulty, props.initialIsIntermission, props.initialWaveStartCountdown
+  ]);
 
-  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id'], towerId: string) => {
-    const selectedTowerToBuild = allTowers.find(t => t.id === towerId);
-    if (!selectedTowerToBuild) return;
-
-    const cellKey = `${row}_${col}`;
-    if (towersByCellRef.current[cellKey]) return;
-    
-    const currentPlacedTowers = Object.values(towersByCellRef.current).map(t => t.position);
-    if (!findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...currentPlacedTowers, {row, col}], GRID_ROWS, GRID_COLS)) {
-        return;
-    }
-
-    const player = playersRef.current.find(p => p.id === playerId);
-    if (!player || player.resources < selectedTowerToBuild.cost) return;
-
-    const newTower: PlacedTower = JSON.parse(JSON.stringify({
-        ...selectedTowerToBuild, id: `tower-${row}-${col}-${Date.now()}`, specId: selectedTowerToBuild.id,
-        position: { row, col }, lastAttack: 0, health: selectedTowerToBuild.maxHealth, ownerId: player.id,
-    }));
-    
-    setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
-    setPlayers(prevPlayers => prevPlayers.map(p => p.id === playerId ? {...p, resources: p.resources - newTower.cost} : p));
-  }, [allTowers]);
-
-  const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string, playerId: Player['id']) => {
-      const player = playersRef.current.find(p => p.id === playerId);
-      const cellKey = `${row}_${col}`;
-      const focusedTower = towersByCellRef.current[cellKey];
-
-      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
-
-      const upgradeTowerSpec = allTowers.find(t => t.id === upgradeId);
-      if (!upgradeTowerSpec) return;
-
-      const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
-      const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
-
-      if (player.resources < cost) return;
-
-      const newPlacedTower: PlacedTower = JSON.parse(JSON.stringify({ 
-          ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
-      }));
-      
-      setTowersByCell(prev => ({...prev, [cellKey]: newPlacedTower }));
-      setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources - cost} : p));
-      setLastUpgradedTowerId(newPlacedTower.id);
-      setTimeout(() => setLastUpgradedTowerId(null), 1000);
-  }, [allTowers]);
-
-  const handleSellTower = useCallback((row: number, col: number, playerId: Player['id']) => {
-      const player = playersRef.current.find(p => p.id === playerId);
-      const cellKey = `${row}_${col}`;
-      const focusedTower = towersByCellRef.current[cellKey];
-
-      if (!player || !focusedTower || focusedTower.ownerId !== playerId) return;
-
-      const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
-      const refund = Math.round(focusedTower.cost * refundPercentage);
-
-      setTowersByCell(prev => {
-          const next = {...prev};
-          delete next[cellKey];
-          return next;
-      });
-      setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources + refund} : p));
-  }, []);
 
   const saveGameState = useCallback(() => {
     if (gameStatusRef.current === 'gameover' || props.isCheating || props.isCoop) return;
@@ -321,6 +257,9 @@ export function GameSession(props: GameSessionProps) {
         }
 
         let livesLost = 0;
+        let newDamageNumbers: DamageNumber[] = [];
+        let newFiringTowerIds = new Set<string>();
+
         setEnemies(currentEnemies => {
             const nextEnemies = [];
             for (const enemy of currentEnemies) {
@@ -351,17 +290,13 @@ export function GameSession(props: GameSessionProps) {
             setGameState(prev => {
                 const newLives = prev.lives - livesLost;
                 if (newLives <= 0) {
-                    handleGameEnd({ playerName: playersRef.current[0].name, playerUid: playersRef.current[0].id, date: new Date().toISOString(), difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
+                    handleGameEnd({ playerName: playersRef.current[0].name, playerUid: props.user?.uid || 'anon', date: new Date().toISOString(), difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
                     return { lives: 0 };
                 }
                 return { lives: newLives };
             });
         }
-
-        const newAttacks: Attack[] = [];
-        const newDamageNumbers: DamageNumber[] = [];
-        const newFiringTowerIds = new Set<string>();
-
+        
         setTowersByCell(currentTowers => {
             const towersCopy = { ...currentTowers };
             Object.values(towersCopy).forEach(tower => {
@@ -402,7 +337,7 @@ export function GameSession(props: GameSessionProps) {
             spawnerStateRef.current = null;
             const nextWave = currentWaveRef.current + 1;
             if (nextWave >= waves.length) {
-                handleGameEnd({ playerName: playersRef.current[0].name, playerUid: playersRef.current[0].id, date: new Date().toISOString(), difficulty: difficultyRef.current, wave: waves.length, won: true, finalTowers: towersByCellRef.current });
+                handleGameEnd({ playerName: playersRef.current[0].name, playerUid: props.user?.uid || 'anon', date: new Date().toISOString(), difficulty: difficultyRef.current, wave: waves.length, won: true, finalTowers: towersByCellRef.current });
             } else {
                 if ((nextWave + 1) % 5 === 0 && ALL_PICKABLE_ELEMENTS.some(e => !playersRef.current[0].unlockedElements.includes(e))) {
                     setGameStatus('picking-element');
@@ -457,9 +392,15 @@ export function GameSession(props: GameSessionProps) {
       return;
     }
     setSelectedTowerToBuild(prev => prev?.id === tower?.id ? null : tower);
-    if(tower) (document as any).__SELECTED_TOWER_ID = tower.id;
     setFocusedTower(null);
   }, [localPlayer, toast]);
+
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+      if (props.onLocalAction) {
+          props.onLocalAction(action, payload);
+      }
+  }, [props.onLocalAction]);
+
 
   const handleElementPick = (element: Element) => {
     setPlayers(prev => [{...prev[0], unlockedElements: [...prev[0].unlockedElements, element]}]);
@@ -488,7 +429,7 @@ export function GameSession(props: GameSessionProps) {
             placedTowers={placedTowers} enemies={enemies} 
             damageNumbers={props.isCoop ? (props.damageNumbersFromParent || []) : damageNumbers} 
             splashRings={props.isCoop ? (props.splashRingsFromParent || []) : splashRings}
-            currentPath={currentPath} handlePlaceTower={(row, col) => onLocalAction('build', {row, col})}
+            currentPath={currentPath} handlePlaceTower={(row, col) => onLocalAction('build', { row, col, towerId: selectedTowerToBuild!.id })}
             onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}
             gameBoardRef={gameBoardRef}

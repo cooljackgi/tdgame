@@ -22,9 +22,14 @@ const iceConfiguration: RTCConfiguration = {
   iceTransportPolicy: 'all',
 };
 
+export type NetMsg<T = any> = {
+    type: string;
+    payload: T;
+};
+
 export type UseWebRTCReturn = {
-    gameDataChannel: RTCDataChannel | null;
-    actionsChannel: RTCDataChannel | null;
+    sendAction: (type: string, payload: any) => void;
+    sendGameData: (type: string, payload: any) => void;
     isConnected: boolean; 
     packetsPerSecond: number;
     bytesPerSecond: number;
@@ -41,7 +46,14 @@ const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
 };
 
 
-export function useWebRTC(gameId: string | null, isHost: boolean, user: User | null, isMonitor: boolean = false): UseWebRTCReturn {
+export function useWebRTC(
+    gameId: string | null, 
+    isHost: boolean, 
+    user: User | null, 
+    isMonitor: boolean = false,
+    onGameDataMessage: (msg: NetMsg) => void,
+    onActionMessage: (msg: NetMsg) => void,
+): UseWebRTCReturn {
     const [gameDataChannel, setGameDataChannel] = useState<RTCDataChannel | null>(null);
     const [actionsChannel, setActionsChannel] = useState<RTCDataChannel | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -93,21 +105,59 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             setIsConnected(connected);
         };
         
-        if (gameDc) gameDc.addEventListener('open', checkConnection);
-        if (actDc) actDc.addEventListener('open', checkConnection);
-        if (gameDc) gameDc.addEventListener('close', checkConnection);
-        if (actDc) actDc.addEventListener('close', checkConnection);
+        if (gameDc) {
+            gameDc.addEventListener('open', checkConnection);
+            gameDc.addEventListener('close', checkConnection);
+            gameDc.onmessage = (event) => {
+                const msg: NetMsg = JSON.parse(event.data);
+                onGameDataMessage(msg);
+                packetCountRef.current++;
+                byteCountRef.current += event.data.length;
+            };
+        }
+        if (actDc) {
+            actDc.addEventListener('open', checkConnection);
+            actDc.addEventListener('close', checkConnection);
+            actDc.onmessage = (event) => {
+                const msg: NetMsg = JSON.parse(event.data);
+                onActionMessage(msg);
+                 packetCountRef.current++;
+                byteCountRef.current += event.data.length;
+            };
+        }
 
         checkConnection();
 
         return () => {
-            if (gameDc) gameDc.removeEventListener('open', checkConnection);
-            if (actDc) actDc.removeEventListener('open', checkConnection);
-            if (gameDc) gameDc.removeEventListener('close', checkConnection);
-            if (actDc) actDc.removeEventListener('close', checkConnection);
+            if (gameDc) {
+                gameDc.removeEventListener('open', checkConnection);
+                gameDc.removeEventListener('close', checkConnection);
+            }
+            if (actDc) {
+                actDc.removeEventListener('open', checkConnection);
+                actDc.removeEventListener('close', checkConnection);
+            }
         }
-    }, [gameDataChannel, actionsChannel]);
+    }, [gameDataChannel, actionsChannel, onGameDataMessage, onActionMessage]);
     
+    const sendGameData = useCallback((type: string, payload: any) => {
+        if (gameDataChannel && gameDataChannel.readyState === 'open') {
+            const msgStr = JSON.stringify({ type, payload });
+            gameDataChannel.send(msgStr);
+            sentPacketCountRef.current++;
+            sentByteCountRef.current += msgStr.length;
+        }
+    }, [gameDataChannel]);
+    
+    const sendAction = useCallback((type: string, payload: any) => {
+        if (actionsChannel && actionsChannel.readyState === 'open') {
+            const msgStr = JSON.stringify({ type, payload });
+            actionsChannel.send(msgStr);
+            sentPacketCountRef.current++;
+            sentByteCountRef.current += msgStr.length;
+        }
+    }, [actionsChannel]);
+
 
     const createPeerConnection = useCallback(() => {
         const gid = gameIdRef.current;
@@ -245,12 +295,13 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                     if (msg.type === 'hello' && isHostRef.current) {
                         if (pc.signalingState !== 'stable') return;
 
-                        if (!gameDataChannel) {
+                        // Only create channels if they don't exist or are closed.
+                        if (!gameDataChannel || gameDataChannel.readyState !== 'open') {
                           const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
                           logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: gdc.label });
                           setGameDataChannel(gdc);
                         }
-                        if(!actionsChannel) {
+                        if(!actionsChannel || actionsChannel.readyState !== 'open') {
                             const ac = pc.createDataChannel('actions', { ordered: true });
                             logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: ac.label });
                             setActionsChannel(ac);
@@ -359,5 +410,5 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    return { gameDataChannel, actionsChannel, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
+    return { sendAction, sendGameData, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
 }
