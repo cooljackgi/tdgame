@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, TestTube2, Github, Crown, Trophy, HelpCircle, Gamepad2, Trash2 } from 'lucide-react';
+import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, Github, Trophy, HelpCircle, Gamepad2, Trash2, LogOut } from 'lucide-react';
 import type { Difficulty, GameSaveState } from '@/lib/game-data/types';
 import { LOCAL_STORAGE_KEY, difficultyModifiers } from '@/lib/game-data/constants';
 import { onAuthStateChanged, signInWithGoogle, logOut, type User, auth } from '@/lib/firebase';
@@ -113,6 +113,16 @@ export default function Home() {
       console.error(error);
     }
   };
+  
+  const handleLogout = async () => {
+    try {
+      await logOut();
+      toast({ title: 'Erfolgreich abgemeldet.' });
+    } catch (error) {
+      toast({ title: 'Abmeldefehler', description: 'Die Abmeldung ist fehlgeschlagen.', variant: 'destructive' });
+      console.error(error);
+    }
+  };
 
   const clearSavedGame = () => {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -209,9 +219,14 @@ export default function Home() {
                     </CardHeader>
                     <CardContent className="space-y-2">
                         {user ? (
-                           <Button onClick={() => startGame('coop')} className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
-                            <Users className="mr-2" /> Zur Lobby
-                          </Button>
+                           <div className="flex gap-2">
+                             <Button onClick={() => startGame('coop')} className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
+                               <Users className="mr-2" /> Zur Lobby
+                             </Button>
+                             <Button onClick={handleLogout} variant="outline" size="icon">
+                               <LogOut />
+                             </Button>
+                           </div>
                         ) : (
                            <Button onClick={handleLogin} variant="secondary" className="w-full">
                             {loading ? <Loader2 className="mr-2 animate-spin"/> : <LogIn className="mr-2" />}
