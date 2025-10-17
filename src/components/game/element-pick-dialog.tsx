@@ -95,7 +95,7 @@ export function ElementPickDialog({ isOpen, unlockedElements, onElementPick, pla
                               className={cn(
                                   "flex flex-col items-center justify-center h-24 w-24 rounded-lg border-2 transition-all hover:border-primary",
                                   elementBackgroundColors[element],
-                                  isRecommended && "border-primary shadow-lg shadow-primary/30 animate-glow-pulse"
+                                  isRecommended && "border-primary shadow-lg shadow-primary/30 animate-pulse"
                               )}
                           >
                               <Icon className={cn("h-8 w-8 mb-2", elementColors[element])} />

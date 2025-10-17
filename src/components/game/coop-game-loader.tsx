@@ -154,12 +154,14 @@ export default function CoopGameLoader() {
   }, [isConnected, isGameHost, localPlayerId, sendAction]);
 
   // This is the function clients call to request an action from the host
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
       if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
       const actionTypeMap = {
         build: 'BUILD_TOWER_REQUEST',
         upgrade: 'UPGRADE_TOWER_REQUEST',
-        sell: 'SELL_TOWER_REQUEST'
+        sell: 'SELL_TOWER_REQUEST',
+        pick_element: 'PICK_ELEMENT_REQUEST',
+        start_wave_now: 'START_WAVE_NOW_REQUEST',
       }
       sendAction(actionTypeMap[action], { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost, sendAction]);
@@ -253,7 +255,7 @@ export default function CoopGameLoader() {
     return () => authUnsubscribe();
   }, [router, toast]);
   
-  if (loading || !gameDataLoaded || !localPlayerId || players.length === 0 || !localPlayer) {
+  if (loading || !gameDataLoaded || !localPlayerId || !localPlayer) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
@@ -331,6 +333,7 @@ export default function CoopGameLoader() {
                 onElementPick={onElementPick}
                 playerName={localPlayer.name}
                 currentWave={currentWave}
+                unlockedElements={new Set(localPlayer.unlockedElements)}
             />
         )}
     </div>
