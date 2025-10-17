@@ -7,7 +7,7 @@ import Header from '@/components/game/header';
 import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameResultWithId, GameDelta, EnemyStatusEffect, MovementPattern } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
-import { towers as initialTowers } from '@/lib/game-data/towers';
+// import { towers as initialTowers } from '@/lib/game-data/towers';
 import { difficultyModifiers, elementProjectileColors, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS, LOCAL_STORAGE_KEY } from '@/lib/game-data/constants';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -86,9 +86,11 @@ type GameSessionProps = {
     finalGameResultFromParent?: GameResult | null;
     totalKilledFromParent?: number;
     totalLeakedFromParent?: number;
+
+    allTowers: Tower[];
 }
 
-export default function GameSession(props: GameSessionProps) {
+export function GameSession(props: GameSessionProps) {
   
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -122,6 +124,7 @@ export default function GameSession(props: GameSessionProps) {
   const [fps, setFps] = useState(0);
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
+  const [spawnedThisWave, setSpawnedThisWave] = useState(0);
 
   // --- Game Loop Refs ---
   const gameLoopRef = useRef<number>();
@@ -148,7 +151,7 @@ export default function GameSession(props: GameSessionProps) {
   useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
   useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
   
-  const allTowers = useMemo(() => initialTowers.map(t => ({...t})), []);
+  const allTowers = props.allTowers;
   const placedTowers = useMemo(() => towersToArray(towersByCell), [towersByCell]);
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
   const localPlayer = useMemo(() => players.find(p => p.id === props.localPlayerId), [players, props.localPlayerId]);
