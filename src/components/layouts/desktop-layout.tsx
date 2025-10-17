@@ -216,7 +216,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <TabsContent value="build" className="mt-4" id="tutorial-build-menu">
         {!isSpectator && (
           <TowerSelection
-            allTowers={towers}
+            allTowers={allTowers}
             onSelectTower={onSelectTowerToBuild}
             focusedTower={focusedTower}
             selectedTowerToBuild={selectedTowerToBuild}
@@ -321,7 +321,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <aside className="hidden xl:flex xl:flex-col gap-6" id="tutorial-build-menu-xl">
         {!isSpectator && (
           <TowerSelection
-            allTowers={towers}
+            allTowers={allTowers}
             onSelectTower={onSelectTowerToBuild}
             focusedTower={focusedTower}
             selectedTowerToBuild={selectedTowerToBuild}
