@@ -706,6 +706,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
     if (hoveredCell && selectedTowerToBuild) {
         handlePlaceTower(hoveredCell.row, hoveredCell.col);
+        // Do not cancel interaction; allow multiple towers to be placed
+        return;
     } else if (hoveredCell) {
         const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
         if (towerAtCell) {
