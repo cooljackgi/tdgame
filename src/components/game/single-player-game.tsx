@@ -284,13 +284,14 @@ export default function SinglePlayerGame({
             const isCurrentlyIntermission = !spawnerStateRef.current && enemiesRef.current.length === 0;
 
             if (isCurrentlyIntermission) {
-                const newTime = waveStartCountdown - delta / 1000;
-                 if (newTime <= 0) {
-                    handleStartNextWaveNow();
-                    setWaveStartCountdown(0);
-                 } else {
-                    setWaveStartCountdown(newTime);
-                 }
+                setWaveStartCountdown(prevTime => {
+                    const newTime = prevTime - delta / 1000;
+                    if (newTime <= 0) {
+                        handleStartNextWaveNow();
+                        return 0;
+                    }
+                    return newTime;
+                });
             }
 
 
@@ -463,9 +464,9 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, []);
+    }, [handleStartNextWaveNow, onGameEnd, user]);
 
-    const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+    const LayoutComponent = useMemo(() => isMobile ? MobileLayout : DesktopLayout, [isMobile]);
     
     if (!localPlayer) return null;
     
@@ -552,5 +553,7 @@ export default function SinglePlayerGame({
         </div>
     );
 }
+
+    
 
     
