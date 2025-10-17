@@ -131,6 +131,38 @@ export default function SinglePlayerGame({
         setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
     }, [initialSavedGame, initialDifficulty, user]);
     
+    // Auto-save game state on unload
+    useEffect(() => {
+        const saveGame = () => {
+            if (isCheating || gameStatusRef.current !== 'playing') {
+                // Don't save cheat games or if game is already over
+                localStorage.removeItem(LOCAL_STORAGE_KEY);
+                return;
+            }
+            
+            const player1 = playersRef.current[0];
+            if (!player1) return;
+
+            const saveState: GameSaveState = {
+                players: { player1: player1, player2: null },
+                gameState: gameStateRef.current,
+                towersByCell: towersByCellRef.current,
+                enemies: enemiesRef.current,
+                currentWave: currentWaveRef.current,
+                difficulty: difficultyRef.current,
+            };
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveState));
+        };
+        
+        window.addEventListener('beforeunload', saveGame);
+        
+        return () => {
+            // Save on component unmount as well (e.g., navigating away)
+            saveGame();
+            window.removeEventListener('beforeunload', saveGame);
+        };
+    }, [isCheating]);
+
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
