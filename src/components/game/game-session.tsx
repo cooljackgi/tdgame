@@ -61,9 +61,10 @@ type GameSessionProps = {
 
     // --- Control Functions from Parent ---
     onExit: () => void;
-    
-    // --- CO-OP / SINGLE-PLAYER ACTION HANDLER ---
     onLocalAction: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
+    onPlaceTower?: (row: number, col: number, towerId: string) => void;
+    onUpgradeTower?: (tower: PlacedTower, upgradeId: string) => void;
+    onSellTower?: (tower: PlacedTower) => void;
     
     // --- CO-OP ONLY Props ---
     broadcastGameData?: (deltas: GameDelta[], reliable?: boolean) => void;
@@ -400,11 +401,33 @@ export function GameSession(props: GameSessionProps) {
     setFocusedTower(null);
   }, [localPlayer, toast]);
 
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-    props.onLocalAction(action, payload);
-  }, [props.onLocalAction]);
 
- const handleLoadTestLayout = useCallback(() => {
+  const handlePlaceTower = (row: number, col: number) => {
+      if (selectedTowerToBuild && props.onPlaceTower) {
+        props.onPlaceTower(row, col, selectedTowerToBuild.id);
+      } else if(selectedTowerToBuild) {
+        props.onLocalAction('build', { row, col, towerId: selectedTowerToBuild!.id })
+      }
+  }
+
+  const handleUpgradeTower = (upgradeId: string) => {
+      if(focusedTower && props.onUpgradeTower) {
+        props.onUpgradeTower(focusedTower, upgradeId);
+      } else if (focusedTower) {
+        props.onLocalAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
+      }
+  };
+
+  const handleSellTower = () => {
+    if(focusedTower && props.onSellTower) {
+      props.onSellTower(focusedTower);
+    } else if (focusedTower) {
+      props.onLocalAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col });
+    }
+  };
+
+
+  const handleLoadTestLayout = useCallback(() => {
     const newTowersByCell: Record<string, PlacedTower> = {};
     const towerSpec = allTowers.find(t => t.id === 'neutral-0');
     if (!towerSpec) return;
@@ -495,14 +518,14 @@ export function GameSession(props: GameSessionProps) {
             placedTowers={placedTowers} enemies={enemies} 
             damageNumbers={props.isCoop ? (props.damageNumbersFromParent || []) : damageNumbers} 
             splashRings={props.isCoop ? (props.splashRingsFromParent || []) : splashRings}
-            currentPath={currentPath} handlePlaceTower={(row, col) => onLocalAction('build', { row, col, towerId: selectedTowerToBuild!.id })}
+            currentPath={currentPath} handlePlaceTower={(row, col) => handlePlaceTower(row, col)}
             onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}
             gameBoardRef={gameBoardRef}
             interactionPrompt={interactionPrompt} cancelInteractions={cancelInteractions}
             onSelectTowerToBuild={handleSelectTowerToBuild} 
-            handleUpgradeTower={(uid) => onLocalAction('upgrade', {row: focusedTower!.position.row, col: focusedTower!.position.col, upgradeId: uid})}
-            handleSellTower={() => onLocalAction('sell', {row: focusedTower!.position.row, col: focusedTower!.position.col})}
+            handleUpgradeTower={handleUpgradeTower}
+            handleSellTower={handleSellTower}
             setFocusedTower={setFocusedTower}
             spawnedThisWave={spawnedThisWave} totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
             totalKilled={props.isCoop ? (props.totalKilledFromParent || 0) : totalKilled} 
