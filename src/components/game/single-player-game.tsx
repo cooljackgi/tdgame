@@ -16,7 +16,7 @@ import { audioManager } from '@/lib/audio/audio-manager';
 import { findPath } from '@/lib/pathfinding';
 
 import type { Player, GameState, GameStatus } from './game-session';
-import { towers as initialTowers } from '@/lib/game-data/towers';
+import { towers as initialTowers } from '@/lib/game-data/enemies';
 import { waves } from '@/lib/game-data/enemies';
 
 import { useIsMobile } from '@/hooks/use-mobile';
