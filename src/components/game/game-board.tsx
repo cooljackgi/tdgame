@@ -706,7 +706,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
     if (hoveredCell && selectedTowerToBuild) {
         handlePlaceTower(hoveredCell.row, hoveredCell.col);
-    } else if (hoveredCell && !selectedTowerToBuild) {
+    } else if (hoveredCell) {
         const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
         if (towerAtCell) {
             onFocusTower(towerAtCell);
@@ -799,10 +799,15 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         e.stopPropagation();
         if (hoveredCell && selectedTowerToBuild) {
             handlePlaceTower(hoveredCell.row, hoveredCell.col);
-        } else if (hoveredCell && !selectedTowerToBuild) {
+            // Do not cancel interaction, allow placing multiple towers.
+            return;
+        } else if (hoveredCell) {
             const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
-            if (towerAtCell) onFocusTower(towerAtCell);
-            else cancelInteractions();
+            if (towerAtCell) {
+                onFocusTower(towerAtCell);
+            } else {
+                cancelInteractions();
+            }
         } else {
             cancelInteractions();
         }
