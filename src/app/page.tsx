@@ -1,4 +1,3 @@
-
 // src/app/page.tsx
 "use client";
 
@@ -220,9 +219,6 @@ export default function Home() {
                           </Button>
                         )}
                         <Separator className="my-2" />
-                        <Link href="/admin/coop-test" className="w-full block">
-                            <Button variant="outline" className="w-full"><TestTube2 className="mr-2" /> Koop-Test</Button>
-                        </Link>
                          <Link href="/admin/analytics" className="w-full block">
                             <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Analyse-Dashboard</Button>
                         </Link>
