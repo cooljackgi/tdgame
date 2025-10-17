@@ -100,9 +100,16 @@ export default function SinglePlayerGame({
 
     useEffect(() => {
         if (initialSavedGame) {
+            const now = performance.now();
+            const loadedTowers = initialSavedGame.towersByCell;
+            for (const key in loadedTowers) {
+                // Reset cooldown by setting last attack time to be in the past
+                loadedTowers[key].lastAttack = now - (loadedTowers[key].attackSpeed + Math.random() * 500); 
+            }
+
             setPlayers([initialSavedGame.players.player1]);
             setGameState(initialSavedGame.gameState);
-            setTowersByCell(initialSavedGame.towersByCell);
+            setTowersByCell(loadedTowers); // Use the modified towers
             setEnemies(initialSavedGame.enemies);
             setCurrentWave(initialSavedGame.currentWave);
             setDifficulty(initialSavedGame.difficulty);
@@ -305,17 +312,19 @@ export default function SinglePlayerGame({
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         const mazePath: Node[] = [
-            // Vertical lines
+            // Lange vertikale Linien
             ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 2 })),
-            ...Array.from({ length: 9 }, (_, i) => ({ row: 11 - i, col: 4 })),
-            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 6 })),
-            ...Array.from({ length: 9 }, (_, i) => ({ row: 11 - i, col: 8 })),
-            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 10 })),
-            // Connectors
-            { row: 2, col: 3 },
-            { row: 11, col: 5 },
-            { row: 2, col: 7 },
-            { row: 11, col: 9 },
+            ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 4 })),
+            ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 6 })),
+            ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 8 })),
+            ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 10 })),
+            
+            // Konnektoren, um den Weg zu zwingen
+            { row: 11, col: 3 },
+            { row: 2, col: 5 },
+            { row: 11, col: 7 },
+            { row: 2, col: 9 },
+            { row: 11, col: 11 },
         ];
 
         const newTowersByCell: Record<string, PlacedTower> = {};
@@ -347,7 +356,7 @@ export default function SinglePlayerGame({
     }, []);
 
     const handleLoadTestLayout = useCallback(() => {
-        const testTowers = initialTowers.filter(t => t.tier === 1 && t.elements.includes('neutral'));
+        const testTowers = initialTowers.filter(t => t.tier === 1 && t.id.includes("neutral-1a"));
         generateLayout(testTowers);
         toast({ title: 'Test-Layout geladen!', description: 'Ein Labyrinth aus Basistürmen wurde erstellt.' });
     }, [generateLayout, toast]);
@@ -656,3 +665,6 @@ export default function SinglePlayerGame({
     
 
 
+
+
+    
