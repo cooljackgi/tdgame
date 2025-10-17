@@ -695,10 +695,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    const moved = Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5;
     isPanningRef.current = false;
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-    const moved = Math.hypot(dx, dy) > 5;
   
     if (moved) return;
     
@@ -706,8 +704,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
     if (hoveredCell && selectedTowerToBuild) {
         handlePlaceTower(hoveredCell.row, hoveredCell.col);
-        // Do not cancel interaction; allow multiple towers to be placed
-        return;
+        return; // Explicitly stop further actions
     } else if (hoveredCell) {
         const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
         if (towerAtCell) {
@@ -801,8 +798,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         e.stopPropagation();
         if (hoveredCell && selectedTowerToBuild) {
             handlePlaceTower(hoveredCell.row, hoveredCell.col);
-            // Do not cancel interaction, allow placing multiple towers.
-            return;
+            return; // Explicitly stop further actions
         } else if (hoveredCell) {
             const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
             if (towerAtCell) {
@@ -889,9 +885,19 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const endPos = gridToPx({row:12, col:12});
 
   const onTowerClick = useCallback((e: React.MouseEvent, clickedTower: PlacedTower) => {
-    if (Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5) return;
-    onFocusTower(clickedTower);
-  }, [onFocusTower]);
+    // Stop propagation to prevent board click handlers
+    e.stopPropagation();
+    
+    // If we are in build mode, a click on another tower should do nothing
+    if (selectedTowerToBuild) {
+        return; 
+    }
+
+    // If not in build mode, focus the clicked tower
+    if (Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) <= 5) {
+      onFocusTower(clickedTower);
+    }
+  }, [onFocusTower, selectedTowerToBuild]);
 
   return (
     <TooltipProvider>
@@ -906,7 +912,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={() => { isPanningRef.current = false; setHoveredCell(null); }}
+        onMouseLeave={() => { setHoveredCell(null); }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
