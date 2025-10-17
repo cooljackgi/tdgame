@@ -489,6 +489,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             }
         }
         
+        const enemiesById = new Map(enemies.map(e => [e.id, e]));
         for (const enemy of enemies) {
             const pos = getEnemyWorldPos(enemy, now, enemy.path || currentPath);
             lastKnownEnemyPosRef.current.set(enemy.id, { x: pos.x, y: pos.y, expires: now + 350 });
@@ -522,14 +523,15 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                             "basic";
                         
                         const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
-                        const xOffset = (muzzle.x / 100) * CELL_SIZE - (CELL_SIZE / 2);
-                        const yOffset = (muzzle.y / 100) * CELL_SIZE - (CELL_SIZE / 2);
+                        const size = CELL_SIZE * 0.8;
+                        const xOffset = (muzzle.x / 100) * size - (size / 2);
+                        const yOffset = (muzzle.y / 100) * size - (size / 2);
 
                         fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
                     }
                     if (!fromPx) continue;
                     
-                    const enemyTarget = enemies.find(e => e.id === a.targetId);
+                    const enemyTarget = enemiesById.get(a.targetId);
                     let toPx : {x:number, y:number} | null = null;
 
                     if (enemyTarget) {
@@ -549,7 +551,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     const dynamicLife =
                         a.projectile === "beam" || a.projectile === "chain"
                         ? 220
-                        : clamp(dist * 2.2, 260, 650);
+                        : clamp(dist * 2.6, 320, 750);
             
                     attacksPoolRef.current.alloc({
                         ...a,
@@ -581,6 +583,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         attacksPoolRef.current.forEachActive(attack => {
             if (!attack._vfx) return;
+
+            if (attack.targetId) {
+                const liveTarget = enemiesById.get(attack.targetId);
+                if (liveTarget) {
+                    attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
+                }
+            }
+
             const life = Math.max(1, attack._vfx.life || 1);
             const t = clamp((now - attack._vfx.start) / life, 0, 1);
             if (t >= 1) { attacksPoolRef.current.free(attack); return; }
@@ -1161,4 +1171,5 @@ export default GameBoard;
     
 
     
+
 
