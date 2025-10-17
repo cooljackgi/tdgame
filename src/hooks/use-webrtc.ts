@@ -281,7 +281,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                         if(!dataChannelRef.current || dataChannelRef.current.readyState === 'closed') {
                             const dc = pc.createDataChannel('game_data', {ordered: false, maxRetransmits: 0});
                             dataChannelRef.current = dc;
-                            setupDataChannelEvents(dc);
+                            setupDataChannelEvents(dc); // This was the missing part for the host
                             logWebRTCEvent(gid, currentRole, 'DC_CREATED', {label: dc.label});
                         }
                         
