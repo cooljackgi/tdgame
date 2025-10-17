@@ -320,49 +320,6 @@ export function GameSession(props: GameSessionProps) {
             }
         }
 
-        const newAttacks: Attack[] = [];
-        const newDamageNumbers: DamageNumber[] = [];
-        const newFiringTowerIds = new Set<string>();
-
-        setTowersByCell(currentTowers => {
-            const towersCopy = { ...currentTowers };
-            Object.values(towersCopy).forEach(tower => {
-                if (now - tower.lastAttack >= tower.attackSpeed) {
-                    const targets = enemiesRef.current.filter(e => {
-                        const distSq = (tower.position.col - e.position.col) ** 2 + (tower.position.row - e.position.row) ** 2;
-                        return distSq <= tower.range ** 2;
-                    });
-                    if (targets.length > 0) {
-                        const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
-                        tower.lastAttack = now;
-                        
-                        const specId = tower.specId || tower.id;
-                        const projectileType = (specId.includes('1a') || specId.includes('2a') || specId.includes('1b') || specId.includes('2b')) ? 'arrow' : 'beam';
-                        
-                        newAttacks.push({ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: projectileType });
-                        newFiringTowerIds.add(tower.id);
-                        audioManager.playSfx('shoot', 0.3);
-                        
-                        setEnemies(currentEnemies => currentEnemies.map(e => {
-                           if (e.id === mainTarget.id) {
-                               newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, targetId: e.id, amount: tower.damage, color: elementProjectileColors[tower.elements[0]] || 'white', position: e.position });
-                               return {...e, health: e.health - tower.damage, wasHit: true};
-                           }
-                           return e;
-                        }));
-                    }
-                }
-            });
-            return towersCopy;
-        });
-
-        if (newAttacks.length > 0) {
-            gameBoardRef.current?.queueAttacks(newAttacks);
-        }
-        setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
-        setFiringTowerIds(newFiringTowerIds);
-        setTimeout(() => setFiringTowerIds(new Set()), 150);
-
         let livesLost = 0;
         setEnemies(currentEnemies => {
             const nextEnemies = [];
@@ -400,7 +357,47 @@ export function GameSession(props: GameSessionProps) {
                 return { lives: newLives };
             });
         }
+
+        const newAttacks: Attack[] = [];
+        const newDamageNumbers: DamageNumber[] = [];
+        const newFiringTowerIds = new Set<string>();
+
+        setTowersByCell(currentTowers => {
+            const towersCopy = { ...currentTowers };
+            Object.values(towersCopy).forEach(tower => {
+                if (now - tower.lastAttack >= tower.attackSpeed) {
+                    const targets = enemiesRef.current.filter(e => {
+                        const distSq = (tower.position.col - e.position.col) ** 2 + (tower.position.row - e.position.row) ** 2;
+                        return distSq <= tower.range ** 2;
+                    });
+                    if (targets.length > 0) {
+                        const mainTarget = targets.sort((a,b) => b.pathIndex - a.pathIndex)[0];
+                        tower.lastAttack = now;
+                        
+                        const specId = tower.specId || tower.id;
+                        const projectileType = (specId.includes('-1a') || specId.includes('-2a') || specId.includes('-1b') || specId.includes('-2b')) ? 'arrow' : 'beam';
+                        
+                        gameBoardRef.current?.queueAttacks([{ id: `attack-${now}-${Math.random()}`, towerId: tower.id, targetId: mainTarget.id, targetPosition: mainTarget.position, elements: tower.elements, projectile: projectileType }]);
+                        newFiringTowerIds.add(tower.id);
+                        audioManager.playSfx('shoot', 0.3);
+                        
+                        setEnemies(currentEnemies => currentEnemies.map(e => {
+                           if (e.id === mainTarget.id) {
+                               newDamageNumbers.push({ id: `dmg-${now}-${Math.random()}`, targetId: e.id, amount: tower.damage, color: elementProjectileColors[tower.elements[0]] || 'white', position: e.position });
+                               return {...e, health: e.health - tower.damage, wasHit: true};
+                           }
+                           return e;
+                        }));
+                    }
+                }
+            });
+            return towersCopy;
+        });
         
+        setDamageNumbers(prev => [...prev.slice(-100), ...newDamageNumbers]);
+        setFiringTowerIds(newFiringTowerIds);
+        setTimeout(() => setFiringTowerIds(new Set()), 150);
+
         if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.length === 0) {
             spawnerStateRef.current = null;
             const nextWave = currentWaveRef.current + 1;
@@ -540,5 +537,7 @@ export function GameSession(props: GameSessionProps) {
     </div>
   );
 }
+
+    
 
     
