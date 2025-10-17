@@ -12,11 +12,12 @@ import { useWebRTC } from '@/hooks/use-webrtc';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
 import type { User } from "firebase/auth";
-import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Attack, DamageNumber, SplashRing, GameResult, Difficulty, GameDelta, Tower } from '@/lib/game-data/types';
 import { DeltaType } from "@/lib/game-data/types";
 import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
 import { httpsCallable } from "firebase/functions";
 import { Loader2 } from "lucide-react";
+import { towers as initialTowers } from '@/lib/game-data/towers';
 
 
 function CoopGame() {
@@ -86,7 +87,7 @@ function CoopGame() {
     
   // Subscribe to Firestore for initial setup and role determination
   useEffect(() => {
-    let gameUnsubscribe: Unsubscribe;
+    let gameUnsubscribe: Unsubscribe | undefined;
     
     const setupListeners = async (uid: string) => {
         try {
@@ -110,7 +111,8 @@ function CoopGame() {
                         const joinGameCallable = httpsCallable(functions, 'joinGame');
                         await joinGameCallable({ gameId });
                         toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
-                        return; // onSnapshot will re-trigger
+                        // onSnapshot will re-trigger, so we don't need to do anything else here
+                        return;
                     } catch(e: any) {
                        toast({ title: "Beitritt fehlgeschlagen", description: e.message, variant: 'destructive'});
                        router.push('/');
@@ -154,8 +156,9 @@ function CoopGame() {
   // Auth listener
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) setUser(currentUser);
-      else {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
          toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
          router.push('/');
       }
@@ -230,7 +233,7 @@ function CoopGame() {
   }, [localPlayerId, isGameHost, rtc.actionsChannel]);
   
   if (loading || !localPlayerId || players.length === 0) {
-    return <div className="flex items-center justify-center h-full"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4">Verbinde mit Spiel...</p></div>;
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
   // Use a dummy user if not available, mainly for dev/testing
@@ -260,7 +263,6 @@ function CoopGame() {
         onLocalAction={onLocalAction}
 
         // --- VFX and Stats (passed down) ---
-        attacksFromParent={attacks}
         damageNumbersFromParent={damageNumbers}
         splashRingsFromParent={splashRings}
         lastUpgradedTowerIdFromParent={lastUpgradedTowerId}
@@ -273,6 +275,7 @@ function CoopGame() {
         finalGameResultFromParent={finalGameResult}
         totalKilledFromParent={totalKilled}
         totalLeakedFromParent={totalLeaked}
+        allTowers={initialTowers}
     />
   );
 }
