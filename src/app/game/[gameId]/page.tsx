@@ -59,7 +59,7 @@ function CoopGame() {
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
   
-  const { gameDataChannel, actionsChannel, isConnected, ...rtcStats } = useWebRTC(gameId, isGameHost, user);
+  const rtc = useWebRTC(gameId, isGameHost, user);
   const gameLoopRef = useRef<number>();
   const lastTickRef = useRef(performance.now());
   const enemyIdCounter = useRef(0);
@@ -169,17 +169,17 @@ function CoopGame() {
   }, []);
 
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
-      if (deltas.length === 0 || !gameDataChannel) return;
+      if (deltas.length === 0 || !rtc.gameDataChannel) return;
       
       console.log('[HOST-SEND]', deltas);
       if (isGameHost) {
         const MAX_BUFFERED = 1024 * 1024; // 1MB buffer
-        if (gameDataChannel.readyState === 'open' && gameDataChannel.bufferedAmount < MAX_BUFFERED) {
-            gameDataChannel.send(JSON.stringify({ type: 'game_delta_batch', payload: deltas }));
+        if (rtc.gameDataChannel.readyState === 'open' && rtc.gameDataChannel.bufferedAmount < MAX_BUFFERED) {
+            rtc.gameDataChannel.send(JSON.stringify({ type: 'game_delta_batch', payload: deltas }));
         }
       }
       applyDeltas(deltas);
-  }, [gameDataChannel, isGameHost, applyDeltas]);
+  }, [rtc.gameDataChannel, isGameHost, applyDeltas]);
     
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
@@ -283,7 +283,7 @@ function CoopGame() {
   }, [router, toast]);
   
   useEffect(() => {
-    if (!gameDataChannel) return;
+    if (!rtc.gameDataChannel) return;
     const handleMessage = (event: MessageEvent) => {
         try {
             const data = JSON.parse(event.data);
@@ -292,9 +292,9 @@ function CoopGame() {
             }
         } catch (e) { console.error("Failed to parse game delta", e)}
     }
-    gameDataChannel.addEventListener('message', handleMessage);
-    return () => gameDataChannel.removeEventListener('message', handleMessage);
-  }, [gameDataChannel, applyDeltas]);
+    rtc.gameDataChannel.addEventListener('message', handleMessage);
+    return () => rtc.gameDataChannel?.removeEventListener('message', handleMessage);
+  }, [rtc.gameDataChannel, applyDeltas]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
@@ -328,7 +328,9 @@ function CoopGame() {
     if (!player || player.resources < selectedTowerToBuild.cost) return;
 
     const newTower: PlacedTower = {
-        ...selectedTowerToBuild, id: `tower-${row}-${col}-${Date.now()}`, specId: selectedTowerToBuild.id, position: { row, col }, lastAttack: 0, health: selectedTowerToBuild.maxHealth, ownerId: player.id,
+        ...JSON.parse(JSON.stringify(selectedTowerToBuild)), 
+        id: `tower-${row}-${col}-${Date.now()}`, 
+        specId: selectedTowerToBuild.id, position: { row, col }, lastAttack: 0, health: selectedTowerToBuild.maxHealth, ownerId: player.id,
     };
     
     const newTowers = { ...towersByCellRef.current, [cellKey]: newTower };
@@ -355,7 +357,7 @@ function CoopGame() {
 
       if (player.resources < cost) return;
 
-      const newPlacedTower: PlacedTower = { ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth };
+      const newPlacedTower: PlacedTower = { ...JSON.parse(JSON.stringify(focusedTower)), ...JSON.parse(JSON.stringify(upgradeTowerSpec)), specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth };
       const newTowers = { ...towersByCellRef.current, [cellKey]: newPlacedTower };
       const playerUpdate = { [player.id]: { resources: player.resources - cost } };
       
@@ -387,8 +389,34 @@ function CoopGame() {
       ], true);
   }, [broadcastGameData]);
 
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+    if (localPlayerId === 'spectator' || !localPlayerId) return;
+  
+    const towerId = (document as any).__SELECTED_TOWER_ID;
+  
+    if (isGameHost) {
+      switch(action) {
+        case 'build': handlePlaceTowerHost(payload.row, payload.col, localPlayerId, towerId); break;
+        case 'upgrade': handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
+        case 'sell': handleSellTowerHost(payload.row, payload.col, localPlayerId); break;
+      }
+    } else {
+        if (!rtc.actionsChannel || rtc.actionsChannel.readyState !== 'open') return;
+
+        const type = action === 'build' ? String(DeltaType.BUILD_TOWER_REQUEST)
+                   : action === 'upgrade' ? String(DeltaType.UPGRADE_TOWER_REQUEST)
+                   : String(DeltaType.SELL_TOWER_REQUEST);
+        
+        const finalPayload = action === 'build' ? { ...payload, towerId } : payload;
+        const msg = { kind: 'ACTION', type, payload: { ...finalPayload, playerId: localPlayerId } };
+        
+        console.log('[CLIENT-SEND-ACTION]', msg);
+        rtc.actionsChannel.send(JSON.stringify(msg));
+    }
+  }, [localPlayerId, isGameHost, rtc.actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
+
   useEffect(() => {
-    if (!actionsChannel) return;
+    if (!rtc.actionsChannel || !isGameHost) return;
 
     const handleActionMessage = (ev: MessageEvent) => {
         try {
@@ -412,35 +440,9 @@ function CoopGame() {
         }
     };
 
-    actionsChannel.addEventListener('message', handleActionMessage);
-    return () => actionsChannel.removeEventListener('message', handleActionMessage);
-  }, [actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
-
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
-    if (localPlayerId === 'spectator' || !localPlayerId) return;
-  
-    const towerId = (document as any).__SELECTED_TOWER_ID;
-  
-    if (isGameHost) {
-      switch(action) {
-        case 'build': handlePlaceTowerHost(payload.row, payload.col, localPlayerId, towerId); break;
-        case 'upgrade': handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
-        case 'sell': handleSellTowerHost(payload.row, payload.col, localPlayerId); break;
-      }
-    } else {
-        if (!actionsChannel || actionsChannel.readyState !== 'open') return;
-
-        const type = action === 'build' ? String(DeltaType.BUILD_TOWER_REQUEST)
-                   : action === 'upgrade' ? String(DeltaType.UPGRADE_TOWER_REQUEST)
-                   : String(DeltaType.SELL_TOWER_REQUEST);
-        
-        const finalPayload = action === 'build' ? { ...payload, towerId } : payload;
-        const msg = { kind: 'ACTION', type, payload: { ...finalPayload, playerId: localPlayerId } };
-        
-        console.log('[CLIENT-SEND-ACTION]', msg);
-        actionsChannel.send(JSON.stringify(msg));
-    }
-  }, [localPlayerId, isGameHost, actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
+    rtc.actionsChannel.addEventListener('message', handleActionMessage);
+    return () => rtc.actionsChannel?.removeEventListener('message', handleActionMessage);
+  }, [rtc.actionsChannel, isGameHost, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
 
 
   useEffect(() => {
@@ -632,10 +634,10 @@ function CoopGame() {
         
         // Stats
         fps={fps} setFps={setFps}
-        isWsConnected={isConnected}
-        hostPacketsPerSecond={rtcStats.sentPacketsPerSecond} hostBytesSentPerSecond={rtcStats.sentBytesPerSecond}
-        clientPacketsPerSecond={rtcStats.packetsPerSecond} clientBytesReceivedPerSecond={rtcStats.bytesPerSecond}
-        averagePacketSize={rtcStats.averagePacketSize}
+        isWsConnected={rtc.isConnected}
+        hostPacketsPerSecond={rtc.sentPacketsPerSecond} hostBytesSentPerSecond={rtc.sentBytesPerSecond}
+        clientPacketsPerSecond={rtc.packetsPerSecond} clientBytesReceivedPerSecond={rtc.bytesPerSecond}
+        averagePacketSize={rtc.averagePacketSize}
         finalGameResult={finalGameResult}
         totalKilled={totalKilled} setTotalKilled={setTotalKilled}
         totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}

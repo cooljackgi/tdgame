@@ -184,7 +184,7 @@ export default function SinglePlayerGame({
         }
     
         const newTower: PlacedTower = {
-            ...selectedTowerToBuild,
+            ...JSON.parse(JSON.stringify(selectedTowerToBuild)),
             id: `tower-${row}-${col}-${Date.now()}`,
             specId: selectedTowerToBuild.id,
             position: { row, col },
@@ -223,7 +223,7 @@ export default function SinglePlayerGame({
         
         const newPlacedTower: PlacedTower = {
             ...focusedTower,
-            ...upgradeTowerSpec,
+            ...JSON.parse(JSON.stringify(upgradeTowerSpec)),
             specId: upgradeTowerSpec.id,
             health: upgradeTowerSpec.maxHealth,
         };
@@ -262,11 +262,12 @@ export default function SinglePlayerGame({
     }, [gameStatus]);
 
     const cancelInteractions = useCallback(() => {
-        setSelectedTowerToBuild(null);
-        if (focusedTower) {
-            setFocusedTower(null);
+        if (selectedTowerToBuild || focusedTower) {
+           audioManager.playSfx('build_tower');
         }
-    }, [focusedTower]);
+        setSelectedTowerToBuild(null);
+        setFocusedTower(null);
+    }, [focusedTower, selectedTowerToBuild]);
 
     const handleSelectTowerToBuild = (tower: Tower | null) => {
         if (tower?.id === selectedTowerToBuild?.id) {
@@ -302,7 +303,7 @@ export default function SinglePlayerGame({
             let towerSpec = towerSpecsToPlace[towerIndex % towerSpecsToPlace.length];
             if (!towerSpec) towerSpec = initialTowers[0];
             const id = `tower-${pos.row}-${pos.col}-${Date.now()}-${Math.random()}`;
-            acc[`${pos.row}_${pos.col}`] = { ...towerSpec, id, specId: towerSpec.id, position: pos, lastAttack: 0, health: towerSpec.maxHealth, ownerId: 'player1' };
+            acc[`${pos.row}_${pos.col}`] = { ...JSON.parse(JSON.stringify(towerSpec)), id, specId: towerSpec.id, position: pos, lastAttack: 0, health: towerSpec.maxHealth, ownerId: 'player1' };
             if (useAllTowers) towerIndex++;
             return acc;
         }, {} as Record<string, PlacedTower>);
