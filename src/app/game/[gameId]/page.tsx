@@ -301,6 +301,10 @@ function CoopGame() {
   }, [gameId, isGameHost, gameStatus, broadcastGameData]);
   
   const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id'], towerId?: string) => {
+    if (!towerId) {
+        console.error(`[HOST] Build failed: towerId undefined not found.`);
+        return;
+    }
     const selectedTowerToBuild = allTowersData.find(t => t.id === towerId);
     if (!selectedTowerToBuild) {
         console.error(`[HOST] Build failed: towerId ${towerId} not found.`);
@@ -628,3 +632,5 @@ function CoopGame() {
 }
 
 export default CoopGame;
+
+    
