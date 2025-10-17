@@ -1,5 +1,4 @@
 
-
 import React, { useState, memo, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -196,7 +195,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       </div>
 
       {/* BOTTOM BAR */}
-      <div
+      <footer
         className="flex-shrink-0 border-t bg-card/80 backdrop-blur-sm"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0)' }}
       >
@@ -355,7 +354,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             </Sheet>
           </div>
         </div>
-      </div>
+      </footer>
     </div>
   );
 });
