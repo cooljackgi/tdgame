@@ -361,6 +361,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const isPanningRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
   
   const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
   const lastTouchRef = useRef<{dist: number; cx: number; cy: number} | null>(null);
@@ -703,8 +704,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     e.stopPropagation(); 
 
     if (hoveredCell && selectedTowerToBuild) {
+        suppressNextClickRef.current = true;
         handlePlaceTower(hoveredCell.row, hoveredCell.col);
-        return; // Explicitly stop further actions
+        return;
     } else if (hoveredCell) {
         const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
         if (towerAtCell) {
@@ -921,7 +923,15 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           ref={worldRef}
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
-          onClick={cancelInteractions} // Add this to cancel interactions when clicking the board background
+          onClick={(e) => {
+            if (suppressNextClickRef.current) {
+              suppressNextClickRef.current = false;
+              e.stopPropagation();
+              return;
+            }
+            if (selectedTowerToBuild) return;
+            cancelInteractions();
+          }}
         >
           {/* Layer 10: Game World (Grid, Path, Towers, Enemies) */}
           <div 
