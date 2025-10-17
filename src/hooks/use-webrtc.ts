@@ -8,11 +8,9 @@ import type { User } from 'firebase/auth';
 
 const RELAY_DEFAULT = 'wss://ws-relay-345017018409.us-central1.run.app';
 
-// STUN Server Konfiguration (Google's öffentliche Server)
 const iceConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    // 🔻 TURN eintragen (ersetzen durch deine Werte)
     ...(process.env.NEXT_PUBLIC_TURN_URL
       ? [{
           urls: process.env.NEXT_PUBLIC_TURN_URL!.split(',').map(s => s.trim()),
@@ -24,16 +22,10 @@ const iceConfiguration: RTCConfiguration = {
   iceTransportPolicy: 'all',
 };
 
-export type NetMsg = {
-    type: string;
-    payload?: any;
-    kind?: 'ACTION' | 'DELTA';
-};
-
 export type UseWebRTCReturn = {
     gameDataChannel: RTCDataChannel | null;
     actionsChannel: RTCDataChannel | null;
-    isConnected: boolean; // True, wenn beide Kanäle offen sind
+    isConnected: boolean; 
     packetsPerSecond: number;
     bytesPerSecond: number;
     averagePacketSize: number;
@@ -42,7 +34,7 @@ export type UseWebRTCReturn = {
 };
 
 const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
-  const q = `?gameId=${encodeURIComponent(gameId)}`;
+  const q = `?gameId=${encodeURIComponent(gameId)}&monitor=${isMonitor ? '1' : '0'}`;
   const envBase = process.env.NEXT_PUBLIC_WS_BASE;
   const base = (envBase ? envBase.replace(/\/ws$/, '') : RELAY_DEFAULT);
   return `${base}/ws${q}`;
@@ -97,10 +89,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         const actDc = actionsChannel;
 
         const checkConnection = () => {
-            setIsConnected(
-                gameDc?.readyState === 'open' &&
-                actDc?.readyState === 'open'
-            );
+            const connected = !!(gameDc && gameDc.readyState === 'open' && actDc && actDc.readyState === 'open');
+            setIsConnected(connected);
         };
         
         if (gameDc) gameDc.addEventListener('open', checkConnection);
@@ -117,6 +107,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (actDc) actDc.removeEventListener('close', checkConnection);
         }
     }, [gameDataChannel, actionsChannel]);
+    
 
     const createPeerConnection = useCallback(() => {
         const gid = gameIdRef.current;
@@ -171,12 +162,16 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             if (pc.connectionState === 'connected') {
                 logSelectedCandidatePair(pc);
             }
+             if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                setIsConnected(false);
+            }
         };
         
         pc.ondatachannel = (event) => {
             const dc = event.channel;
             const currentGid = gameIdRef.current;
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
+            
             if (dc.label === 'game_data') {
                 setGameDataChannel(dc);
             } else if (dc.label === 'actions') {
@@ -187,7 +182,6 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         return pc;
     }, []);
     
-    // The main, one-time-only effect
     useEffect(() => {
         let stopped = false;
         
@@ -222,8 +216,6 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             ws.onopen = () => {
                 backoffRef.current = 0;
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_OPEN');
-
-                // Client and Monitor start sending "hello" periodically until an offer is received
                 if (!isHostRef.current) {
                     const sendHello = () => {
                        if (ws.readyState === WebSocket.OPEN) {
@@ -250,20 +242,18 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 if(!pc) return;
                 
                 try {
-                    // Host receives "hello", creates offer
                     if (msg.type === 'hello' && isHostRef.current) {
                         if (pc.signalingState !== 'stable') return;
 
-                        // Create both channels as the host
                         if (!gameDataChannel) {
-                          const dc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
-                          logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: dc.label });
-                          setGameDataChannel(dc);
+                          const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
+                          logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: gdc.label });
+                          setGameDataChannel(gdc);
                         }
                         if(!actionsChannel) {
-                            const dc = pc.createDataChannel('actions', { ordered: true });
-                            logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: dc.label });
-                            setActionsChannel(dc);
+                            const ac = pc.createDataChannel('actions', { ordered: true });
+                            logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: ac.label });
+                            setActionsChannel(ac);
                         }
                         
                         const offer = await pc.createOffer();
@@ -272,7 +262,6 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                         ws.send(JSON.stringify(offerMsg));
                         logWebRTCEvent(gid, currentRole, 'PC_OFFER_CREATED_REHELLO');
                     
-                    // Client or Monitor receives "offer", creates answer
                     } else if (msg.type === 'offer' && !isHostRef.current) {
                         if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                         helloIntervalRef.current = undefined;
@@ -285,13 +274,9 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                           ws.send(JSON.stringify(answerMsg));
                         }
                     
-                    // Host receives "answer"
                     } else if (msg.type === 'answer' && isHostRef.current) {
-                        if (pc.signalingState !== 'stable') {
-                            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
-                        }
+                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
                     
-                    // Both receive ICE candidates
                     } else if (msg.type === 'ice-candidate') {
                         const cand = msg.payload;
                         if (!pc.remoteDescription || !cand || (!cand.candidate && cand.candidate !== '')) return;
@@ -347,7 +332,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
         periodicLogIntervalRef.current = setInterval(() => {
             const gid = gameIdRef.current;
-            if (gid && isConnected) {
+            if (gid && (gameDataChannel?.readyState === 'open' || actionsChannel?.readyState === 'open')) {
                 const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
                 logWebRTCEvent(gid, currentRole, 'NET_TICK', {
                     pps: ppsRef.current,
@@ -355,7 +340,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                     avg: avgRef.current,
                 });
             }
-        }, 2000);
+        }, 5000);
 
         return () => {
             stopped = true;
@@ -371,7 +356,8 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             }
             if (peerConnectionRef.current) peerConnectionRef.current.close();
         };
-    }, [createPeerConnection, isConnected, gameDataChannel, actionsChannel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return { gameDataChannel, actionsChannel, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
 }
