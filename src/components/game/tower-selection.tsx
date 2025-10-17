@@ -4,7 +4,7 @@ import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
-import type { Player } from '@/components/game/game-session';
+import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
 import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
@@ -120,7 +120,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 
   const content = (
       <>
-      {focusedTower && !isMobile ? (
+      {focusedTower ? (
          <div className="space-y-4">
             <div className="flex items-center justify-between p-2 bg-card rounded-lg">
                 <div className="flex flex-col">
@@ -169,7 +169,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   );
 
   const getTitle = () => {
-    if (focusedTower && !isMobile) return `Upgrade ${focusedTower.name}`;
+    if (focusedTower) return `Upgrade ${focusedTower.name}`;
     return `Turm-Menü (${localPlayer?.name || '...'})`;
   };
 

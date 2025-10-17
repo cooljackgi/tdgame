@@ -117,7 +117,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
-    : (selectedTowerToBuild ? 'Turm bauen' : 'Turm-Menü');
+    : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Turm bauen');
   const sheetIcon = isSpectator ? <Eye /> : <Hammer />;
 
   const handleSelectAndClose = (tower: Tower | null) => {
@@ -129,6 +129,11 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     handleSellTower();
     setIsBuildSheetOpen(false);
   };
+  
+  const handleUpgradeAndClose = (upgradeId: string) => {
+    handleUpgradeTower(upgradeId);
+    setIsBuildSheetOpen(false);
+  }
 
   return (
     <div className="w-full h-[calc(100svh-133px)] flex flex-col">
@@ -212,7 +217,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <Button
                   variant="outline"
                   className="h-14 flex flex-col justify-center"
-                  disabled={gameStatus === 'picking-element' || isSpectator || !!focusedTower}
+                  disabled={gameStatus === 'picking-element' || isSpectator}
                 >
                   {sheetIcon}
                   <span className="text-[11px] mt-1">{sheetTitle}</span>
@@ -234,11 +239,11 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <div className="px-4 py-4">
                   {!isSpectator && (
                     <TowerSelection
-                      allTowers={towers}
+                      allTowers={allTowers}
                       onSelectTower={handleSelectAndClose}
-                      focusedTower={null} // Pass null, as mobile context menu handles this
+                      focusedTower={focusedTower}
                       selectedTowerToBuild={selectedTowerToBuild}
-                      onUpgradeTower={handleUpgradeTower}
+                      onUpgradeTower={handleUpgradeAndClose}
                       onSellTower={handleSellAndClose}
                       onBack={cancelInteractions}
                       localPlayer={localPlayer}

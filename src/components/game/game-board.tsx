@@ -122,7 +122,7 @@ type GameBoardProps = {
   onSellTower: () => void;
   allTowers: Tower[];
   localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined;
-  attacks: Attack[];
+  attacks?: Attack[];
 };
 
 
@@ -310,7 +310,7 @@ const MemoizedTower = React.memo(function GameCell({
 const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({ 
     placedTowers, 
     enemies, 
-    attacks,
+    attacks = [], // default to empty array
     damageNumbers,
     splashRings,
     currentPath,
