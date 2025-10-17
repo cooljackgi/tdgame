@@ -529,8 +529,20 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     }
                     if (!fromPx) continue;
                     
-                    const toPx = a.targetPosition ? gridToPx(a.targetPosition) : null;
-            
+                    const enemyTarget = enemies.find(e => e.id === a.targetId);
+                    let toPx : {x:number, y:number} | null = null;
+
+                    if (enemyTarget) {
+                        toPx = getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath);
+                    } else {
+                        const lastKnown = lastKnownEnemyPosRef.current.get(a.targetId);
+                        if(lastKnown) {
+                            toPx = lastKnown;
+                        } else {
+                            toPx = gridToPx(a.targetPosition);
+                        }
+                    }
+
                     if (!toPx) continue;
             
                     const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
@@ -1149,3 +1161,4 @@ export default GameBoard;
     
 
     
+
