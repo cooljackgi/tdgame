@@ -68,15 +68,15 @@ type GameSessionProps = {
 
     // --- Control Functions from Parent ---
     onExit: () => void;
-    onPlaceTower: (row: number, col: number) => void;
-    onUpgradeTower: (upgradeId: string) => void;
-    onSellTower: () => void;
+    onPlaceTower: (row: number, col: number, towerId: string) => void;
+    onUpgradeTower: (row: number, col: number, upgradeId: string) => void;
+    onSellTower: (row: number, col: number) => void;
     onFocusTower: (tower: PlacedTower) => void;
     cancelInteractions: () => void;
     onSelectTowerToBuild: (tower: Tower | null) => void;
     onElementPick: (element: Element) => void;
-    onStartNextWaveNow?: () => void;   // NEU
-    waveStartCountdown?: number;       // NEU
+    onStartNextWaveNow?: () => void;
+    waveStartCountdown?: number;
     
     // --- VFX State & Interaction State (passed down from parent) ---
     selectedTowerToBuild: Tower | null;
@@ -130,8 +130,15 @@ export function GameSession(props: GameSessionProps) {
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
   const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
   
-  const isIntermission = useMemo(() => enemies.length === 0, [enemies]);
-  const waveStartCountdown = props.waveStartCountdown ?? INTERMISSION_TIME;
+  const isIntermission = useMemo(() => {
+     if (isCoop) return props.waveStartCountdown !== 0;
+     return enemies.length === 0;
+  }, [isCoop, enemies, props.waveStartCountdown]);
+
+  const waveStartCountdown = useMemo(() => {
+    if (isIntermission) return props.waveStartCountdown ?? INTERMISSION_TIME;
+    return 0;
+  }, [isIntermission, isCoop, props.waveStartCountdown]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
@@ -158,6 +165,24 @@ export function GameSession(props: GameSessionProps) {
     setGameStatus(prev => (prev === 'playing' ? 'paused' : 'playing'));
   }, [setGameStatus]);
 
+  const handlePlaceTower = useCallback((row: number, col: number) => {
+    if (selectedTowerToBuild) {
+      onPlaceTower(row, col, selectedTowerToBuild.id);
+    }
+  }, [selectedTowerToBuild, onPlaceTower]);
+
+  const handleUpgradeTower = useCallback((upgradeId: string) => {
+    if (focusedTower) {
+      onUpgradeTower(focusedTower.position.row, focusedTower.position.col, upgradeId);
+    }
+  }, [focusedTower, onUpgradeTower]);
+
+  const handleSellTower = useCallback(() => {
+    if (focusedTower) {
+      onSellTower(focusedTower.position.row, focusedTower.position.col);
+    }
+  }, [focusedTower, onSellTower]);
+  
   const handleStartNextWaveNow = useCallback(() => {
     props.onStartNextWaveNow?.();
   }, [props.onStartNextWaveNow]);
@@ -180,14 +205,14 @@ export function GameSession(props: GameSessionProps) {
             placedTowers={placedTowers} enemies={enemies} 
             damageNumbers={damageNumbers} 
             splashRings={splashRings}
-            currentPath={currentPath} handlePlaceTower={onPlaceTower}
+            currentPath={currentPath} handlePlaceTower={handlePlaceTower}
             onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
             focusedTower={focusedTower}
             gameBoardRef={gameBoardRef}
             interactionPrompt={interactionPrompt} cancelInteractions={cancelInteractions}
             onSelectTowerToBuild={onSelectTowerToBuild} 
-            handleUpgradeTower={onUpgradeTower}
-            handleSellTower={onSellTower}
+            handleUpgradeTower={handleUpgradeTower}
+            handleSellTower={handleSellTower}
             setFocusedTower={() => {}} // This is managed by parent
             spawnedThisWave={0} // placeholder
             totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
