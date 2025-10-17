@@ -4,7 +4,6 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Tower, PlacedTower, Enemy, Node, Element, Difficulty, Attack, DamageNumber, SplashRing, GameSaveState, GameResult, GameResultWithId, EnemyStatusEffect, MovementPattern } from '@/lib/game-data/types';
-import { DeltaType } from '@/lib/game-data/types';
 import { useToast } from '@/hooks/use-toast';
 import { difficultyModifiers, ALL_PICKABLE_ELEMENTS, INTERMISSION_TIME, GRID_ROWS, GRID_COLS, LOCAL_STORAGE_KEY, elementProjectileColors } from '@/lib/game-data/constants';
 import type { User } from 'firebase/auth';
@@ -94,6 +93,7 @@ export default function SinglePlayerGame({
         isIntermissionRef.current = true;
         setGameStatus('playing');
         waveStartCountdownRef.current = INTERMISSION_TIME;
+        setTick(t => t + 1); // Force initial render with loaded state
 
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
           if (gameStatus !== 'gameover' && !isCheating) {
@@ -224,7 +224,7 @@ export default function SinglePlayerGame({
         switch(action) {
             case 'build':
                 handlePlaceTower(row, col, 'player1', selectedTowerId);
-                // Do not cancel interaction
+                // Multi-build: Do not cancel interaction here
                 break;
             case 'upgrade':
                 handleUpgradeTower(row, col, upgradeId, 'player1');
@@ -442,9 +442,7 @@ export default function SinglePlayerGame({
             totalKilled={totalKilled} setTotalKilled={setTotalKilled}
             totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
             finalGameResult={finalGameResult}
-            // Pass down allTowers to GameSession
             allTowers={allTowers}
-            // Dummy implementation for wave start
             handleStartNextWaveNow={handleStartNextWaveNow}
         />
     )

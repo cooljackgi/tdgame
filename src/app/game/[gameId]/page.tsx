@@ -83,7 +83,6 @@ function CoopGame() {
 
   const applyDeltas = useCallback((deltas: GameDelta[]) => {
     if (deltas.length === 0) return;
-    console.log('[CLIENT-RECV]', deltas);
 
     deltas.forEach(delta => {
         const type = delta[0];
@@ -171,7 +170,6 @@ function CoopGame() {
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
       if (deltas.length === 0 || !rtc.gameDataChannel) return;
       
-      console.log('[HOST-SEND]', deltas);
       if (isGameHost) {
         const MAX_BUFFERED = 1024 * 1024; // 1MB buffer
         if (rtc.gameDataChannel.readyState === 'open' && rtc.gameDataChannel.bufferedAmount < MAX_BUFFERED) {
@@ -402,7 +400,7 @@ function CoopGame() {
       switch(action) {
         case 'build': 
           handlePlaceTowerHost(payload.row, payload.col, localPlayerId, towerId); 
-          // Do NOT cancel interaction here, to allow multi-build
+          // Multi-build: Do NOT cancel interaction here, to allow multi-build
           break;
         case 'upgrade': 
             handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); 
@@ -423,7 +421,6 @@ function CoopGame() {
         const finalPayload = action === 'build' ? { ...payload, towerId } : payload;
         const msg = { kind: 'ACTION', type, payload: { ...finalPayload, playerId: localPlayerId } };
         
-        console.log('[CLIENT-SEND-ACTION]', msg);
         rtc.actionsChannel.send(JSON.stringify(msg));
     }
   }, [localPlayerId, isGameHost, rtc.actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
@@ -434,7 +431,6 @@ function CoopGame() {
     const handleActionMessage = (ev: MessageEvent) => {
         try {
             const m = JSON.parse(ev.data);
-            console.log('[HOST-RECV-ACTION]', m);
             if (m.kind !== 'ACTION') return;
 
             switch (Number(m.type)) {
@@ -666,3 +662,4 @@ export default CoopGame;
 
 
     
+
