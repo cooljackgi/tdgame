@@ -222,8 +222,6 @@ export default function SinglePlayerGame({
         waveData: waveData.enemies,
       };
       
-      spawnerStateRef.current!.count += 1;
-
       setWaveStartCountdown(0);
       audioManager.playWaveMusic();
     }, []);

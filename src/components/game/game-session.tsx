@@ -159,8 +159,8 @@ export function GameSession(props: GameSessionProps) {
   }, [setGameStatus]);
 
   const handleStartNextWaveNow = useCallback(() => {
-    onStartNextWaveNow?.();
-  }, [onStartNextWaveNow]);
+    props.onStartNextWaveNow?.();
+  }, [props.onStartNextWaveNow]);
   
   if (!localPlayer) return null;
 
