@@ -27,13 +27,13 @@ const iceConfiguration: RTCConfiguration = {
 export type NetMsg = {
     type: string;
     payload?: any;
+    kind?: 'ACTION' | 'DELTA';
 };
 
 export type UseWebRTCReturn = {
-    lastMessage: NetMsg | null;
-    sendMessage: (message: NetMsg) => void;
-    sendActionRequest: (type: string, payload: any) => void;
-    isConnected: boolean; // True, wenn der DataChannel offen ist
+    gameDataChannel: RTCDataChannel | null;
+    actionsChannel: RTCDataChannel | null;
+    isConnected: boolean; // True, wenn beide Kanäle offen sind
     packetsPerSecond: number;
     bytesPerSecond: number;
     averagePacketSize: number;
@@ -42,36 +42,29 @@ export type UseWebRTCReturn = {
 };
 
 const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
-  // A monitor now joins as a regular client to receive data, not via a special monitor flag.
   const q = `?gameId=${encodeURIComponent(gameId)}`;
-
   const envBase = process.env.NEXT_PUBLIC_WS_BASE;
   const base = (envBase ? envBase.replace(/\/ws$/, '') : RELAY_DEFAULT);
-
   return `${base}/ws${q}`;
 };
 
 
 export function useWebRTC(gameId: string | null, isHost: boolean, user: User | null, isMonitor: boolean = false): UseWebRTCReturn {
-    const [lastMessage, setLastMessage] = useState<NetMsg | null>(null);
+    const [gameDataChannel, setGameDataChannel] = useState<RTCDataChannel | null>(null);
+    const [actionsChannel, setActionsChannel] = useState<RTCDataChannel | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     
-    // Stats state for received data
+    // Stats state
     const [packetsPerSecond, setPacketsPerSecond] = useState(0);
     const [bytesPerSecond, setBytesPerSecond] = useState(0);
     const [averagePacketSize, setAveragePacketSize] = useState(0);
-    
-    // Stats state for sent data
     const [sentPacketsPerSecond, setSentPacketsPerSecond] = useState(0);
     const [sentBytesPerSecond, setSentBytesPerSecond] = useState(0);
-
 
     const signalingSocketRef = useRef<WebSocket | null>(null);
     const selfIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-    const dataChannelRef = useRef<RTCDataChannel | null>(null);
-    const dcPingRef = useRef<ReturnType<typeof setInterval> | undefined>();
-
+    
     // Refs for reconnect logic & state management inside useEffect
     const gameIdRef = useRef(gameId);
     const userRef = useRef(user);
@@ -93,52 +86,37 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
     const avgRef = useRef(0);
 
 
-    // Update refs whenever props change, without re-triggering the main effect
+    // Update refs whenever props change
     useEffect(() => { gameIdRef.current = gameId; }, [gameId]);
     useEffect(() => { userRef.current = user; }, [user]);
     useEffect(() => { isHostRef.current = isHost; }, [isHost]);
     useEffect(() => { isMonitorRef.current = isMonitor; }, [isMonitor]);
 
-    const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
-        const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
-        const gid = gameIdRef.current;
-        if (!gid) return;
+    useEffect(() => {
+        const gameDc = gameDataChannel;
+        const actDc = actionsChannel;
 
-        dc.onopen = () => {
-            if(dcPingRef.current) clearInterval(dcPingRef.current);
-            logWebRTCEvent(gid, currentRole, 'DC_OPEN');
-            setIsConnected(true);
-            dcPingRef.current = setInterval(() => {
-              try { 
-                if (dc.readyState === 'open') {
-                  dc.send('{"type":"_ping"}'); 
-                }
-              } catch {}
-            }, 5000);
+        const checkConnection = () => {
+            setIsConnected(
+                gameDc?.readyState === 'open' &&
+                actDc?.readyState === 'open'
+            );
         };
-        dc.onclose = () => {
-            if(dcPingRef.current) clearInterval(dcPingRef.current);
-            dcPingRef.current = undefined;
-            logWebRTCEvent(gid, currentRole, 'DC_CLOSE');
-            setIsConnected(false);
-        };
-        dc.onmessage = (event) => {
-            if (event.data === '{"type":"_ping"}') return;
-            try {
-                const message = JSON.parse(event.data) as NetMsg;
-                // Client action requests are not set as lastMessage, but dispatched as events for the host.
-                if (isHostRef.current && message.type.endsWith('_REQUEST')) {
-                    document.dispatchEvent(new CustomEvent('hostActionRequest', { detail: message }));
-                } else {
-                    setLastMessage(message);
-                }
-                packetCountRef.current++;
-                byteCountRef.current += event.data.length;
-            } catch (error) {
-                console.error('Failed to parse Data Channel message:', error);
-            }
-        };
-    }, []);
+        
+        if (gameDc) gameDc.addEventListener('open', checkConnection);
+        if (actDc) actDc.addEventListener('open', checkConnection);
+        if (gameDc) gameDc.addEventListener('close', checkConnection);
+        if (actDc) actDc.addEventListener('close', checkConnection);
+
+        checkConnection();
+
+        return () => {
+            if (gameDc) gameDc.removeEventListener('open', checkConnection);
+            if (actDc) actDc.removeEventListener('open', checkConnection);
+            if (gameDc) gameDc.removeEventListener('close', checkConnection);
+            if (actDc) actDc.removeEventListener('close', checkConnection);
+        }
+    }, [gameDataChannel, actionsChannel]);
 
     const createPeerConnection = useCallback(() => {
         const gid = gameIdRef.current;
@@ -199,12 +177,15 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             const dc = event.channel;
             const currentGid = gameIdRef.current;
             if (currentGid) logWebRTCEvent(currentGid, currentRole, 'DC_CREATED', { label: dc.label });
-            dataChannelRef.current = dc;
-            setupDataChannelEvents(dc);
+            if (dc.label === 'game_data') {
+                setGameDataChannel(dc);
+            } else if (dc.label === 'actions') {
+                setActionsChannel(dc);
+            }
         };
 
         return pc;
-    }, [setupDataChannelEvents]);
+    }, []);
     
     // The main, one-time-only effect
     useEffect(() => {
@@ -212,10 +193,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
         
         const connect = () => {
              if (stopped || !gameIdRef.current || !userRef.current) {
-              if (!stopped) {
-                // If not ready, poll until ready
-                setTimeout(connect, 200);
-              }
+              if (!stopped) setTimeout(connect, 200);
               return;
             }
 
@@ -274,15 +252,18 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                 try {
                     // Host receives "hello", creates offer
                     if (msg.type === 'hello' && isHostRef.current) {
-                        if (pc.signalingState !== 'stable') {
-                          return;
-                        }
+                        if (pc.signalingState !== 'stable') return;
 
-                        if(!dataChannelRef.current || dataChannelRef.current.readyState === 'closed') {
-                            const dc = pc.createDataChannel('game_data', {ordered: false, maxRetransmits: 0});
-                            dataChannelRef.current = dc;
-                            setupDataChannelEvents(dc); // This was the missing part for the host
-                            logWebRTCEvent(gid, currentRole, 'DC_CREATED', {label: dc.label});
+                        // Create both channels as the host
+                        if (!gameDataChannel) {
+                          const dc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
+                          logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: dc.label });
+                          setGameDataChannel(dc);
+                        }
+                        if(!actionsChannel) {
+                            const dc = pc.createDataChannel('actions', { ordered: true });
+                            logWebRTCEvent(gid, currentRole, 'DC_CREATED', { label: dc.label });
+                            setActionsChannel(dc);
                         }
                         
                         const offer = await pc.createOffer();
@@ -328,17 +309,18 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
             ws.onclose = (e) => {
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_CLOSE', { code: e.code, reason: e.reason.toString() });
                 setIsConnected(false);
+                setGameDataChannel(null);
+                setActionsChannel(null);
                 if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                 scheduleReconnect();
             };
 
             ws.onerror = (err) => {
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_ERROR', { err: String(err) });
-                // onclose will be called next, which will trigger reconnect
             };
         };
 
-        connect(); // Start the connection process
+        connect();
 
         statsIntervalRef.current = setInterval(() => {
             const pps = packetCountRef.current;
@@ -365,8 +347,7 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
 
         periodicLogIntervalRef.current = setInterval(() => {
             const gid = gameIdRef.current;
-            const connected = dataChannelRef.current?.readyState === 'open';
-            if (gid && connected) {
+            if (gid && isConnected) {
                 const currentRole = isMonitorRef.current ? 'monitor' : (isHostRef.current ? 'host' : 'client');
                 logWebRTCEvent(gid, currentRole, 'NET_TICK', {
                     pps: ppsRef.current,
@@ -374,50 +355,23 @@ export function useWebRTC(gameId: string | null, isHost: boolean, user: User | n
                     avg: avgRef.current,
                 });
             }
-        }, 2000); // Log stats every 2 seconds to avoid spamming Firestore
+        }, 2000);
 
         return () => {
-            stopped = true; // This is a real unmount
+            stopped = true;
             if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
             if (periodicLogIntervalRef.current) clearInterval(periodicLogIntervalRef.current);
-            if (dcPingRef.current) clearInterval(dcPingRef.current);
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
             
             const ws = signalingSocketRef.current;
             if (ws) {
-              ws.onclose = null; // prevent reconnect on manual close
+              ws.onclose = null;
               ws.close();
             }
             if (peerConnectionRef.current) peerConnectionRef.current.close();
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // <-- This empty dependency array is the key to running this effect only once.
+    }, [createPeerConnection, isConnected, gameDataChannel, actionsChannel]);
 
-    const sendMessage = useCallback((message: NetMsg) => {
-        // A monitor never sends messages.
-        if (isMonitorRef.current) return;
-        
-        const dc = dataChannelRef.current;
-        const MAX_BUFFERED = 256 * 1024;
-        if (dc?.readyState === 'open' && dc.bufferedAmount < MAX_BUFFERED) {
-            try {
-                const msgStr = JSON.stringify(message);
-                dc.send(msgStr);
-                sentPacketCountRef.current++;
-                sentByteCountRef.current += msgStr.length;
-            } catch (e) {
-                console.error("Failed to send message over data channel:", e);
-            }
-        }
-    }, []);
-
-    const sendActionRequest = useCallback((type: string, payload: any) => {
-        if (isHostRef.current || isMonitorRef.current) return;
-        const message = { type, payload };
-        console.log('[CLIENT-SEND-ACTION]', message);
-        sendMessage(message);
-    }, [sendMessage]);
-
-    return { lastMessage, sendMessage, sendActionRequest, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
+    return { gameDataChannel, actionsChannel, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
 }

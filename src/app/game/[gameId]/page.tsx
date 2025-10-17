@@ -37,7 +37,6 @@ function CoopGame() {
   const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
-  const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
   const [isIntermission, setIsIntermission] = useState(true);
   const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
@@ -60,26 +59,23 @@ function CoopGame() {
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
   
-  const rtc = useWebRTC(gameId, isGameHost, user);
+  const { gameDataChannel, actionsChannel, isConnected, ...rtcStats } = useWebRTC(gameId, isGameHost, user);
   const gameLoopRef = useRef<number>();
   const lastTickRef = useRef(performance.now());
   const enemyIdCounter = useRef(0);
   const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
 
   // --- Stable Refs for Game Loop ---
-  const enemiesRef = useRef(enemies);
   const playersRef = useRef(players);
   const towersByCellRef = useRef(towersByCell);
   const gameStateRef = useRef(gameState);
   const currentWaveRef = useRef(currentWave);
-  const difficultyRef = useRef(difficulty);
+  const difficultyRef = useRef<Difficulty>('Normal');
 
-  useEffect(() => { enemiesRef.current = enemies }, [enemies]);
   useEffect(() => { playersRef.current = players }, [players]);
   useEffect(() => { towersByCellRef.current = towersByCell }, [towersByCell]);
   useEffect(() => { gameStateRef.current = gameState }, [gameState]);
   useEffect(() => { currentWaveRef.current = currentWave }, [currentWave]);
-  useEffect(() => { difficultyRef.current = difficulty }, [difficulty]);
   
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, Object.values(towersByCell), GRID_ROWS, GRID_COLS) || [], [towersByCell]);
   const currentPathRef = useRef(currentPath);
@@ -173,14 +169,17 @@ function CoopGame() {
   }, []);
 
   const broadcastGameData = useCallback((deltas: GameDelta[], reliable?: boolean) => {
-      if (deltas.length === 0) return;
+      if (deltas.length === 0 || !gameDataChannel) return;
       
       console.log('[HOST-SEND]', deltas);
       if (isGameHost) {
-         rtc.sendMessage({ type: 'game_delta_batch', payload: deltas });
+        const MAX_BUFFERED = 1024 * 1024; // 1MB buffer
+        if (gameDataChannel.readyState === 'open' && gameDataChannel.bufferedAmount < MAX_BUFFERED) {
+            gameDataChannel.send(JSON.stringify({ type: 'game_delta_batch', payload: deltas }));
+        }
       }
       applyDeltas(deltas);
-  }, [rtc, isGameHost, applyDeltas]);
+  }, [gameDataChannel, isGameHost, applyDeltas]);
     
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
@@ -215,18 +214,18 @@ function CoopGame() {
                     }
                 }
                 setLocalPlayerId(currentRole);
+                difficultyRef.current = gameData.difficulty || 'Normal';
 
                 if (!isGameHost) { 
                     const normalized = normalizePlayers(gameData.players);
                     setPlayers(normalized);
                     setGameState(gameData.gameState || { lives: 20 });
-                    setDifficulty(gameData.difficulty || 'Normal');
                     setGameStatus(gameData.gameStatus || 'waiting');
                     setCurrentWave(gameData.currentWave || 0);
                     setIsIntermission(gameData.isIntermission ?? true);
                     setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
                     setTowersByCell(gameData.towersByCell || {});
-                } else { // Host takes initial state from DB as well
+                } else {
                      const normalized = normalizePlayers(gameData.players);
                      if (playersRef.current.length === 0 || playersRef.current.length !== normalized.length) {
                        setPlayers(normalized);
@@ -284,12 +283,18 @@ function CoopGame() {
   }, [router, toast]);
   
   useEffect(() => {
-    if (!rtc.lastMessage) return;
-    const { type, payload } = rtc.lastMessage;
-    if (type === 'game_delta_batch') { 
-        applyDeltas(payload as GameDelta[]); 
+    if (!gameDataChannel) return;
+    const handleMessage = (event: MessageEvent) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'game_delta_batch') {
+                applyDeltas(data.payload as GameDelta[]);
+            }
+        } catch (e) { console.error("Failed to parse game delta", e)}
     }
-  }, [rtc.lastMessage, applyDeltas]);
+    gameDataChannel.addEventListener('message', handleMessage);
+    return () => gameDataChannel.removeEventListener('message', handleMessage);
+  }, [gameDataChannel, applyDeltas]);
 
 
   const handleGameEnd = useCallback(async (result: GameResult) => {
@@ -300,7 +305,7 @@ function CoopGame() {
     }
   }, [gameId, isGameHost, gameStatus, broadcastGameData]);
   
-  const handlePlaceTower = useCallback((row: number, col: number, playerId: Player['id'], towerId?: string) => {
+  const handlePlaceTowerHost = useCallback((row: number, col: number, playerId: Player['id'], towerId?: string) => {
     if (!towerId) {
         console.error(`[HOST] Build failed: towerId undefined not found.`);
         return;
@@ -332,10 +337,10 @@ function CoopGame() {
     broadcastGameData([
         [DeltaType.TOWERS_UPDATE, newTowers],
         [DeltaType.PLAYER_UPDATE, playerUpdate]
-    ]);
+    ], true);
   }, [broadcastGameData]);
 
-  const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string, playerId: Player['id']) => {
+  const handleUpgradeTowerHost = useCallback((row: number, col: number, upgradeId: string, playerId: Player['id']) => {
       const player = playersRef.current.find(p => p.id === playerId);
       const cellKey = `${row}_${col}`;
       const focusedTower = towersByCellRef.current[cellKey];
@@ -358,10 +363,10 @@ function CoopGame() {
           [DeltaType.TOWERS_UPDATE, newTowers],
           [DeltaType.PLAYER_UPDATE, playerUpdate],
           [DeltaType.TOWER_UPGRADE_VFX, { towerId: newPlacedTower.id }]
-      ]);
+      ], true);
   }, [broadcastGameData]);
 
-  const handleSellTower = useCallback((row: number, col: number, playerId: Player['id']) => {
+  const handleSellTowerHost = useCallback((row: number, col: number, playerId: Player['id']) => {
       const player = playersRef.current.find(p => p.id === playerId);
       const cellKey = `${row}_${col}`;
       const focusedTower = towersByCellRef.current[cellKey];
@@ -379,62 +384,63 @@ function CoopGame() {
       broadcastGameData([
           [DeltaType.TOWERS_UPDATE, newTowers],
           [DeltaType.PLAYER_UPDATE, playerUpdate]
-      ]);
+      ], true);
   }, [broadcastGameData]);
 
-  // Event listener for Host to handle client actions
   useEffect(() => {
-      if (!isGameHost) return;
+    if (!actionsChannel || !isGameHost) return;
 
-      const handleRequest = (event: Event) => {
-          const { type, payload } = (event as CustomEvent).detail;
-           console.log('[HOST-RECV-ACTION]', { type, payload });
-          switch (type) {
-              case String(DeltaType.BUILD_TOWER_REQUEST):
-                  handlePlaceTower(payload.row, payload.col, payload.playerId, payload.towerId);
-                  break;
-              case String(DeltaType.UPGRADE_TOWER_REQUEST):
-                  handleUpgradeTower(payload.row, payload.col, payload.upgradeId, payload.playerId);
-                  break;
-              case String(DeltaType.SELL_TOWER_REQUEST):
-                  handleSellTower(payload.row, payload.col, payload.playerId);
-                  break;
-          }
-      };
+    const handleActionMessage = (ev: MessageEvent) => {
+        try {
+            const m = JSON.parse(ev.data);
+            console.log('[HOST-RECV-ACTION]', m);
+            if (m.kind !== 'ACTION') return;
 
-      document.addEventListener('hostActionRequest', handleRequest);
-      return () => document.removeEventListener('hostActionRequest', handleRequest);
-  }, [isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower]);
+            switch (Number(m.type)) {
+                case DeltaType.BUILD_TOWER_REQUEST:
+                    handlePlaceTowerHost(m.payload.row, m.payload.col, m.payload.playerId, m.payload.towerId);
+                    break;
+                case DeltaType.UPGRADE_TOWER_REQUEST:
+                    handleUpgradeTowerHost(m.payload.row, m.payload.col, m.payload.upgradeId, m.payload.playerId);
+                    break;
+                case DeltaType.SELL_TOWER_REQUEST:
+                    handleSellTowerHost(m.payload.row, m.payload.col, m.payload.playerId);
+                    break;
+            }
+        } catch (e) {
+            console.error("Failed to handle action message:", e);
+        }
+    };
+
+    actionsChannel.addEventListener('message', handleActionMessage);
+    return () => actionsChannel.removeEventListener('message', handleActionMessage);
+  }, [actionsChannel, isGameHost, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
 
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
     if (localPlayerId === 'spectator' || !localPlayerId) return;
   
-    // Always get the currently selected tower from the global scope.
     const towerId = (document as any).__SELECTED_TOWER_ID;
   
     if (isGameHost) {
-      // Host executes the action directly
       switch(action) {
-        case 'build': handlePlaceTower(payload.row, payload.col, localPlayerId, towerId); break;
-        case 'upgrade': handleUpgradeTower(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
-        case 'sell': handleSellTower(payload.row, payload.col, localPlayerId); break;
+        case 'build': handlePlaceTowerHost(payload.row, payload.col, localPlayerId, towerId); break;
+        case 'upgrade': handleUpgradeTowerHost(payload.row, payload.col, payload.upgradeId, localPlayerId); break;
+        case 'sell': handleSellTowerHost(payload.row, payload.col, localPlayerId); break;
       }
     } else {
-      // Client sends a request to the host
-      switch(action) {
-        case 'build': 
-          // Ensure towerId is included in the payload for the client's request
-          rtc.sendActionRequest(String(DeltaType.BUILD_TOWER_REQUEST), { ...payload, towerId, playerId: localPlayerId }); 
-          break;
-        case 'upgrade': 
-          rtc.sendActionRequest(String(DeltaType.UPGRADE_TOWER_REQUEST), { ...payload, playerId: localPlayerId }); 
-          break;
-        case 'sell': 
-          rtc.sendActionRequest(String(DeltaType.SELL_TOWER_REQUEST), { ...payload, playerId: localPlayerId }); 
-          break;
-      }
+        if (!actionsChannel || actionsChannel.readyState !== 'open') return;
+
+        const type = action === 'build' ? String(DeltaType.BUILD_TOWER_REQUEST)
+                   : action === 'upgrade' ? String(DeltaType.UPGRADE_TOWER_REQUEST)
+                   : String(DeltaType.SELL_TOWER_REQUEST);
+        
+        const finalPayload = action === 'build' ? { ...payload, towerId } : payload;
+        const msg = { kind: 'ACTION', type, payload: { ...finalPayload, playerId: localPlayerId } };
+        
+        console.log('[CLIENT-SEND-ACTION]', msg);
+        actionsChannel.send(JSON.stringify(msg));
     }
-  }, [localPlayerId, isGameHost, handlePlaceTower, handleUpgradeTower, handleSellTower, rtc]);
+  }, [localPlayerId, isGameHost, actionsChannel, handlePlaceTowerHost, handleUpgradeTowerHost, handleSellTowerHost]);
 
 
   useEffect(() => {
@@ -483,12 +489,13 @@ function CoopGame() {
             }
         }
 
+       // 2. Tower Attacks
+        const newTowersByCell = { ...towersByCellRef.current };
         let towersMutated = false;
 
-       // 2. Tower Attacks
-        Object.values(towersByCellRef.current).forEach(tower => {
+        Object.values(newTowersByCell).forEach(tower => {
             if (now - tower.lastAttack >= tower.attackSpeed) {
-                const targets = enemiesRef.current.filter(e => {
+                const targets = enemies.filter(e => {
                     const towerPos = { x: tower.position.col, y: tower.position.row };
                     const enemyPos = { x: e.position.col, y: e.position.row };
                     const distSq = (towerPos.x - enemyPos.x) ** 2 + (towerPos.y - enemyPos.y) ** 2;
@@ -506,13 +513,13 @@ function CoopGame() {
         });
         
         // 3. Enemy Damage & Effects
-        const liveEnemyIds = new Set(enemiesRef.current.map(e => e.id));
+        const liveEnemyIds = new Set(enemies.map(e => e.id));
         const healthUpdates = new Map<string, number>();
 
         deltas.forEach(delta => {
             if (delta[0] === DeltaType.TOWER_ATTACK) {
                 const attack = delta[1] as Attack;
-                const tower = Object.values(towersByCellRef.current).find(t => t.id === attack.towerId);
+                const tower = Object.values(newTowersByCell).find(t => t.id === attack.towerId);
                 if (tower && liveEnemyIds.has(attack.targetId)) {
                     const currentDamage = healthUpdates.get(attack.targetId) || 0;
                     healthUpdates.set(attack.targetId, currentDamage + tower.damage);
@@ -522,9 +529,9 @@ function CoopGame() {
 
         healthUpdates.forEach((damage, enemyId) => {
             deltas.push([DeltaType.ENEMY_DAMAGE, enemyId, damage]);
-            const enemy = enemiesRef.current.find(e => e.id === enemyId);
+            const enemy = enemies.find(e => e.id === enemyId);
             if(enemy) {
-                const towerThatShot = Object.values(towersByCellRef.current).find(t => deltas.some(d => d[0] === DeltaType.TOWER_ATTACK && (d[1] as Attack).towerId === t.id && (d[1] as Attack).targetId === enemyId));
+                const towerThatShot = Object.values(newTowersByCell).find(t => deltas.some(d => d[0] === DeltaType.TOWER_ATTACK && (d[1] as Attack).towerId === t.id && (d[1] as Attack).targetId === enemyId));
                 deltas.push([DeltaType.VFX_DAMAGE_NUMBER, { 
                     id: `dmg-${now}-${Math.random()}`, targetId: enemy.id, amount: damage, color: elementProjectileColors[towerThatShot?.elements[0] || 'neutral'] || 'white', position: enemy.position 
                 }]);
@@ -532,7 +539,7 @@ function CoopGame() {
         });
         
         // 4. Enemy Movement & Path End
-        enemiesRef.current.forEach(enemy => {
+        enemies.forEach(enemy => {
              const totalDamage = healthUpdates.get(enemy.id) || 0;
              if (enemy.health - totalDamage <= 0) {
                 if (liveEnemyIds.has(enemy.id)) {
@@ -566,7 +573,7 @@ function CoopGame() {
         });
         
         if (towersMutated) {
-          deltas.push([DeltaType.TOWERS_UPDATE, towersByCellRef.current]);
+          deltas.push([DeltaType.TOWERS_UPDATE, newTowersByCell]);
         }
 
         // 5. Wave Completion
@@ -583,7 +590,7 @@ function CoopGame() {
     };
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
-  }, [isGameHost, gameStatus, isIntermission, broadcastGameData, handleGameEnd]);
+  }, [isGameHost, gameStatus, isIntermission, broadcastGameData, handleGameEnd, enemies]);
 
   
   if (loading || !localPlayerId || players.length === 0) {
@@ -603,7 +610,7 @@ function CoopGame() {
         towersByCell={towersByCell} setTowersByCell={setTowersByCell}
         currentWave={currentWave} setCurrentWave={setCurrentWave}
         gameStatus={gameStatus} setGameStatus={setGameStatus}
-        difficulty={difficulty} setDifficulty={setDifficulty}
+        difficulty={difficultyRef.current} setDifficulty={(d) => difficultyRef.current = d}
         isIntermission={isIntermission} setIsIntermission={setIsIntermission}
         waveStartCountdown={waveStartCountdown} setWaveStartCountdown={setWaveStartCountdown}
         currentPath={currentPath}
@@ -615,8 +622,6 @@ function CoopGame() {
         isGameHost={isGameHost}
         localPlayerId={localPlayerId}
         broadcastGameData={broadcastGameData}
-        sendActionRequest={rtc.sendActionRequest}
-        applyDeltas={applyDeltas}
         onGameEnd={handleGameEnd}
         onExit={() => router.push('/')}
         
@@ -627,10 +632,10 @@ function CoopGame() {
         
         // Stats
         fps={fps} setFps={setFps}
-        isWsConnected={rtc?.isConnected}
-        hostPacketsPerSecond={rtc.packetsPerSecond} hostBytesSentPerSecond={rtc.sentBytesPerSecond}
-        clientPacketsPerSecond={rtc.packetsPerSecond} clientBytesReceivedPerSecond={rtc.bytesPerSecond}
-        averagePacketSize={rtc.averagePacketSize}
+        isWsConnected={isConnected}
+        hostPacketsPerSecond={rtcStats.sentPacketsPerSecond} hostBytesSentPerSecond={rtcStats.sentBytesPerSecond}
+        clientPacketsPerSecond={rtcStats.packetsPerSecond} clientBytesReceivedPerSecond={rtcStats.bytesPerSecond}
+        averagePacketSize={rtcStats.averagePacketSize}
         finalGameResult={finalGameResult}
         totalKilled={totalKilled} setTotalKilled={setTotalKilled}
         totalLeaked={totalLeaked} setTotalLeaked={setTotalLeaked}
