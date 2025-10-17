@@ -3,7 +3,7 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { GameSession } from '@/components/game/game-session';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
@@ -35,7 +35,11 @@ export default function SinglePlayerGame({
     const [enemies, setEnemies] = useState<any[]>([]); // Let GameSession manage this internally for SP
     const [isIntermission, setIsIntermission] = useState(true);
     const [waveStartCountdown, setWaveStartCountdown] = useState(999);
+    
+    const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
+    const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
+
 
     // This useMemo block correctly sets up the initial state ONCE.
     useMemo(() => {
@@ -71,35 +75,50 @@ export default function SinglePlayerGame({
     }, [initialSavedGame, initialDifficulty, user]);
 
 
-    const handlePlaceTower = useCallback((row: number, col: number, towerId: string) => {
+    const handlePlaceTower = useCallback((row: number, col: number) => {
         const player = players[0];
-        const towerSpec = initialTowers.find(t => t.id === towerId);
-        if (!player || !towerSpec || player.resources < towerSpec.cost) return;
+        if (!selectedTowerToBuild || !player) return;
 
         const cellKey = `${row}_${col}`;
-        if (towersByCell[cellKey]) return;
-        
-        const currentPlacedTowers = Object.values(towersByCell).map(t => t.position);
-        const newPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...currentPlacedTowers, {row, col}], GRID_ROWS, GRID_COLS);
-        
+        const placedTowersArray = Object.values(towersByCell);
+
+        if (placedTowersArray.some(t => t.position.row === row && t.position.col === col)) return;
+        if ((row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS)) return;
+
+        if (player.resources < selectedTowerToBuild.cost) {
+            toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive' });
+            return;
+        }
+
+        const newBlockedPositions = [...placedTowersArray.map(t => t.position), { row, col }];
+        const newPath = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, newBlockedPositions, GRID_ROWS, GRID_COLS);
+
         if (!newPath) {
             toast({ title: 'Ungültiger Bauplatz', description: 'Der Weg für die Gegner darf nicht blockiert werden.', variant: 'destructive' });
             return;
         }
 
-        const newTower: PlacedTower = JSON.parse(JSON.stringify({
-            ...towerSpec, id: `tower-${row}-${col}-${Date.now()}`, specId: towerSpec.id,
-            position: { row, col }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: player.id,
-        }));
+        const newTower: PlacedTower = {
+            ...selectedTowerToBuild,
+            id: `tower-${row}-${col}-${Date.now()}`,
+            specId: selectedTowerToBuild.id,
+            position: { row, col },
+            lastAttack: performance.now() - 99999, // Allow immediate attack
+            health: selectedTowerToBuild.maxHealth,
+            ownerId: player.id,
+        };
 
         setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - newTower.cost }]);
         setJustPlacedTowerId(newTower.id);
+        setFocusedTower(newTower);
+        setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [players, towersByCell, toast]);
+    }, [selectedTowerToBuild, towersByCell, players, toast]);
 
-    const handleUpgradeTower = useCallback((focusedTower: PlacedTower, upgradeId: string) => {
+    const handleUpgradeTower = useCallback((upgradeId: string) => {
+        if (!focusedTower) return;
         const player = players[0];
         if(!player) return;
         
@@ -109,18 +128,23 @@ export default function SinglePlayerGame({
         const refundPercentage = difficulty === 'Einfach' ? 1.0 : 0.75;
         const cost = Math.max(0, upgradeTowerSpec.cost - Math.floor(focusedTower.cost * refundPercentage));
         
-        if (player.resources < cost) return;
+        if (player.resources < cost) {
+            toast({ title: 'Nicht genügend Ressourcen für das Upgrade.', variant: 'destructive' });
+            return;
+        }
 
-        const newPlacedTower: PlacedTower = JSON.parse(JSON.stringify({ 
+        const newPlacedTower: PlacedTower = { 
             ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth 
-        }));
+        };
         
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         setTowersByCell(prev => ({ ...prev, [cellKey]: newPlacedTower }));
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - cost }]);
-    }, [players, difficulty]);
+        setFocusedTower(newPlacedTower);
+    }, [players, difficulty, focusedTower, toast]);
 
-    const handleSellTower = useCallback((focusedTower: PlacedTower) => {
+    const handleSellTower = useCallback(() => {
+        if (!focusedTower) return;
         const player = players[0];
         if(!player) return;
 
@@ -134,7 +158,18 @@ export default function SinglePlayerGame({
             return newTowers;
         });
         setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + refund }]);
-    }, [players, difficulty]);
+        setFocusedTower(null);
+    }, [players, difficulty, focusedTower]);
+
+    const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
+        if (action === 'build') {
+            handlePlaceTower(payload.row, payload.col);
+        } else if (action === 'upgrade') {
+            handleUpgradeTower(payload.upgradeId);
+        } else if (action === 'sell') {
+            handleSellTower();
+        }
+    }, [handlePlaceTower, handleUpgradeTower, handleSellTower]);
 
 
     return (
@@ -157,13 +192,18 @@ export default function SinglePlayerGame({
             initialIsIntermission={isIntermission}
             initialWaveStartCountdown={waveStartCountdown}
             justPlacedTowerIdFromParent={justPlacedTowerId}
-
+            selectedTowerToBuild={selectedTowerToBuild}
+            focusedTower={focusedTower}
+            
             // Callbacks
             onExit={onExit}
-            onLocalAction={() => {}} // This is now handled by the specific handlers below
-            onPlaceTower={handlePlaceTower}
-            onUpgradeTower={handleUpgradeTower}
-            onSellTower={handleSellTower}
+            onLocalAction={onLocalAction}
+            onFocusTower={setFocusedTower}
+            cancelInteractions={() => {
+                setSelectedTowerToBuild(null);
+                setFocusedTower(null);
+            }}
+            onSelectTowerToBuild={setSelectedTowerToBuild}
         />
     )
 }

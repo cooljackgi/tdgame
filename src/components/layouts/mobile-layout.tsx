@@ -63,6 +63,7 @@ interface MobileLayoutProps {
   intermissionTime: number;
   handleStartNextWaveNow: () => void;
   lastUpgradedTowerId: string | null;
+  justPlacedTowerId?: string | null;
   isCoop: boolean;
   playerRole: 'player1' | 'player2' | 'spectator' | null;
   handleLoadTestLayout: () => void;
@@ -91,6 +92,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     cancelInteractions, handleGameControl, gameStatus, resetGame,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
+    justPlacedTowerId,
     isCoop, playerRole, handleLoadTestLayout, handleLoadAllTowersLayout, isCheating, cheat_addResources, cheat_skipWaves, cheat_heal,
     cheat_unlockAll,
     firingTowerIds,
@@ -147,6 +149,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           selectedTowerToBuild={selectedTowerToBuild}
           focusedTower={focusedTower}
           lastUpgradedTowerId={lastUpgradedTowerId}
+          justPlacedTowerId={justPlacedTowerId}
           isCoop={isCoop}
           playerRole={playerRole}
           firingTowerIds={firingTowerIds}

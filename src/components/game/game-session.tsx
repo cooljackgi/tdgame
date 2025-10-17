@@ -62,9 +62,9 @@ type GameSessionProps = {
     // --- Control Functions from Parent ---
     onExit: () => void;
     onLocalAction: (action: 'build' | 'upgrade' | 'sell', payload: any) => void;
-    onPlaceTower?: (row: number, col: number, towerId: string) => void;
-    onUpgradeTower?: (tower: PlacedTower, upgradeId: string) => void;
-    onSellTower?: (tower: PlacedTower) => void;
+    onFocusTower: (tower: PlacedTower) => void;
+    cancelInteractions: () => void;
+    onSelectTowerToBuild: (tower: Tower | null) => void;
     
     // --- CO-OP ONLY Props ---
     broadcastGameData?: (deltas: GameDelta[], reliable?: boolean) => void;
@@ -91,6 +91,8 @@ type GameSessionProps = {
     totalLeakedFromParent?: number;
 
     allTowers: Tower[];
+    selectedTowerToBuild: Tower | null;
+    focusedTower: PlacedTower | null;
 }
 
 export function GameSession(props: GameSessionProps) {
@@ -111,8 +113,6 @@ export function GameSession(props: GameSessionProps) {
   const [finalGameResult, setFinalGameResult] = useState<GameResult | null>(null);
 
   // --- UI/Interaction State ---
-  const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
-  const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -376,8 +376,7 @@ export function GameSession(props: GameSessionProps) {
   const toggleMute = useCallback(() => setIsMuted(prev => { audioManager.isMuted = !prev; return !prev; }), []);
   const handleInteraction = useCallback(async () => { if (!hasInteracted) { await audioManager.init(); setHasInteracted(true); } }, [hasInteracted]);
   const resetGame = useCallback(() => { audioManager.stopMusic(); props.onExit(); }, [props.onExit]);
-  const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); audioManager.playSfx('build_tower'); }, []);
-
+  
   const handleGameControl = useCallback(() => {
     audioManager.playSfx('build_tower');
     setGameStatus(prev => (prev === 'playing' ? 'paused' : 'playing'));
@@ -390,127 +389,30 @@ export function GameSession(props: GameSessionProps) {
         audioManager.playWaveMusic();
     }
   }, [isIntermission, gameStatus]);
-
-  const onFocusTower = useCallback((tower: PlacedTower) => { setSelectedTowerToBuild(null); setFocusedTower(tower); audioManager.playSfx('build_tower'); }, []);
-  const handleSelectTowerToBuild = useCallback((tower: Tower | null) => {
-    if (localPlayer && tower && localPlayer.resources < tower.cost) {
-      toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
-      return;
-    }
-    setSelectedTowerToBuild(prev => prev?.id === tower?.id ? null : tower);
-    setFocusedTower(null);
-  }, [localPlayer, toast]);
-
-
-  const handlePlaceTower = (row: number, col: number) => {
-      if (selectedTowerToBuild) {
-        if (props.onPlaceTower) {
-            props.onPlaceTower(row, col, selectedTowerToBuild.id);
-        } else {
-            props.onLocalAction('build', { row, col, towerId: selectedTowerToBuild.id });
-        }
-      }
-  }
-
-  const handleUpgradeTower = (upgradeId: string) => {
-      if(focusedTower) {
-        if (props.onUpgradeTower) {
-            props.onUpgradeTower(focusedTower, upgradeId);
-        } else {
-            props.onLocalAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
-        }
-      }
-  };
-
-  const handleSellTower = () => {
-    if(focusedTower) {
-        if (props.onSellTower) {
-            props.onSellTower(focusedTower);
-        } else {
-            props.onLocalAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col });
-        }
-    }
-  };
-
-
-  const handleLoadTestLayout = useCallback(() => {
-    const newTowersByCell: Record<string, PlacedTower> = {};
-    const towerSpec = allTowers.find(t => t.id === 'neutral-0');
-    if (!towerSpec) return;
-
-    for (let r = 1; r <= GRID_ROWS; r++) {
-        if (r % 2 !== 0) { // Odd rows, leave col 12 free
-            for (let c = 1; c < GRID_COLS; c++) {
-                const cellKey = `${r}_${c}`;
-                newTowersByCell[cellKey] = {
-                    ...towerSpec, id: `tower-test-${r}-${c}`, specId: towerSpec.id,
-                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-                };
-            }
-        } else { // Even rows, leave col 1 free
-            for (let c = 2; c <= GRID_COLS; c++) {
-                 const cellKey = `${r}_${c}`;
-                newTowersByCell[cellKey] = {
-                    ...towerSpec, id: `tower-test-${r}-${c}`, specId: towerSpec.id,
-                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-                };
-            }
-        }
-    }
-
-    setTowersByCell(newTowersByCell);
-    toast({ title: "Serpentinen-Testlayout geladen!" });
-  }, [allTowers, localPlayer?.id, toast]);
-  
-  const handleLoadAllTowersLayout = useCallback(() => {
-    const newTowersByCell: Record<string, PlacedTower> = {};
-    const baseTowers = allTowers.filter(t => t.isBase);
-    let towerIndex = 0;
-
-    for (let r = 1; r <= GRID_ROWS; r++) {
-        if (r % 2 !== 0) { // Odd rows
-            for (let c = 1; c < GRID_COLS; c++) {
-                const towerSpec = baseTowers[towerIndex % baseTowers.length];
-                if (!towerSpec) continue;
-                const cellKey = `${r}_${c}`;
-                newTowersByCell[cellKey] = {
-                    ...towerSpec, id: `tower-all-${r}-${c}`, specId: towerSpec.id,
-                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-                };
-                towerIndex++;
-            }
-        } else { // Even rows
-            for (let c = 2; c <= GRID_COLS; c++) {
-                const towerSpec = baseTowers[towerIndex % baseTowers.length];
-                if (!towerSpec) continue;
-                const cellKey = `${r}_${c}`;
-                newTowersByCell[cellKey] = {
-                    ...towerSpec, id: `tower-all-${r}-${c}`, specId: towerSpec.id,
-                    position: { row: r, col: c }, lastAttack: 0, health: towerSpec.maxHealth, ownerId: localPlayer?.id || 'player1',
-                };
-                towerIndex++;
-            }
-        }
-    }
-    setTowersByCell(newTowersByCell);
-    toast({ title: "Alle Basis-Türme im Serpentinen-Layout geladen!" });
-  }, [allTowers, localPlayer?.id, toast]);
-
-
-  const handleElementPick = (element: Element) => {
-    setPlayers(prev => [{...prev[0], unlockedElements: [...prev[0].unlockedElements, element]}]);
-    setCurrentWave(prev => prev + 1);
-    setIsIntermission(true);
-    setWaveStartCountdown(INTERMISSION_TIME);
-    setGameStatus('playing');
-    saveGameState();
-  };
   
   if (!localPlayer) return null;
 
   const isSpectator = props.localPlayerId === 'spectator';
-  const interactionPrompt = isSpectator ? 'Du schaust zu.' : selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
+  const interactionPrompt = isSpectator ? 'Du schaust zu.' : props.selectedTowerToBuild ? `Wähle Bauplatz für: ${props.selectedTowerToBuild?.name}` : props.focusedTower ? `Fokus: ${props.focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+
+  const handlePlaceTower = (row: number, col: number) => {
+    if (props.selectedTowerToBuild) {
+        props.onLocalAction('build', { row, col, towerId: props.selectedTowerToBuild.id });
+    }
+  }
+
+  const handleUpgradeTower = (upgradeId: string) => {
+    if (props.focusedTower) {
+        props.onLocalAction('upgrade', { row: props.focusedTower.position.row, col: props.focusedTower.position.col, upgradeId });
+    }
+  };
+
+  const handleSellTower = () => {
+    if (props.focusedTower) {
+        props.onLocalAction('sell', { row: props.focusedTower.position.row, col: props.focusedTower.position.col });
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground font-body" onClick={handleInteraction}>
@@ -524,24 +426,24 @@ export function GameSession(props: GameSessionProps) {
             placedTowers={placedTowers} enemies={enemies} 
             damageNumbers={props.isCoop ? (props.damageNumbersFromParent || []) : damageNumbers} 
             splashRings={props.isCoop ? (props.splashRingsFromParent || []) : splashRings}
-            currentPath={currentPath} handlePlaceTower={(row, col) => handlePlaceTower(row, col)}
-            onFocusTower={onFocusTower} selectedTowerToBuild={selectedTowerToBuild}
-            focusedTower={focusedTower}
+            currentPath={currentPath} handlePlaceTower={handlePlaceTower}
+            onFocusTower={props.onFocusTower} selectedTowerToBuild={props.selectedTowerToBuild}
+            focusedTower={props.focusedTower}
             gameBoardRef={gameBoardRef}
-            interactionPrompt={interactionPrompt} cancelInteractions={cancelInteractions}
-            onSelectTowerToBuild={handleSelectTowerToBuild} 
+            interactionPrompt={interactionPrompt} cancelInteractions={props.cancelInteractions}
+            onSelectTowerToBuild={props.onSelectTowerToBuild} 
             handleUpgradeTower={handleUpgradeTower}
             handleSellTower={handleSellTower}
-            setFocusedTower={setFocusedTower}
+            setFocusedTower={() => {}}
             spawnedThisWave={spawnedThisWave} totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
             totalKilled={props.isCoop ? (props.totalKilledFromParent || 0) : totalKilled} 
             totalLeaked={props.isCoop ? (props.totalLeakedFromParent || 0) : totalLeaked}
             isIntermission={isIntermission} waveStartCountdown={waveStartCountdown}
             intermissionTime={INTERMISSION_TIME} handleStartNextWaveNow={handleStartNextWaveNow}
             lastUpgradedTowerId={props.isCoop ? (props.lastUpgradedTowerIdFromParent || null) : lastUpgradedTowerId}
-            justPlacedTowerId={justPlacedTowerId}
+            justPlacedTowerId={props.justPlacedTowerIdFromParent}
             isCoop={props.isCoop} playerRole={props.localPlayerId}
-            handleLoadTestLayout={handleLoadTestLayout} handleLoadAllTowersLayout={handleLoadAllTowersLayout}
+            handleLoadTestLayout={() => {}} handleLoadAllTowersLayout={() => {}}
             isCheating={!!props.isCheating} cheat_addResources={() => {}} cheat_skipWaves={() => {}} cheat_heal={() => {}} cheat_unlockAll={() => {}}
             firingTowerIds={props.isCoop ? (props.firingTowerIdsFromParent || new Set()) : firingTowerIds} allTowers={allTowers}
             isWsConnected={props.isWsConnected} hostPacketsPerSecond={props.hostPacketsPerSecond} clientPacketsPerSecond={props.clientPacketsPerSecond}
