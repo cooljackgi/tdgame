@@ -202,7 +202,7 @@ export default function GameSession({
 
   const handlePlaceTower = useCallback((row: number, col: number) => {
     if (localPlayerId === 'spectator' || !selectedTowerToBuild) return;
-    onLocalAction('build', { row, col }); // towerId is handled globally now
+    onLocalAction('build', { row, col });
     cancelInteractions();
   }, [localPlayerId, selectedTowerToBuild, onLocalAction, cancelInteractions]);
   
@@ -232,20 +232,17 @@ export default function GameSession({
       if(tower) toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
       if (tower === null) {
           setSelectedTowerToBuild(null);
-          // @ts-ignore
           if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = null;
       }
       return;
     }
     if (selectedTowerToBuild?.id === tower?.id) { 
         setSelectedTowerToBuild(null); 
-        // @ts-ignore
         if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = null;
         return; 
     }
     setSelectedTowerToBuild(tower);
     setFocusedTower(null);
-    // @ts-ignore
     if (typeof document !== "undefined") (document as any).__SELECTED_TOWER_ID = tower?.id;
   }, [players, localPlayerId, toast, selectedTowerToBuild]);
   

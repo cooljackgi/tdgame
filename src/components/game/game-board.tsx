@@ -128,7 +128,7 @@ type GameBoardProps = {
 
 type LiveAttack = Attack & { _vfx: { start: number; life: number; fromPx: {x:number, y:number}; toPx: {x:number,y:number} } };
 type LiveDamageNumber = DamageNumber & { start: number; life: number; };
-type LiveSplashRing = SplashRing & { start: number; life: number; };
+type LiveSplashRing = SplashRing & { start: time: number; life: number; };
 
 function createPool<T extends {id: string}>(size: number) {
     const pool: (T & { _active: boolean })[] = Array.from({ length: size }, () => ({ _active: false } as any));
@@ -682,19 +682,19 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
-    e.stopPropagation();
     isPanningRef.current = false;
     const dx = e.clientX - panStartRef.current.x;
     const dy = e.clientY - panStartRef.current.y;
     const moved = Math.hypot(dx, dy) > 5;
-
-     if (moved) return;
-     
-     if (hoveredCell && selectedTowerToBuild) {
-        handlePlaceTower(hoveredCell.row, hoveredCell.col);
-     } else if (focusedTower || selectedTowerToBuild) {
-        cancelInteractions();
-     }
+  
+    if (moved) return;
+    e.stopPropagation(); // Prevent card click from firing if we're just panning a little
+  
+    if (hoveredCell && selectedTowerToBuild) {
+      handlePlaceTower(hoveredCell.row, hoveredCell.col);
+    } else if (!selectedTowerToBuild) {
+      cancelInteractions();
+    }
   };
   
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -886,6 +886,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           ref={worldRef}
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
+          onClick={cancelInteractions} // Add this to cancel interactions when clicking the board background
         >
           {/* Layer 10: Game World (Grid, Path, Towers, Enemies) */}
           <div 
