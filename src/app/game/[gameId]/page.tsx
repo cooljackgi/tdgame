@@ -405,6 +405,7 @@ function CoopGame() {
   const handleLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell', payload: any) => {
     if (localPlayerId === 'spectator') return;
 
+    // This is a shared value set by the UI.
     const towerId = (document as any).__SELECTED_TOWER_ID;
 
     if (isGameHost) {
@@ -570,7 +571,7 @@ function CoopGame() {
     };
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
-}, [isGameHost, gameStatus, isIntermission, broadcastGameData, handleGameEnd]);
+  }, [isGameHost, gameStatus, isIntermission, broadcastGameData, handleGameEnd]);
 
   
   if (loading || !localPlayerId || players.length === 0) {
