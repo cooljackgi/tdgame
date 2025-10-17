@@ -125,8 +125,9 @@ export default function SinglePlayerGame({
     }
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
-    const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, placedTowers.map(t => t.position), GRID_ROWS, GRID_COLS) || [], [placedTowers]);
-    const isIntermission = useMemo(() => !spawnerStateRef.current && enemies.length === 0, [enemies]);
+    const [currentPath, setCurrentPath] = useState<Node[]>(
+        () => findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []
+    );
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
         const player = localPlayerRef.current;
@@ -137,11 +138,18 @@ export default function SinglePlayerGame({
         const cellKey = `${row}_${col}`;
 
         if (currentTowers.some(t => t.position.row === row && t.position.col === col)) return;
-        if (player.resources < towerSpec.cost) return;
+        if ((row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS)) return;
+        if (player.resources < towerSpec.cost) {
+            toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
+            return;
+        }
 
         const newBlockedPositions = [...currentTowers.map(t => t.position), { row, col }];
         const path = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, newBlockedPositions, GRID_ROWS, GRID_COLS);
-        if (!path) return;
+        if (!path) {
+            toast({ title: 'Pfad blockiert', description: 'Du kannst den Weg für die Gegner nicht komplett blockieren.', variant: 'destructive'});
+            return;
+        }
         
         const newTower: PlacedTower = {
             ...towerSpec,
@@ -161,7 +169,7 @@ export default function SinglePlayerGame({
         setSelectedTowerToBuild(null);
         setTimeout(() => setJustPlacedTowerId(null), 500);
 
-    }, [selectedTowerToBuild]);
+    }, [selectedTowerToBuild, toast]);
 
     const handleUpgradeTower = useCallback((row: number, col: number, upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -302,9 +310,12 @@ export default function SinglePlayerGame({
                 const newDamageNumbers: DamageNumber[] = [];
 
                 for (const enemy of prevEnemies) {
-                    let updatedEnemy = { ...enemy };
+                    let updatedEnemy = { ...enemy, effects: [...enemy.effects] }; // Shallow copy effects
                     
-                    const stepMs = 1000 / updatedEnemy.speed;
+                    const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
+                    const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+                    const stepMs = 1000 / Math.max(0.001, speed);
+
                     if (now - updatedEnemy.lastMove >= stepMs) {
                       if (updatedEnemy.pathIndex < currentPath.length - 1) {
                         updatedEnemy.pathIndex += 1;
@@ -314,7 +325,7 @@ export default function SinglePlayerGame({
                     }
 
                     // Apply effects like burn
-                    const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
+                    const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn' && e.expires > now);
                     if (burnEffect && burnEffect.expires > now) {
                         if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
                             const damage = (burnEffect.potency ?? 0) * updatedEnemy.maxHealth;
@@ -377,16 +388,7 @@ export default function SinglePlayerGame({
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
     }, []);
-
-    const onLocalAction = (action: 'build' | 'upgrade' | 'sell', payload: any) => {
-        const { row, col, towerId, upgradeId } = payload;
-        switch(action) {
-            case 'build': handlePlaceTower(row, col); break;
-            case 'upgrade': handleUpgradeTower(row, col, upgradeId); break;
-            case 'sell': handleSellTower(row, col); break;
-        }
-    };
-
+    
     return (
         <GameSession
             isCoop={false}
