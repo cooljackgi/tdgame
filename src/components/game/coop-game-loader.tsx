@@ -153,15 +153,19 @@ export default function CoopGameLoader() {
         switch(action){
             case 'build': {
                 const { row, col, towerId, playerId } = payload;
+                const key = `${row}_${col}`;
+                const existingTower = towersByCell[key];
+                
+                if (existingTower) return; // Cell already occupied
                 if (!hostCanPlace(row, col)) {
                     console.warn(`[HOST] Invalid build request at ${row},${col}. Path blocked.`);
                     return;
                 }
-                const key = `${row}_${col}`;
+
                 const towerSpec = initialTowers.find(t => t.id === towerId);
                 const builder = players.find(p => p.id === playerId);
 
-                if(!towerSpec || !builder || builder.resources < towerSpec.cost || towersByCell[key]) return;
+                if(!towerSpec || !builder || builder.resources < towerSpec.cost) return;
                 
                 const newTower: PlacedTower = {
                     ...towerSpec,
@@ -176,8 +180,6 @@ export default function CoopGameLoader() {
                 setTowersByCell(prev => ({ ...prev, [key]: newTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources - towerSpec.cost} : p));
 
-                setFocusedTower(null);
-                setSelectedTowerToBuild(null);
                 setJustPlacedTowerId(newTower.id);
                 setTimeout(() => setJustPlacedTowerId(null), 400);
                 if (sendGameDataRef.current) sendGameDataRef.current('TOWER_PLACE_VFX', { towerId: newTower.id });
@@ -187,10 +189,13 @@ export default function CoopGameLoader() {
                 const { row, col, upgradeId, playerId } = payload;
                 const key = `${row}_${col}`;
                 const existingTower = towersByCell[key];
+                
+                if (!existingTower || existingTower.ownerId !== playerId) return;
+
                 const upgradeSpec = initialTowers.find(t => t.id === upgradeId);
                 const upgrader = players.find(p => p.id === playerId);
 
-                if (!existingTower || !upgradeSpec || !upgrader || existingTower.ownerId !== playerId) return;
+                if (!upgradeSpec || !upgrader) return;
                 
                 const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
                 if (upgrader.resources < cost) return;
@@ -215,7 +220,6 @@ export default function CoopGameLoader() {
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
-                 setFocusedTower(null);
                  break;
             }
             case 'pick_element': {
@@ -244,7 +248,7 @@ export default function CoopGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                broadcastSnapshot();
+                setHostRevision(r => r+1);
                 return;
             }
             case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
@@ -253,7 +257,7 @@ export default function CoopGameLoader() {
             case 'PICK_ELEMENT_REQUEST':     onHostAction('pick_element', payload); return;
             case 'START_WAVE_NOW_REQUEST':   onHostAction('start_wave_now', payload); return;
         }
-    }, [isGameHost, broadcastSnapshot, onHostAction]);
+    }, [isGameHost, onHostAction]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
 
@@ -341,6 +345,12 @@ export default function CoopGameLoader() {
                         setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
                         setGameStatus(gameData.gameStatus || 'waiting');
                         setHostRevision(r => r + 1); // Trigger initial broadcast
+                    } else { // Handle player2 joining
+                        const currentPlayers = normalizePlayers(gameData.players);
+                        if (currentPlayers.length > players.length) {
+                            setPlayers(currentPlayers);
+                            setHostRevision(r => r + 1);
+                        }
                     }
                 }
                 
