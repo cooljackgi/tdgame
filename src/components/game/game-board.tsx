@@ -16,8 +16,10 @@ import { findPath } from '@/lib/pathfinding';
 import TowerContextMenu from './TowerContextMenu';
 
 const CELL_SIZE = 64;
-
 const ENABLE_TOOLTIPS = false;
+const NETWORK_INTERP_LAG_MS = 120;
+const LERP_FACTOR = 0.18; // 1.0 = hard jump, < 1.0 = smooth
+const SNAP_THRESHOLD = 1.8 * CELL_SIZE;
 
 
 export type GameBoardHandle = {
@@ -47,7 +49,6 @@ function gridToPx(node: Node) {
 }
 
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
-const LERP_FACTOR = 1.0;
 
 function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
   let targetPos: { x: number, y: number };
@@ -96,9 +97,17 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
     interpolatedEnemyPositions.set(enemy.id, { x: targetPos.x, y: targetPos.y, lastUpdate: now });
     return targetPos;
   }
+  
+  let newX: number;
+  let newY: number;
 
-  const newX = currentPos.x + (targetPos.x - currentPos.x) * LERP_FACTOR;
-  const newY = currentPos.y + (targetPos.y - currentPos.y) * LERP_FACTOR;
+  if (Math.hypot(targetPos.x - currentPos.x, targetPos.y - currentPos.y) > SNAP_THRESHOLD) {
+      newX = targetPos.x;
+      newY = targetPos.y;
+  } else {
+      newX = currentPos.x + (targetPos.x - currentPos.x) * LERP_FACTOR;
+      newY = currentPos.y + (targetPos.y - currentPos.y) * LERP_FACTOR;
+  }
   
   interpolatedEnemyPositions.set(enemy.id, { x: newX, y: newY, lastUpdate: now });
 
@@ -474,7 +483,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
  const renderVfx = useCallback(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
-    const now = performance.now();
+    const now = playerRole === 'player1' ? performance.now() : performance.now() - NETWORK_INTERP_LAG_MS;
     if (now - lastTsRef.current < fpsCapMs) return;
     lastTsRef.current = now;
 
@@ -642,7 +651,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath, enemies]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);

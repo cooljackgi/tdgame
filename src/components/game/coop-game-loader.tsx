@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -105,7 +106,23 @@ export default function CoopGameLoader() {
     switch(type) {
       case 'GAME_STATE_SNAPSHOT':
         setPlayers(payload.players);
-        setEnemies(payload.enemies);
+        // --- Client-side interpolation logic ---
+        setEnemies(currentEnemies => {
+            const now = performance.now();
+            const newEnemies = payload.enemies;
+            const enemyMap = new Map(currentEnemies.map(e => [e.id, e]));
+            
+            return newEnemies.map((incomingEnemy: Enemy) => {
+                const existing = enemyMap.get(incomingEnemy.id);
+                if (existing) {
+                    // Prevent pathIndex from going backwards, but accept host's new position
+                    incomingEnemy.pathIndex = Math.max(existing.pathIndex, incomingEnemy.pathIndex);
+                }
+                // Normalize time base to client's clock for smooth interpolation
+                incomingEnemy.lastMove = now;
+                return incomingEnemy;
+            });
+        });
         setTowersByCell(payload.towersByCell);
         setGameState(payload.gameState);
         setCurrentWave(payload.currentWave);
