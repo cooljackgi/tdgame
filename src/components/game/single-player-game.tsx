@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
@@ -14,8 +15,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { onGameEnd, processAttack } from '@/lib/game-logic';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -279,14 +279,24 @@ export default function SinglePlayerGame({
         setWaveStartCountdown(INTERMISSION_TIME);
     }, []);
 
-    const onGameEnd = useCallback(async (result: any) => {
+    const handleGameEnd = useCallback(async (won: boolean) => {
         if(gameStatusRef.current === 'gameover') return;
         setGameStatus('gameover');
+        
+        const result = { 
+            playerName: localPlayerRef.current?.name || 'Spieler', 
+            playerUid: user?.uid || 'anonymous', 
+            difficulty: difficultyRef.current, 
+            wave: currentWaveRef.current + 1, 
+            won, 
+            finalTowers: towersByCellRef.current 
+        };
+        
         if (!isCheating) {
             localStorage.removeItem(LOCAL_STORAGE_KEY);
             if (user?.uid) {
                  try {
-                    await addDoc(collection(db, "scores"), { ...result, date: serverTimestamp() });
+                    await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
                 } catch(e) { console.error("Failed to save score", e); }
             }
         }
@@ -434,72 +444,86 @@ export default function SinglePlayerGame({
               }
             }
             
-            const newAttacks: Attack[] = [];
-            const newDamageNumbers: DamageNumber[] = [];
-            const newFiringTowerIds = new Set<string>();
-
-            for (const tower of Object.values(towersByCellRef.current)) {
-                if (now - tower.lastAttack >= tower.attackSpeed && enemiesRef.current.length > 0) {
-                    let target: Enemy | null = null;
-                    let minDistanceSq = tower.range * tower.range;
-
-                    for (const enemy of enemiesRef.current) {
-                        const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                        if (distSq <= minDistanceSq) {
-                            minDistanceSq = distSq;
-                            target = enemy;
-                        }
-                    }
-
-                    if (target) {
-                        tower.lastAttack = now;
-                        newFiringTowerIds.add(tower.id);
-                        
-                        const attackId = crypto.randomUUID();
-                        const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
-
-                        newAttacks.push({
-                            id: attackId,
-                            towerId: tower.id,
-                            targetId: target.id,
-                            targetPosition: target.position,
-                            elements: tower.elements,
-                            projectile: projectileType,
-                        });
-
-                        const damage = tower.damage;
-                        target.health -= Math.max(0, damage - target.armor);
-                        target.wasHit = true;
-                        newDamageNumbers.push({
-                            id: crypto.randomUUID(),
-                            amount: damage,
-                            targetId: target.id,
-                            color: '#ffffff',
-                        } as DamageNumber);
-                    }
-                }
-            }
-
-            if (newFiringTowerIds.size > 0) {
-                setFiringTowerIds(newFiringTowerIds);
-                setTimeout(() => setFiringTowerIds(new Set()), 150);
-            }
-            if (newAttacks.length > 0) {
-                setAttacks(newAttacks);
-            }
+            let allNewAttacks: Attack[] = [];
+            let allNewDamageNumbers: DamageNumber[] = [];
+            let allNewSplashRings: SplashRing[] = [];
             
-            if (newDamageNumbers.length > 0) {
-                setDamageNumbers(prev => [...prev, ...newDamageNumbers]);
-            }
+            setTowersByCell(prevTowers => {
+                const newTowers = { ...prevTowers };
+                let firingIds = new Set<string>();
+
+                Object.values(newTowers).forEach(tower => {
+                     if (now - tower.lastAttack >= tower.attackSpeed) {
+                         let target: Enemy | null = null;
+                         let minDistanceSq = tower.range * tower.range;
+                         
+                         enemiesRef.current.forEach(enemy => {
+                            const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                            if (distSq <= minDistanceSq) {
+                                minDistanceSq = distSq;
+                                target = enemy;
+                            }
+                         });
+
+                         if (target) {
+                            tower.lastAttack = now;
+                            firingIds.add(tower.id);
+                             
+                            const attackResult = processAttack(tower, target, enemiesRef.current, now);
+                            setEnemies(attackResult.updatedEnemies);
+                            allNewAttacks.push(...attackResult.newAttacks);
+                            allNewDamageNumbers.push(...attackResult.damageNumbers);
+                            allNewSplashRings.push(...attackResult.splashRings);
+
+                             if(attackResult.resourcesGained > 0) {
+                                setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + attackResult.resourcesGained }]);
+                                setTotalKilled(prev => prev + attackResult.killed);
+                             }
+                         }
+                     }
+                });
+
+                if(firingIds.size > 0) setFiringTowerIds(firingIds);
+                if(allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);
+                if(allNewDamageNumbers.length > 0) setDamageNumbers(prev => [...prev, ...allNewDamageNumbers]);
+                if(allNewSplashRings.length > 0) setSplashRings(prev => [...prev, ...allNewSplashRings]);
+
+                return newTowers;
+            });
 
             setEnemies(prevEnemies => {
                 const stillAlive: Enemy[] = [];
                 let livesLost = 0;
                 let resourcesGained = 0;
+                let killedThisTick = 0;
 
                 for (const enemy of prevEnemies) {
-                    let updatedEnemy = { ...enemy, effects: [...enemy.effects] };
+                    if (enemy.health <= 0) {
+                        resourcesGained += enemy.bounty;
+                        killedThisTick++;
+                        continue;
+                    }
+                    if (enemy.pathIndex >= enemy.path.length - 1) {
+                        livesLost += 1;
+                        continue;
+                    }
+
+                    let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > now) };
+
+                    const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun' && e.expires > now);
+                    if (stunEffect) {
+                        stillAlive.push(updatedEnemy);
+                        continue;
+                    }
                     
+                    const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn' && e.expires > now);
+                    if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
+                        const damage = (burnEffect.potency ?? 0) * updatedEnemy.maxHealth;
+                        updatedEnemy.health -= damage;
+                        burnEffect.lastTick = now;
+                        setDamageNumbers(prev => [...prev, { id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
+                    }
+
                     const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
                     const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
                     const stepMs = 1000 / Math.max(0.001, speed);
@@ -511,38 +535,19 @@ export default function SinglePlayerGame({
                         updatedEnemy.lastMove = now;
                       }
                     }
-
-                    const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn' && e.expires > now);
-                    if (burnEffect && burnEffect.expires > now) {
-                        if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
-                            const damage = (burnEffect.potency ?? 0) * updatedEnemy.maxHealth;
-                            updatedEnemy.health -= damage;
-                            burnEffect.lastTick = now;
-                            newDamageNumbers.push({ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
-                        }
-                    }
-                    updatedEnemy.wasHit = false;
-
-                    if (updatedEnemy.pathIndex >= updatedEnemy.path.length - 1) {
-                        livesLost += 1;
-                        continue;
-                    }
-                    if (updatedEnemy.health <= 0) {
-                        resourcesGained += updatedEnemy.bounty;
-                        continue;
-                    }
                     stillAlive.push(updatedEnemy);
                 }
 
                 if (livesLost > 0) {
                     setTotalLeaked(prev => prev + livesLost);
-                    setGameState(prev => ({...prev, lives: prev.lives - livesLost }));
-                    if (gameStateRef.current.lives - livesLost <= 0) {
-                        onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anonymous', difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: false, finalTowers: towersByCellRef.current });
-                    }
+                    setGameState(prev => {
+                        const newLives = prev.lives - livesLost;
+                        if (newLives <= 0) handleGameEnd(false);
+                        return { ...prev, lives: newLives };
+                    });
                 }
                 if (resourcesGained > 0) {
-                    setTotalKilled(prev => prev + (prevEnemies.length - stillAlive.length - livesLost));
+                    setTotalKilled(prev => prev + killedThisTick);
                     setPlayers(prev => [{...prev[0], resources: prev[0].resources + resourcesGained}]);
                 }
                 return stillAlive;
@@ -560,7 +565,7 @@ export default function SinglePlayerGame({
                     setWaveStartCountdown(INTERMISSION_TIME);
                   }
                 } else {
-                    onGameEnd({ playerName: localPlayerRef.current?.name || 'Spieler', playerUid: user?.uid || 'anonymous', difficulty: difficultyRef.current, wave: currentWaveRef.current + 1, won: true, finalTowers: towersByCellRef.current });
+                    handleGameEnd(true);
                 }
             }
             
@@ -570,7 +575,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [handleStartNextWaveNow, onGameEnd, user]);
+    }, [handleStartNextWaveNow, handleGameEnd, user]);
 
     const toggleMute = () => {
       setIsMuted(current => {
@@ -671,13 +676,3 @@ export default function SinglePlayerGame({
         </div>
     );
 }
-
-    
-
-    
-
-
-
-
-    
-

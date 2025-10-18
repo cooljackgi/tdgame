@@ -25,7 +25,7 @@ import type { GameBoardHandle } from './game-board';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
-import { onGameEnd } from '@/lib/game-logic';
+import { onGameEnd, processAttack } from '@/lib/game-logic';
 
 
 export default function CoopGameLoader() {
@@ -525,8 +525,9 @@ export default function CoopGameLoader() {
           let livesLost = 0;
           let resourcesGained = 0;
           let killedInTick = 0;
-          let newAttacks: Attack[] = [];
-          let newDamageNumbers: DamageNumber[] = [];
+          let allNewAttacks: Attack[] = [];
+          let allNewDamageNumbers: DamageNumber[] = [];
+          let allNewSplashRings: SplashRing[] = [];
           
           setEnemies(prevEnemies => {
               const stillAlive = prevEnemies.map(enemy => {
@@ -542,7 +543,7 @@ export default function CoopGameLoader() {
                           const burnDamage = burnEffect.potency ?? 0;
                           updatedEnemy.health -= burnDamage;
                           burnEffect.lastTick = now;
-                          newDamageNumbers.push({ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
+                          allNewDamageNumbers.push({ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
                       }
                   }
                   
@@ -606,85 +607,25 @@ export default function CoopGameLoader() {
                        if (target) {
                            tower.lastAttack = now;
                            firingIds.add(tower.id);
-                           const projectileType = tower.specId.includes('sniper') ? 'arrow' : 'beam';
-                           newAttacks.push({ id: crypto.randomUUID(), towerId: tower.id, targetId: target.id, targetPosition: target.position, elements: tower.elements, projectile: projectileType });
                            
-                            setEnemies(es => {
-                                let chainTargets: string[] = [target!.id]; // Keep track of who was hit in this chain
-                                let lastHitEnemyId = target!.id;
+                            const attackResult = processAttack(tower, target, enemies, now);
 
-                                const applyDamage = (enemyToDamage: Enemy, damageAmount: number, towerEffect?: TowerEffect) => {
-                                    const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
-                                    const vulnerability = enemyToDamage.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
-                                    
-                                    const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
-                                    let finalDamage = Math.max(1, damageAmount - effectiveArmor);
-                                    finalDamage *= (1 + vulnerability);
+                            setEnemies(attackResult.updatedEnemies);
+                            allNewAttacks.push(...attackResult.newAttacks);
+                            allNewDamageNumbers.push(...attackResult.damageNumbers);
+                            allNewSplashRings.push(...attackResult.splashRings);
 
-                                    const newHealth = enemyToDamage.health - finalDamage;
-                                    newDamageNumbers.push({ id: crypto.randomUUID(), amount: finalDamage, targetId: enemyToDamage.id, color: '#fff' } as DamageNumber);
-
-                                    let newEffects = [...enemyToDamage.effects];
-                                    if (towerEffect) {
-                                        const { type, chance = 1, duration = 0, potency = 0 } = towerEffect;
-                                        if (Math.random() < chance) {
-                                            const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
-                                            if (existingEffectIndex !== -1) {
-                                                newEffects[existingEffectIndex] = { ...newEffects[existingEffectIndex], expires: now + duration, potency: Math.max(newEffects[existingEffectIndex].potency, potency) };
-                                            } else {
-                                                newEffects.push({ type, expires: now + duration, potency, duration });
-                                            }
-                                        }
-                                    }
-                                    return { ...enemyToDamage, health: newHealth, wasHit: true, effects: newEffects };
-                                };
-                                
-                                const updatedEnemies = es.map(e => e.id === target!.id ? applyDamage(e, tower.damage, tower.effect) : e);
-
-                                // Chain logic
-                                if (tower.effect?.type === 'chain' && tower.effect.bounces) {
-                                    for (let i = 0; i < tower.effect.bounces; i++) {
-                                        let nextTarget: Enemy | null = null;
-                                        let closestDistSq = Infinity;
-                                        const lastHitEnemy = updatedEnemies.find(e => e.id === lastHitEnemyId);
-                                        if (!lastHitEnemy) break;
-
-                                        updatedEnemies.forEach(potentialTarget => {
-                                            if (!chainTargets.includes(potentialTarget.id)) {
-                                                const distSq = (lastHitEnemy.position.col - potentialTarget.position.col)**2 + (lastHitEnemy.position.row - potentialTarget.position.row)**2;
-                                                if (distSq < closestDistSq && distSq <= tower.range ** 2) {
-                                                    closestDistSq = distSq;
-                                                    nextTarget = potentialTarget;
-                                                }
-                                            }
-                                        });
-
-                                        if (nextTarget) {
-                                            const chainDamage = tower.damage * (tower.effect.potency ?? 0.5);
-                                            const chainTargetId = nextTarget.id;
-                                            
-                                            // Find the enemy in the array and update it
-                                            const targetIndex = updatedEnemies.findIndex(e => e.id === chainTargetId);
-                                            if (targetIndex > -1) {
-                                               updatedEnemies[targetIndex] = applyDamage(updatedEnemies[targetIndex], chainDamage);
-                                            }
-
-                                            newAttacks.push({ id: crypto.randomUUID(), towerId: tower.id, targetId: chainTargetId, isChain: true, chainSourceId: lastHitEnemyId, targetPosition: nextTarget.position, elements: tower.elements, projectile: 'chain' });
-                                            chainTargets.push(chainTargetId);
-                                            lastHitEnemyId = chainTargetId;
-                                        } else {
-                                            break; // No more targets in range
-                                        }
-                                    }
-                                }
-                                return updatedEnemies;
-                            });
+                            if (attackResult.resourcesGained > 0) {
+                                setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(attackResult.resourcesGained / ps.length)})));
+                                setTotalKilled(k => k + attackResult.killed);
+                            }
                        }
                    }
               });
 
-              if(firingIds.size > 0) gameBoardRef.current?.queueAttacks(newAttacks);
-              if(newDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(newDamageNumbers);
+              if(firingIds.size > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
+              if(allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+              if(allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
 
               return newTowers;
           });

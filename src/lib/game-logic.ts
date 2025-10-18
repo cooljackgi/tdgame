@@ -2,7 +2,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
-import type { PlacedTower, Difficulty } from './game-data/types';
+import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect } from './game-data/types';
 
 // This file is intended for reusable game logic that can be shared
 // between single-player and multiplayer contexts, especially for
@@ -26,26 +26,196 @@ export async function onGameEnd(
     won: boolean,
     finalTowers: Record<string, PlacedTower>
 ) {
-    // For now, we only save single-player scores and if the user is logged in.
-    // Coop scoring would need a different structure.
-    if (!user || gameId.startsWith('sp-')) { // crude check for single-player
-        if (user && difficulty !== 'Chaos') {
-            try {
-                await addDoc(collection(db, "scores"), {
-                    playerName: user.displayName || 'Anonymer Spieler',
-                    playerUid: user.uid,
-                    difficulty: difficulty,
-                    wave: wave,
-                    won: won,
-                    finalTowers: finalTowers,
-                    date: serverTimestamp(),
+    if (!user) return; // Only save scores for logged-in users
+
+    // Don't save scores for chaos mode
+    if (difficulty === 'Chaos') return;
+
+    // For coop games, you might have different logic, but for now, we can have both players submit a score
+    // or have only the host submit. We'll allow both for now.
+    
+    try {
+        await addDoc(collection(db, "scores"), {
+            playerName: user.displayName || 'Anonymer Spieler',
+            playerUid: user.uid,
+            difficulty: difficulty,
+            wave: wave,
+            won: won,
+            finalTowers: finalTowers,
+            date: serverTimestamp(),
+            gameId: gameId, // Store gameId for reference
+        });
+    } catch (e) {
+        console.error("Failed to save score to Firestore:", e);
+    }
+}
+
+
+/**
+ * Processes a single attack from a tower to a target enemy, handling damage, effects, and special attacks.
+ * This is a pure function that returns the results of the attack.
+ * @returns An object containing the updated enemies, resources gained, and VFX to be rendered.
+ */
+export function processAttack(
+    tower: PlacedTower,
+    target: Enemy,
+    allEnemies: Enemy[],
+    now: number
+): {
+    updatedEnemies: Enemy[];
+    resourcesGained: number;
+    killed: number;
+    damageNumbers: DamageNumber[];
+    newAttacks: Attack[];
+    splashRings: SplashRing[];
+} {
+    const output = {
+        updatedEnemies: [...allEnemies],
+        resourcesGained: 0,
+        killed: 0,
+        damageNumbers: [] as DamageNumber[],
+        newAttacks: [] as Attack[],
+        splashRings: [] as SplashRing[],
+    };
+
+    const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
+    output.newAttacks.push({
+        id: crypto.randomUUID(),
+        towerId: tower.id,
+        targetId: target.id,
+        targetPosition: target.position,
+        elements: tower.elements,
+        projectile: projectileType,
+    });
+
+    // Helper to apply damage and effects to a single enemy
+    const applyDamage = (
+        enemyToDamage: Enemy,
+        damageAmount: number,
+        sourceEffect?: TowerEffect
+    ): Enemy => {
+        const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
+        const vulnerability = enemyToDamage.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
+
+        const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
+        let finalDamage = Math.max(1, damageAmount - effectiveArmor);
+        finalDamage *= (1 + vulnerability);
+
+        output.damageNumbers.push({
+            id: crypto.randomUUID(),
+            amount: finalDamage,
+            targetId: enemyToDamage.id,
+            color: '#fff',
+        } as DamageNumber);
+
+        const newHealth = enemyToDamage.health - finalDamage;
+        let newEffects = [...enemyToDamage.effects];
+
+        if (sourceEffect) {
+            const { type, chance = 1, duration = 0, potency = 0 } = sourceEffect;
+            if (Math.random() < chance) {
+                const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
+                if (existingEffectIndex !== -1) {
+                    newEffects[existingEffectIndex] = {
+                        ...newEffects[existingEffectIndex],
+                        expires: now + duration,
+                        potency: Math.max(newEffects[existingEffectIndex].potency, potency),
+                    };
+                } else {
+                    newEffects.push({ type, expires: now + duration, potency, duration });
+                }
+            }
+        }
+
+        return { ...enemyToDamage, health: newHealth, wasHit: true, effects: newEffects };
+    };
+    
+    // --- Process primary attack and its effects ---
+    const targetIndex = output.updatedEnemies.findIndex(e => e.id === target.id);
+    if (targetIndex > -1) {
+        output.updatedEnemies[targetIndex] = applyDamage(output.updatedEnemies[targetIndex], tower.damage, tower.effect);
+    }
+    
+    // --- Process Splash Damage ---
+    if (tower.effect?.type === 'splash' && tower.effect.radius) {
+        const splashPotency = tower.effect.potency ?? 0.5;
+        const splashRadiusSq = tower.effect.radius * tower.effect.radius;
+        const splashDamage = tower.damage * splashPotency;
+
+        output.splashRings.push({
+            id: crypto.randomUUID(),
+            x: target.position.col,
+            y: target.position.row,
+            r: tower.effect.radius,
+            color: tower.effect.type === 'burn' ? '#ef4444' : '#ffffff'
+        } as SplashRing);
+        
+        output.updatedEnemies = output.updatedEnemies.map(enemy => {
+            if (enemy.id === target.id) return enemy;
+            const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
+            if (distSq <= splashRadiusSq) {
+                return applyDamage(enemy, splashDamage, tower.effect);
+            }
+            return enemy;
+        });
+    }
+
+    // --- Process Chain Damage ---
+    if (tower.effect?.type === 'chain' && tower.effect.bounces) {
+        let lastHitEnemy = target;
+        let hitTargets = new Set<string>([target.id]);
+
+        for (let i = 0; i < tower.effect.bounces; i++) {
+            let nextTarget: Enemy | null = null;
+            let closestDistSq = Infinity;
+            
+            output.updatedEnemies.forEach(potentialTarget => {
+                if (!hitTargets.has(potentialTarget.id)) {
+                    const distSq = (lastHitEnemy.position.col - potentialTarget.position.col)**2 + (lastHitEnemy.position.row - potentialTarget.position.row)**2;
+                    if (distSq < closestDistSq && distSq <= tower.range ** 2) {
+                        closestDistSq = distSq;
+                        nextTarget = potentialTarget;
+                    }
+                }
+            });
+
+            if (nextTarget) {
+                const chainDamage = tower.damage * (tower.effect?.potency ?? 0.5);
+                const nextTargetIndex = output.updatedEnemies.findIndex(e => e.id === nextTarget!.id);
+                if (nextTargetIndex > -1) {
+                    output.updatedEnemies[nextTargetIndex] = applyDamage(output.updatedEnemies[nextTargetIndex], chainDamage);
+                }
+
+                output.newAttacks.push({
+                    id: crypto.randomUUID(),
+                    towerId: tower.id,
+                    targetId: nextTarget.id,
+                    isChain: true,
+                    chainSourceId: lastHitEnemy.id,
+                    targetPosition: nextTarget.position,
+                    elements: tower.elements,
+                    projectile: 'chain',
                 });
-            } catch (e) {
-                console.error("Failed to save score to Firestore:", e);
+                
+                hitTargets.add(nextTarget.id);
+                lastHitEnemy = nextTarget;
+            } else {
+                break; // No more targets in range
             }
         }
     }
-    // In a real coop scenario, you might update the game document itself
-    // to a 'finished' state here.
-    // For now, we do nothing for coop games.
+    
+    // --- Final check for defeated enemies ---
+    const stillAlive: Enemy[] = [];
+    output.updatedEnemies.forEach(enemy => {
+        if (enemy.health > 0) {
+            stillAlive.push(enemy);
+        } else {
+            output.resourcesGained += enemy.bounty;
+            output.killed++;
+        }
+    });
+    output.updatedEnemies = stillAlive;
+
+    return output;
 }
