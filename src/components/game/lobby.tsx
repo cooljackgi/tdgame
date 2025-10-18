@@ -94,11 +94,14 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   const handleStartGame = async (gameId: string) => {
     try {
-        console.log(`[Lobby] Host starting game ${gameId}...`);
         const gameRef = doc(db, 'games', gameId);
-        // This is a dummy write to ensure client has latest state before navigating.
-        await updateDoc(gameRef, { hostReadyTimestamp: new Date() });
-        console.log(`[Lobby] Navigating to /game/${gameId}`);
+        // Set the game to playing and start the first intermission
+        await updateDoc(gameRef, { 
+            gameStatus: 'playing',
+            isIntermission: true,
+            waveStartCountdown: INTERMISSION_TIME 
+        });
+        // Navigate the host to the game page
         router.push(`/game/${gameId}`);
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
