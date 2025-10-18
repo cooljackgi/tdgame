@@ -158,7 +158,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       
       {/* GAME AREA */}
       <div
-        className="relative w-full overflow-hidden flex-grow"
+        className="relative w-full h-full overflow-hidden flex-grow"
       >
         <GameBoard
           ref={gameBoardRef}
