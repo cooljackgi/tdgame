@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -541,7 +542,7 @@ export default function CoopGameLoader() {
                           const burnDamage = burnEffect.potency ?? 0;
                           updatedEnemy.health -= burnDamage;
                           burnEffect.lastTick = now;
-                          newDamageNumbers.push({ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' });
+                          newDamageNumbers.push({ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
                       }
                   }
                   
@@ -608,36 +609,76 @@ export default function CoopGameLoader() {
                            const projectileType = tower.specId.includes('sniper') ? 'arrow' : 'beam';
                            newAttacks.push({ id: crypto.randomUUID(), towerId: tower.id, targetId: target.id, targetPosition: target.position, elements: tower.elements, projectile: projectileType });
                            
-                           setEnemies(es => es.map(e => {
-                               if (e.id === target!.id) {
-                                  
-                                  const armorShred = e.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
-                                  const vulnerability = e.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
-                                  
-                                  const effectiveArmor = Math.max(0, e.armor * (1 - armorShred));
-                                  let finalDamage = Math.max(1, tower.damage - effectiveArmor);
-                                  finalDamage *= (1 + vulnerability);
+                            setEnemies(es => {
+                                let chainTargets: string[] = [target!.id]; // Keep track of who was hit in this chain
+                                let lastHitEnemyId = target!.id;
 
-                                  const newHealth = e.health - finalDamage;
-                                  newDamageNumbers.push({ id: crypto.randomUUID(), amount: finalDamage, targetId: e.id, color: '#fff' });
+                                const applyDamage = (enemyToDamage: Enemy, damageAmount: number, towerEffect?: TowerEffect) => {
+                                    const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
+                                    const vulnerability = enemyToDamage.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
+                                    
+                                    const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
+                                    let finalDamage = Math.max(1, damageAmount - effectiveArmor);
+                                    finalDamage *= (1 + vulnerability);
 
-                                  let newEffects = [...e.effects];
-                                  if (tower.effect) {
-                                      const { type, chance = 1, duration = 0, potency = 0 } = tower.effect;
-                                      if (Math.random() < chance) {
-                                          const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
-                                          if (existingEffectIndex !== -1) {
-                                            newEffects[existingEffectIndex] = { ...newEffects[existingEffectIndex], expires: now + duration, potency: Math.max(newEffects[existingEffectIndex].potency, potency) };
-                                          } else {
-                                            newEffects.push({ type, expires: now + duration, potency, duration });
-                                          }
-                                      }
-                                  }
+                                    const newHealth = enemyToDamage.health - finalDamage;
+                                    newDamageNumbers.push({ id: crypto.randomUUID(), amount: finalDamage, targetId: enemyToDamage.id, color: '#fff' } as DamageNumber);
 
-                                  return { ...e, health: newHealth, wasHit: true, effects: newEffects };
-                               }
-                               return e;
-                           }));
+                                    let newEffects = [...enemyToDamage.effects];
+                                    if (towerEffect) {
+                                        const { type, chance = 1, duration = 0, potency = 0 } = towerEffect;
+                                        if (Math.random() < chance) {
+                                            const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
+                                            if (existingEffectIndex !== -1) {
+                                                newEffects[existingEffectIndex] = { ...newEffects[existingEffectIndex], expires: now + duration, potency: Math.max(newEffects[existingEffectIndex].potency, potency) };
+                                            } else {
+                                                newEffects.push({ type, expires: now + duration, potency, duration });
+                                            }
+                                        }
+                                    }
+                                    return { ...enemyToDamage, health: newHealth, wasHit: true, effects: newEffects };
+                                };
+                                
+                                const updatedEnemies = es.map(e => e.id === target!.id ? applyDamage(e, tower.damage, tower.effect) : e);
+
+                                // Chain logic
+                                if (tower.effect?.type === 'chain' && tower.effect.bounces) {
+                                    for (let i = 0; i < tower.effect.bounces; i++) {
+                                        let nextTarget: Enemy | null = null;
+                                        let closestDistSq = Infinity;
+                                        const lastHitEnemy = updatedEnemies.find(e => e.id === lastHitEnemyId);
+                                        if (!lastHitEnemy) break;
+
+                                        updatedEnemies.forEach(potentialTarget => {
+                                            if (!chainTargets.includes(potentialTarget.id)) {
+                                                const distSq = (lastHitEnemy.position.col - potentialTarget.position.col)**2 + (lastHitEnemy.position.row - potentialTarget.position.row)**2;
+                                                if (distSq < closestDistSq && distSq <= tower.range ** 2) {
+                                                    closestDistSq = distSq;
+                                                    nextTarget = potentialTarget;
+                                                }
+                                            }
+                                        });
+
+                                        if (nextTarget) {
+                                            const chainDamage = tower.damage * (tower.effect.potency ?? 0.5);
+                                            const chainTargetId = nextTarget.id;
+                                            
+                                            // Find the enemy in the array and update it
+                                            const targetIndex = updatedEnemies.findIndex(e => e.id === chainTargetId);
+                                            if (targetIndex > -1) {
+                                               updatedEnemies[targetIndex] = applyDamage(updatedEnemies[targetIndex], chainDamage);
+                                            }
+
+                                            newAttacks.push({ id: crypto.randomUUID(), towerId: tower.id, targetId: chainTargetId, isChain: true, chainSourceId: lastHitEnemyId, targetPosition: nextTarget.position, elements: tower.elements, projectile: 'chain' });
+                                            chainTargets.push(chainTargetId);
+                                            lastHitEnemyId = chainTargetId;
+                                        } else {
+                                            break; // No more targets in range
+                                        }
+                                    }
+                                }
+                                return updatedEnemies;
+                            });
                        }
                    }
               });

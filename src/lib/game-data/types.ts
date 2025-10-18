@@ -100,6 +100,7 @@ export type Attack = {
 export type DamageNumber = {
   id: string;
   amount: number;
+  targetId: string;
   position: { row: number; col: number };
   color: string;
   isCrit?: boolean;
