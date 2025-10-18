@@ -1,4 +1,3 @@
-
 // src/components/game/Enemy.tsx
 "use client";
 
@@ -75,7 +74,18 @@ const EnemyComponent = React.memo(function EnemyComponent({
     isDamaged && "animate-wobble"
   );
   
-  const activeEffects = effects.filter(e => e.expires > performance.now());
+  // FIX: Use Date.now() to match the timestamp basis of the host/server.
+  const activeEffects = effects.filter(e => e.expires > Date.now());
+  
+  const allVisibleEffects = React.useMemo(() => {
+    const visible = new Map<EnemyStatusEffect['type'], EnemyStatusEffect>();
+    activeEffects.forEach(e => visible.set(e.type, e));
+    if (isStunned && !visible.has('stun')) {
+        visible.set('stun', { type: 'stun', expires: Number.MAX_SAFE_INTEGER, potency: 1 });
+    }
+    return Array.from(visible.values());
+  }, [activeEffects, isStunned]);
+
 
   return (
     <div
@@ -98,7 +108,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
         <path d={iconPath} />
       </svg>
       
-      {activeEffects.map((effect, i) => {
+      {allVisibleEffects.map((effect, i) => {
           const Icon = effectIconMap[effect.type];
           const iconPositionClass = effectIconClasses[effect.type];
           if (Icon && iconPositionClass) {
