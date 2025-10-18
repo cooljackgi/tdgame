@@ -1,11 +1,10 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -20,6 +19,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { Player } from '@/lib/game-data/types';
 import { INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -105,7 +105,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       if (!snap.exists()) return;
       const data = snap.data();
       
-      const isMember = data.members && data.members[currentUser.uid];
+      const isMember = data.members && Object.prototype.hasOwnProperty.call(data.members, currentUser.uid);
       if (!isMember) return;
 
       // If the game status changes to playing, redirect.
