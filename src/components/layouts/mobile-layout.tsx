@@ -1,4 +1,6 @@
 
+"use client";
+
 import React, { useState, memo, useMemo, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -108,12 +110,15 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   useEffect(() => {
     const reset = () => gameBoardRef.current?.resetView();
-    reset(); // Initial call
-    
+    // Reset view initially and also after a tiny delay to ensure container has its final dimensions
+    reset();
+    const id = setTimeout(reset, 0);
+
     window.addEventListener('orientationchange', reset);
     window.addEventListener('resize', reset);
     
     return () => {
+      clearTimeout(id);
       window.removeEventListener('orientationchange', reset);
       window.removeEventListener('resize', reset);
     };

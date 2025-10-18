@@ -927,7 +927,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
       <Card 
         ref={containerRef}
         className={cn(
-          "w-full h-full relative overflow-hidden",
+          "absolute inset-0 z-0 overflow-hidden",
           selectedTowerToBuild ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing",
           "border-slate-800 border"
         )}
@@ -964,7 +964,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
               style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight }}
             >
               <div className="absolute inset-0" style={{
-                  backgroundColor: 'hsl(216 28% 12%)',
+                  backgroundColor: '#0b1220',
                   backgroundImage: `
                     linear-gradient(to right, rgba(148,163,184,0.1) 1px, transparent 1px),
                     linear-gradient(to bottom, rgba(148,163,184,0.1) 1px, transparent 1px)
