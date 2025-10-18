@@ -1,11 +1,11 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -35,52 +35,94 @@ type GameLobbyInfo = {
 };
 
 const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () => void }) => {
-  const [games, setGames] = useState<GameLobbyInfo[]>([]);
+  const [openGames, setOpenGames] = useState<GameLobbyInfo[]>([]);
+  const [activeUserGameId, setActiveUserGameId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [joiningGameId, setJoiningGameId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
+  const didRedirectRef = useRef(false);
   
+  // Stream 1: List ONLY open games for players to join
   useEffect(() => {
     const gamesQuery = query(
       collection(db, 'games'),
-      where('gameStatus', 'in', ['waiting', 'playing']),
-      orderBy('gameStatus', 'asc'),
+      where('gameStatus', '==', 'waiting'),
       orderBy('createdAt', 'desc')
     );
 
     const unsubscribe = onSnapshot(gamesQuery, (snapshot) => {
       const gamesList: GameLobbyInfo[] = snapshot.docs.map(doc => {
         const data = doc.data();
-        const player1 = data.players?.player1 || null;
-        const player2 = data.players?.player2 || null;
-
         return {
           id: doc.id,
           gameName: data.gameName || `Spiel ${doc.id.substring(0, 5)}`,
-          player1,
-          player2,
+          player1: data.players?.player1 || null,
+          player2: data.players?.player2 || null,
           player1Id: data.player1Id || null,
           gameStatus: data.gameStatus,
         };
       });
-      setGames(gamesList);
+      setOpenGames(gamesList);
       setLoading(false);
     }, (error) => {
-        console.error("Error fetching lobby games:", error);
+        console.error("Error fetching open lobby games:", error);
         setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
+  // Stream 2: Find if the current user is ALREADY in a game (waiting or playing)
+  useEffect(() => {
+      if (!currentUser?.uid) return;
+
+      const userGamesQuery = query(
+        collection(db, 'games'),
+        where('members', '==', { [currentUser.uid]: true }),
+        where('gameStatus', 'in', ['waiting', 'playing']),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      );
+      
+      const unsubscribe = onSnapshot(userGamesQuery, (snapshot) => {
+          if (!snapshot.empty) {
+              const gameDoc = snapshot.docs[0];
+              setActiveUserGameId(gameDoc.id);
+          }
+      });
+      
+      return () => unsubscribe();
+  }, [currentUser.uid]);
+  
+  // Stream 3: Listen to the specific active game and redirect if it starts
+  useEffect(() => {
+    if (!activeUserGameId || !currentUser.uid) return;
+    
+    const unsub = onSnapshot(doc(db, 'games', activeUserGameId), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      
+      const isMember = data.members && data.members[currentUser.uid];
+      if (!isMember) return;
+
+      if (data.gameStatus === 'playing' && !didRedirectRef.current) {
+        didRedirectRef.current = true;
+        toast({ title: "Spiel startet!", description: "Du wirst zum Spiel weitergeleitet..."});
+        router.push(`/game/${activeUserGameId}`);
+      }
+    });
+
+    return () => unsub();
+  }, [activeUserGameId, currentUser.uid, router, toast]);
+
+
   const handleJoinGame = async (gameId: string) => {
     setJoiningGameId(gameId);
     try {
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
-      // The joinGame function now sets the state, we can navigate directly
-      router.push(`/game/${gameId}`);
+      // The listeners will handle the navigation automatically now.
     } catch (error: any) {
       console.error("Failed to join game:", error);
       toast({
@@ -88,21 +130,21 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         description: error.message || "Das Spiel ist möglicherweise voll oder existiert nicht mehr.",
         variant: "destructive",
       });
-      setJoiningGameId(null);
+    } finally {
+        setJoiningGameId(null);
     }
   };
 
   const handleStartGame = async (gameId: string) => {
     try {
         const gameRef = doc(db, 'games', gameId);
-        // Set the game to playing and start the first intermission
+        // Atomically set the game to playing and start the first intermission
         await updateDoc(gameRef, { 
             gameStatus: 'playing',
             isIntermission: true,
             waveStartCountdown: INTERMISSION_TIME 
         });
-        // Navigate the host to the game page
-        router.push(`/game/${gameId}`);
+        // The host will be redirected by the same logic that redirects player 2
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
     }
@@ -122,6 +164,10 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         toast({ title: "Archivieren fehlgeschlagen", description: error.message || "Das Spiel konnte nicht archiviert werden.", variant: "destructive" });
       }
   };
+  
+  const findGameForUser = (gamesList: GameLobbyInfo[]) => {
+      return gamesList.find(g => g.player1Id === currentUser.uid || g.player2?.id === currentUser.uid);
+  }
 
   if (loading) {
     return (
@@ -141,11 +187,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         </Button>
       </CardHeader>
       <CardContent>
-        {games.length === 0 ? (
+        {openGames.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">Keine offenen Spiele gefunden. Erstelle ein neues, um zu beginnen!</p>
         ) : (
           <ul className="space-y-4">
-            {games.map(game => {
+            {openGames.map(game => {
               const player1 = game.player1;
               const player2 = game.player2;
               const isFull = !!player2;
