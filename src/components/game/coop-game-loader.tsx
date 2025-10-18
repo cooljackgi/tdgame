@@ -24,6 +24,7 @@ import type { GameBoardHandle } from './game-board';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
+import { onGameEnd } from '@/lib/game-logic';
 
 
 export default function CoopGameLoader() {
@@ -47,6 +48,9 @@ export default function CoopGameLoader() {
   const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
   const [gameDataLoaded, setGameDataLoaded] = useState(false);
+  const [totalKilled, setTotalKilled] = useState(0);
+  const [totalLeaked, setTotalLeaked] = useState(0);
+
   
   // UI State
   const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -58,13 +62,26 @@ export default function CoopGameLoader() {
   const [hasInteracted, setHasInteracted] = useState(false);
   const [hostRevision, setHostRevision] = useState(0);
 
-  // VFX State (now mostly handled by GameBoard, but kept for simplicity if needed)
+  // VFX State
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, placedTowers.map(t => t.position), 12, 12) || [], [placedTowers]);
   const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
+
+  // Host-side Game Loop & State Refs
+  const countdownRef = useRef<number | null>(null);
+  const spawnRef = useRef<number | null>(null);
+  const spawningRef = useRef(false);
+  const pendingSpawnRef = useRef<Enemy[]>([]);
+  const gameLoopRef = useRef<number>();
+  const lastTickRef = useRef(performance.now());
+  const enemyIdCounter = useRef(0);
+  
+  // Refs for stable access in game loop
+  const currentPathRef = useRef(currentPath);
+  useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
   
   const onFocusTower = (tower: PlacedTower) => {
     setSelectedTowerToBuild(null);
@@ -95,6 +112,8 @@ export default function CoopGameLoader() {
         setIsIntermission(payload.isIntermission);
         setWaveStartCountdown(payload.waveStartCountdown);
         setGameStatus(payload.gameStatus);
+        setTotalKilled(payload.totalKilled);
+        setTotalLeaked(payload.totalLeaked);
         break;
       case 'VFX_ATTACK':
         gameBoardRef.current?.queueAttacks(payload);
@@ -128,9 +147,10 @@ export default function CoopGameLoader() {
         const snapshot = {
             players, enemies, towersByCell, gameState,
             currentWave, isIntermission, waveStartCountdown, gameStatus,
+            totalKilled, totalLeaked,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus]);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked]);
     
     // This effect runs on the host to broadcast state changes.
     useEffect(() => {
@@ -146,7 +166,56 @@ export default function CoopGameLoader() {
         return !!findPath(start, goal, tentative, GRID_ROWS, GRID_COLS);
     }, [towersByCell]);
 
+    const startWave = useCallback((waveIndex: number) => {
+        if (!isGameHost) return;
+        if (spawningRef.current) return;
+
+        const spec = waves[waveIndex];
+        if (!spec) return;
+
+        const enemyData = spec.enemies;
+        const newEnemies: Enemy[] = Array.from({length: enemyData.count}).map((_, i) => ({
+            id: `w${waveIndex}-e${enemyIdCounter.current++}`,
+            type: enemyData.type,
+            health: enemyData.health,
+            maxHealth: enemyData.health,
+            armor: enemyData.armor,
+            speed: enemyData.speed,
+            damage: enemyData.damage,
+            bounty: enemyData.bounty,
+            effects: [],
+            position: { row: 1, col: 1 },
+            path: currentPathRef.current,
+            pathIndex: 0,
+            lastMove: performance.now(),
+            wasHit: false,
+            targetNode: { row: GRID_ROWS, col: GRID_COLS },
+            movementPattern: enemyData.type === 'schnell' ? 'zigzag' : 'wobble',
+        }));
+        pendingSpawnRef.current = newEnemies;
+
+        spawningRef.current = true;
+        setIsIntermission(false);
+        setCurrentWave(waveIndex);
+        setWaveStartCountdown(0);
+
+        spawnRef.current = window.setInterval(() => {
+            const next = pendingSpawnRef.current.shift();
+            if (next) {
+                setEnemies(prev => [...prev, next]);
+            }
+            if (pendingSpawnRef.current.length === 0) {
+                window.clearInterval(spawnRef.current!);
+                spawnRef.current = null;
+                spawningRef.current = false;
+            }
+        }, enemyData.spawnDelay);
+
+        setHostRevision(r => r + 1);
+    }, [isGameHost]);
+
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
+        if (!isGameHost) return;
         
         switch(action){
             case 'build': {
@@ -154,7 +223,7 @@ export default function CoopGameLoader() {
                 const key = `${row}_${col}`;
                 const existingTower = towersByCell[key];
                 
-                if (existingTower) return; // Cell already occupied
+                if (existingTower) return;
                 if (!hostCanPlace(row, col)) {
                     console.warn(`[HOST] Invalid build request at ${row},${col}. Path blocked.`);
                     return;
@@ -230,13 +299,16 @@ export default function CoopGameLoader() {
                 setGameStatus("playing"); 
                 break;
             }
-            case 'start_wave_now': 
-                setIsIntermission(false); 
-                setWaveStartCountdown(0); 
+            case 'start_wave_now':
+                if (isIntermission) {
+                    if (countdownRef.current) window.clearInterval(countdownRef.current);
+                    countdownRef.current = null;
+                    startWave(currentWave);
+                }
                 break;
         }
         setHostRevision(r => r + 1);
-    }, [players, towersByCell, hostCanPlace]);
+    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave]);
 
 
     const handleActionData = useCallback((msg: any) => {
@@ -245,7 +317,7 @@ export default function CoopGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                setHostRevision(r => r + 1); // Trigger snapshot broadcast for the new client
+                setHostRevision(r => r + 1);
                 return;
             }
             case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
@@ -315,7 +387,6 @@ export default function CoopGameLoader() {
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
-                // Host reads from Firestore, client will get data from host
                 if (currentRole === 'player1') {
                     setPlayers(normalizePlayers(gameData.players));
                     setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
@@ -326,7 +397,6 @@ export default function CoopGameLoader() {
                     setGameStatus(gameData.gameStatus || 'waiting');
                 }
                 
-                // P2 needs to see the player list to know who they are, even before snapshot
                 if(currentRole === 'player2' && players.length === 0){
                     setPlayers(normalizePlayers(gameData.players));
                 }
@@ -367,6 +437,162 @@ export default function CoopGameLoader() {
     return () => authUnsubscribe();
   }, [router, toast]);
   
+    // Intermission countdown timer (HOST ONLY)
+    useEffect(() => {
+        if (!isGameHost || !isIntermission || gameStatus !== 'playing') {
+            if (countdownRef.current) window.clearInterval(countdownRef.current);
+            countdownRef.current = null;
+            return;
+        }
+
+        countdownRef.current = window.setInterval(() => {
+            setWaveStartCountdown(prev => {
+                const newTime = Math.max(0, prev - 1);
+                if (newTime === 0) {
+                    window.clearInterval(countdownRef.current!);
+                    countdownRef.current = null;
+                    startWave(currentWave);
+                }
+                setHostRevision(r => r + 1); // Broadcast countdown changes
+                return newTime;
+            });
+        }, 1000);
+
+        return () => {
+            if (countdownRef.current) window.clearInterval(countdownRef.current);
+            countdownRef.current = null;
+        };
+    }, [isGameHost, isIntermission, gameStatus, startWave, currentWave]);
+
+    // Wave completion detection (HOST ONLY)
+    useEffect(() => {
+        if (!isGameHost || gameStatus !== 'playing') return;
+        if (spawningRef.current || enemies.length > 0) return;
+
+        if (!isIntermission) {
+            if (waves.length > currentWave + 1) {
+                setCurrentWave(prev => prev + 1);
+                setIsIntermission(true);
+                setWaveStartCountdown(INTERMISSION_TIME);
+                setHostRevision(r => r + 1);
+            } else {
+                onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
+                setGameStatus('gameover');
+                setHostRevision(r => r + 1);
+            }
+        }
+    }, [isGameHost, gameStatus, enemies.length, isIntermission, currentWave, difficulty, towersByCell, user, gameId]);
+  
+  // MAIN GAME LOOP (HOST ONLY)
+  useEffect(() => {
+      if (!isGameHost) {
+          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+          return;
+      }
+
+      const gameLoop = () => {
+          const now = performance.now();
+          const delta = now - lastTickRef.current;
+          lastTickRef.current = now;
+
+          if (gameStatus !== 'playing' || isIntermission) {
+              gameLoopRef.current = requestAnimationFrame(gameLoop);
+              return;
+          }
+
+          let livesLost = 0;
+          let resourcesGained = 0;
+          let killedInTick = 0;
+          let newAttacks: Attack[] = [];
+          let newDamageNumbers: DamageNumber[] = [];
+          
+          setEnemies(prevEnemies => {
+              const stillAlive = prevEnemies.filter(enemy => {
+                  if (enemy.pathIndex >= enemy.path.length -1) {
+                      livesLost++;
+                      return false;
+                  }
+                  if (enemy.health <= 0) {
+                      resourcesGained += enemy.bounty;
+                      killedInTick++;
+                      return false;
+                  }
+                  return true;
+              }).map(enemy => {
+                  const speed = enemy.speed; // Simplified for now
+                  const stepMs = 1000 / Math.max(0.01, speed);
+                  if (now - enemy.lastMove > stepMs) {
+                      return { ...enemy, pathIndex: enemy.pathIndex + 1, position: enemy.path[enemy.pathIndex + 1], lastMove: now };
+                  }
+                  return enemy;
+              });
+
+              if (livesLost > 0) {
+                  setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLost) }));
+                  setTotalLeaked(l => l + livesLost);
+              }
+              if (resourcesGained > 0) {
+                  setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGained / ps.length)})));
+                  setTotalKilled(k => k + killedInTick);
+              }
+
+              return stillAlive;
+          });
+          
+          setTowersByCell(prevTowers => {
+              const newTowers = { ...prevTowers };
+              let firingIds = new Set<string>();
+
+              Object.values(newTowers).forEach(tower => {
+                   if (now - tower.lastAttack >= tower.attackSpeed) {
+                       let target: Enemy | null = null;
+                       let minDistanceSq = tower.range * tower.range;
+                       
+                       enemies.forEach(enemy => {
+                          const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                          if (distSq <= minDistanceSq) {
+                              minDistanceSq = distSq;
+                              target = enemy;
+                          }
+                       });
+
+                       if (target) {
+                           tower.lastAttack = now;
+                           firingIds.add(tower.id);
+                           const projectileType = tower.specId.includes('sniper') ? 'arrow' : 'beam';
+                           newAttacks.push({ id: crypto.randomUUID(), towerId: tower.id, targetId: target.id, targetPosition: target.position, elements: tower.elements, projectile: projectileType });
+                           
+                           setEnemies(es => es.map(e => {
+                               if (e.id === target!.id) {
+                                   const newHealth = e.health - Math.max(1, tower.damage - e.armor);
+                                   newDamageNumbers.push({ id: crypto.randomUUID(), amount: tower.damage, targetId: e.id, color: '#fff' });
+                                   return { ...e, health: newHealth, wasHit: true };
+                               }
+                               return e;
+                           }));
+                       }
+                   }
+              });
+
+              if(firingIds.size > 0) gameBoardRef.current?.queueAttacks(newAttacks);
+              if(newDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(newDamageNumbers);
+
+              return newTowers;
+          });
+
+
+          setHostRevision(r => r + 1);
+          gameLoopRef.current = requestAnimationFrame(gameLoop);
+      };
+
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+
+      return () => {
+          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      }
+  }, [isGameHost, gameStatus, isIntermission, enemies]);
+
+
   const toggleMute = () => {
     setIsMuted(current => {
       const newMuted = !current;
@@ -425,10 +651,10 @@ export default function CoopGameLoader() {
                 handleUpgradeTower={onUpgradeTower}
                 handleSellTower={onSellTower}
                 setFocusedTower={setFocusedTower}
-                spawnedThisWave={0} 
-                totalEnemiesInWave={0}
-                totalKilled={0}
-                totalLeaked={0}
+                spawnedThisWave={pendingSpawnRef.current.length > 0 ? (waves[currentWave]?.enemies.count || 0) - pendingSpawnRef.current.length : 0}
+                totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
+                totalKilled={totalKilled}
+                totalLeaked={totalLeaked}
                 isIntermission={isIntermission} 
                 waveStartCountdown={waveStartCountdown}
                 intermissionTime={INTERMISSION_TIME} 
