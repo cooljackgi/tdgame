@@ -1,3 +1,4 @@
+
 // src/components/game/Enemy.tsx
 "use client";
 
@@ -6,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { enemyIconPaths } from "./icons/enemy-icons";
 import type { EnemyType, EnemyStatusEffect } from '@/lib/game-data/types';
 import { Progress } from "../ui/progress";
-import { Flame, ShieldOff, ShieldAlert, Snowflake, Biohazard, Sparkle } from "lucide-react";
+import { Flame, ShieldOff, ShieldAlert, Snowflake, Biohazard, Sparkle, Wind, VenetianMask, Zap, Star } from "lucide-react";
 
 
 export type EnemyProps = {
@@ -26,8 +27,11 @@ const effectIconMap: Partial<Record<EnemyStatusEffect['type'], React.FC<any>>> =
   slow: Snowflake,
   vulnerability: ShieldOff,
   armor_shred: ShieldAlert,
-  lifesteal: Biohazard,
-  stun: Sparkle,
+  lifesteal: Biohazard, // Placeholder, usually not shown on enemy
+  stun: Star,
+  pushback: Wind,
+  pull: VenetianMask,
+  chain: Zap,
 };
 
 const effectIconClasses: Partial<Record<EnemyStatusEffect['type'], string>> = {
@@ -35,8 +39,10 @@ const effectIconClasses: Partial<Record<EnemyStatusEffect['type'], string>> = {
   slow: "text-sky-300 -bottom-1 -left-1",
   vulnerability: "text-pink-400 -top-1 -left-1",
   armor_shred: "text-yellow-400 -bottom-1 -right-1",
-  lifesteal: "text-green-500 -bottom-1 -right-1",
-  stun: "text-yellow-300 -top-1.5 left-1/2 -translate-x-1/2",
+  stun: "text-yellow-300 -top-1.5 left-1/2 -translate-x-1/2 animate-spin",
+  pushback: "text-gray-300 -bottom-1.5 left-1/2 -translate-x-1/2",
+  pull: "text-purple-400 -top-1.5 -left-1",
+  chain: "text-blue-300 -top-1.5 -right-1"
 };
 
 
@@ -69,6 +75,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
     isDamaged && "animate-wobble"
   );
   
+  const activeEffects = effects.filter(e => e.expires > performance.now());
 
   return (
     <div
@@ -91,11 +98,11 @@ const EnemyComponent = React.memo(function EnemyComponent({
         <path d={iconPath} />
       </svg>
       
-      {effects.map((effect, i) => {
+      {activeEffects.map((effect, i) => {
           const Icon = effectIconMap[effect.type];
           const iconPositionClass = effectIconClasses[effect.type];
           if (Icon && iconPositionClass) {
-            return <Icon key={`effect-${i}`} className={cn("effect-icon absolute", iconPositionClass)} />;
+            return <Icon key={`effect-${effect.type}-${i}`} className={cn("effect-icon absolute", iconPositionClass)} />;
           }
           return null;
       })}
