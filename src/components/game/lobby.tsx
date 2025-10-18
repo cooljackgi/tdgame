@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Users, Play, Eye, Trash, Swords } from 'lucide-react';
 import type { User } from 'firebase/auth';
-import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { Player } from '@/lib/game-data/types';
 import { INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -77,9 +76,10 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   useEffect(() => {
       if (!currentUser?.uid) return;
 
+      // This query finds the single active game the user is a member of.
       const userGamesQuery = query(
         collection(db, 'games'),
-        where('members', '==', { [currentUser.uid]: true }),
+        where('members', 'array-contains', currentUser.uid),
         where('gameStatus', 'in', ['waiting', 'playing']),
         orderBy('createdAt', 'desc'),
         limit(1)
@@ -89,6 +89,8 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
           if (!snapshot.empty) {
               const gameDoc = snapshot.docs[0];
               setActiveUserGameId(gameDoc.id);
+          } else {
+              setActiveUserGameId(null);
           }
       });
       
@@ -106,8 +108,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       const isMember = data.members && data.members[currentUser.uid];
       if (!isMember) return;
 
+      // If the game status changes to playing, redirect.
       if (data.gameStatus === 'playing' && !didRedirectRef.current) {
-        didRedirectRef.current = true;
+        didRedirectRef.current = true; // Prevents multiple redirects
         toast({ title: "Spiel startet!", description: "Du wirst zum Spiel weitergeleitet..."});
         router.push(`/game/${activeUserGameId}`);
       }
@@ -122,7 +125,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     try {
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
-      // The listeners will handle the navigation automatically now.
+      // After successfully joining, immediately navigate.
+      // The listeners will handle picking up the game state on the game page.
+      router.push(`/game/${gameId}`);
     } catch (error: any) {
       console.error("Failed to join game:", error);
       toast({
@@ -130,8 +135,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         description: error.message || "Das Spiel ist möglicherweise voll oder existiert nicht mehr.",
         variant: "destructive",
       });
-    } finally {
-        setJoiningGameId(null);
+       setJoiningGameId(null);
     }
   };
 
@@ -144,7 +148,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
             isIntermission: true,
             waveStartCountdown: INTERMISSION_TIME 
         });
-        // The host will be redirected by the same logic that redirects player 2
+        // Host is redirected by the same listener as P2
     } catch (error: any) {
         toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
     }
@@ -164,10 +168,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         toast({ title: "Archivieren fehlgeschlagen", description: error.message || "Das Spiel konnte nicht archiviert werden.", variant: "destructive" });
       }
   };
-  
-  const findGameForUser = (gamesList: GameLobbyInfo[]) => {
-      return gamesList.find(g => g.player1Id === currentUser.uid || g.player2?.id === currentUser.uid);
-  }
 
   if (loading) {
     return (
@@ -197,8 +197,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               const isFull = !!player2;
               const isCreator = game.player1Id === currentUser.uid;
               const isJoiningThisGame = joiningGameId === game.id;
-              const isPlaying = game.gameStatus === 'playing';
-
+              
               return (
                 <li key={game.id} className="flex items-center justify-between p-3 bg-background/50 rounded-md border border-white/5">
                   <div>
@@ -207,36 +206,22 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
                       {player1?.avatarUrl && <img src={player1.avatarUrl} alt="P1" className="h-5 w-5 rounded-full mr-1"/>}
                       {player1?.name || 'Spieler 1'} vs.
                       {player2 ? <>{player2.avatarUrl && <img src={player2.avatarUrl} alt="P2" className="h-5 w-5 rounded-full ml-1 mr-1"/>} {player2.name}</> : ' Wartet...'}
-                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isPlaying ? 'bg-primary/20 text-primary' : 'bg-amber-500/20 text-amber-400'}`}>
-                        {isPlaying ? 'Läuft' : 'Wartet'}
-                      </span>
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {isPlaying ? (
-                        (isCreator || (player2 && player2.id === currentUser.uid)) ? (
-                            <Button onClick={() => router.push(`/game/${game.id}`)} variant="outline">
-                                <Play className="mr-2" /> Zurück zum Spiel
-                            </Button>
-                        ) : (
-                             <Button onClick={() => handleSpectateGame(game.id)} variant="secondary">
-                                <Eye className="mr-2" /> Zuschauen
-                            </Button>
-                        )
+                    { isCreator ? (
+                         <Button onClick={() => handleStartGame(game.id)} disabled={!isFull}>
+                            <Play className="mr-2" /> {!isFull ? 'Warte auf P2...' : 'Starten'}
+                        </Button>
+                    ) : !isFull ? (
+                         <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
+                            {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
+                            {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
+                        </Button>
                     ) : (
-                        isCreator ? (
-                             <Button onClick={() => handleStartGame(game.id)} disabled={!isFull}>
-                                <Play className="mr-2" /> {!isFull ? 'Warte auf P2...' : 'Starten'}
-                            </Button>
-                        ) : !isFull ? (
-                             <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
-                                {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
-                                {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
-                            </Button>
-                        ) : (
-                             <p className="text-sm text-muted-foreground">Spiel voll</p>
-                        )
+                         <p className="text-sm text-muted-foreground">Spiel voll</p>
                     )}
+                    
                     {isCreator && (
                        <AlertDialog>
                         <AlertDialogTrigger asChild>

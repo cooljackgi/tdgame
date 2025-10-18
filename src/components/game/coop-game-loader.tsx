@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -148,7 +147,6 @@ export default function CoopGameLoader() {
     }, [towersByCell]);
 
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
-        console.log(`[HOST] Executing action: ${action}`, payload);
         
         switch(action){
             case 'build': {
@@ -244,11 +242,10 @@ export default function CoopGameLoader() {
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
         const { type, payload } = msg;
-        console.log(`[HOST] Received action request from client: ${type}`, payload);
 
         switch (type) {
             case 'CLIENT_READY': {
-                setHostRevision(r => r+1);
+                setHostRevision(r => r + 1); // Trigger snapshot broadcast for the new client
                 return;
             }
             case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
@@ -268,7 +265,6 @@ export default function CoopGameLoader() {
 
   useEffect(() => {
       if (isConnected && !isGameHost && localPlayerId === 'player2') {
-          console.log('[CLIENT] Connected to host, sending CLIENT_READY...');
           sendAction('CLIENT_READY', {});
       }
   }, [isConnected, isGameHost, localPlayerId, sendAction]);
@@ -284,12 +280,10 @@ export default function CoopGameLoader() {
         start_wave_now: 'START_WAVE_NOW_REQUEST',
       }
       const actionType = actionTypeMap[action];
-      console.log(`[CLIENT] Sending action request to host: ${actionType}`, payload);
       sendAction(actionType, { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost, sendAction]);
   
     const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
-        console.log(`[DISPATCH] Action: ${action}`, { ...payload, playerId: payload.playerId ?? localPlayerId });
         const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
         if (isGameHost) {
             onHostAction(action, finalPayload);
@@ -318,40 +312,18 @@ export default function CoopGameLoader() {
                 if(gameData.player1Id === uid) currentRole = 'player1';
                 else if(gameData.player2Id === uid) currentRole = 'player2';
 
-                if (currentRole === 'spectator' && !gameData.player2Id && !gameData.isTestGame) {
-                    try {
-                        const joinGameCallable = httpsCallable(functions, 'joinGame');
-                        await joinGameCallable({ gameId });
-                        toast({ title: "Spiel beigetreten!", description: "Du bist jetzt Spieler 2." });
-                        return;
-                    } catch(e: any) {
-                       toast({ title: "Beitritt fehlgeschlagen", description: e.message, variant: 'destructive'});
-                       router.push('/');
-                       return;
-                    }
-                }
-
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
                 // Host reads from Firestore, client will get data from host
                 if (currentRole === 'player1') {
-                    if(!gameDataLoaded) { // Only on initial load
-                        setPlayers(normalizePlayers(gameData.players));
-                        setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
-                        setTowersByCell(gameData.towersByCell || {});
-                        setCurrentWave(gameData.currentWave || 0);
-                        setIsIntermission(gameData.isIntermission ?? true);
-                        setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
-                        setGameStatus(gameData.gameStatus || 'waiting');
-                        setHostRevision(r => r + 1); // Trigger initial broadcast
-                    } else { // Handle player2 joining
-                        const currentPlayers = normalizePlayers(gameData.players);
-                        if (currentPlayers.length > players.length) {
-                            setPlayers(currentPlayers);
-                            setHostRevision(r => r + 1);
-                        }
-                    }
+                    setPlayers(normalizePlayers(gameData.players));
+                    setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
+                    setTowersByCell(gameData.towersByCell || {});
+                    setCurrentWave(gameData.currentWave || 0);
+                    setIsIntermission(gameData.isIntermission ?? true);
+                    setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
+                    setGameStatus(gameData.gameStatus || 'waiting');
                 }
                 
                 // P2 needs to see the player list to know who they are, even before snapshot
@@ -381,7 +353,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, players.length, gameDataLoaded]);
+  }, [user, gameId, router, toast, players.length]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
