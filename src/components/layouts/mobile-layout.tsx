@@ -1,5 +1,5 @@
 
-import React, { useState, memo, useMemo, useRef } from 'react';
+import React, { useState, memo, useMemo, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot } from 'lucide-react';
@@ -106,6 +106,26 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
 
+  useEffect(() => {
+    const reset = () => gameBoardRef.current?.resetView();
+    reset(); // Initial call
+    
+    window.addEventListener('orientationchange', reset);
+    window.addEventListener('resize', reset);
+    
+    return () => {
+      window.removeEventListener('orientationchange', reset);
+      window.removeEventListener('resize', reset);
+    };
+  }, [gameBoardRef]);
+
+  useEffect(() => {
+    if (!isBuildSheetOpen) {
+      const id = setTimeout(() => gameBoardRef.current?.resetView(), 50);
+      return () => clearTimeout(id);
+    }
+  }, [isBuildSheetOpen, gameBoardRef]);
+
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
   const showNextWaveButton = isIntermission && gameStatus === 'playing';
@@ -135,7 +155,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   }
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className="w-full min-h-dvh flex flex-col">
       {/* HEADER */}
       <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
         <div className="mx-auto w-full max-w-md p-2">
@@ -158,7 +178,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       
       {/* GAME AREA */}
       <div
-        className="relative w-full h-full overflow-hidden flex-grow"
+        className="relative w-full flex-1 min-h-0 overflow-hidden"
       >
         <GameBoard
           ref={gameBoardRef}
