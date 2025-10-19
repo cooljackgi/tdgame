@@ -1,6 +1,6 @@
 
 
-import React from 'react';
+import React, {useRef, useEffect} from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Pause, Play, LogOut, MessageCircle, X } from 'lucide-react';
@@ -109,6 +109,25 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     clientBytesReceivedPerSecond,
     averagePacketSize,
   } = props;
+  
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const reset = () => gameBoardRef.current?.resetView();
+    reset();
+
+    const ro = new ResizeObserver(() => reset());
+    if (wrapRef.current) ro.observe(wrapRef.current);
+
+    const onWin = () => reset();
+    window.addEventListener('resize', onWin);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onWin);
+    };
+  }, [gameBoardRef]);
+
 
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
@@ -181,7 +200,15 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
 
       {/* Main Game Area */}
       <div className="flex-grow flex items-center justify-center h-full">
-        <div className="w-full h-full max-w-[80vh] aspect-square" id="tutorial-game-board">
+         <div
+            id="tutorial-game-board"
+            ref={wrapRef}
+            className="relative"
+            style={{
+                width:  'min(calc(100vw - 640px - 3rem), 90svh)',
+                height: 'min(calc(100vw - 640px - 3rem), 90svh)',
+            }}
+        >
             <GameBoard
                 ref={gameBoardRef}
                 placedTowers={placedTowers}
@@ -249,5 +276,3 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     </div>
   );
 });
-
-    
