@@ -199,7 +199,7 @@ export default function CoopGameLoader() {
             position: { row: 1, col: 1 },
             path: currentPathRef.current,
             pathIndex: 0,
-            lastMove: now,
+            lastMove: now - i * enemyData.spawnDelay,
             wasHit: false,
             targetNode: { row: GRID_ROWS, col: GRID_COLS },
             movementPattern: enemyData.type === 'schnell' ? 'zigzag' : 'wobble',
