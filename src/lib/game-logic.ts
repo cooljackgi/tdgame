@@ -70,7 +70,7 @@ export function processAttack(
     splashRings: SplashRing[];
 } {
     const output = {
-        updatedEnemies: [...allEnemies],
+        updatedEnemies: [...allEnemies], // Correctly initialize with a copy of all enemies
         resourcesGained: 0,
         killed: 0,
         damageNumbers: [] as DamageNumber[],
@@ -151,10 +151,13 @@ export function processAttack(
         } as SplashRing);
         
         output.updatedEnemies = output.updatedEnemies.map(enemy => {
-            if (enemy.id === target.id) return enemy;
+            if (enemy.id === target.id) return enemy; // Already damaged
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
-                return applyDamage(enemy, splashDamage, tower.effect);
+                const splashTargetIndex = output.updatedEnemies.findIndex(e => e.id === enemy.id);
+                if (splashTargetIndex > -1) {
+                    return applyDamage(enemy, splashDamage, tower.effect);
+                }
             }
             return enemy;
         });
@@ -207,14 +210,17 @@ export function processAttack(
     
     // --- Final check for defeated enemies ---
     const stillAlive: Enemy[] = [];
-    output.updatedEnemies.forEach(enemy => {
+    for (const enemy of output.updatedEnemies) {
         if (enemy.health > 0) {
             stillAlive.push(enemy);
         } else {
-            output.resourcesGained += enemy.bounty;
-            output.killed++;
+            // Check if this enemy was already counted as killed to prevent double counting
+            if (!allEnemies.find(e => e.id === enemy.id) || allEnemies.find(e => e.id === enemy.id)!.health > 0) {
+                 output.resourcesGained += enemy.bounty;
+                 output.killed++;
+            }
         }
-    });
+    }
     output.updatedEnemies = stillAlive;
 
     return output;
