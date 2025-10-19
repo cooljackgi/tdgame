@@ -458,6 +458,22 @@ export default function SinglePlayerGame({
             let killedThisTick = 0;
 
             const towers = Object.values(towersByCellRef.current);
+            const auraTowers = towers.filter(t => t.effect?.type === 'aura');
+            
+            const buffedTowerIds = new Set<string>();
+            if (auraTowers.length > 0) {
+                towers.forEach(tower => {
+                  if (tower.effect?.type === 'aura') return;
+                  for (const auraTower of auraTowers) {
+                    const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
+                    if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+                      buffedTowerIds.add(tower.id);
+                      break;
+                    }
+                  }
+                });
+            }
+
             for (const tower of towers) {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
                     let target: Enemy | null = null;
@@ -475,7 +491,8 @@ export default function SinglePlayerGame({
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
                         
-                        const attackResult = processAttack(tower, target, currentEnemies, Date.now());
+                        const isBuffed = buffedTowerIds.has(tower.id);
+                        const attackResult = processAttack(tower, target, currentEnemies, Date.now(), isBuffed);
                         
                         currentEnemies = attackResult.updatedEnemies;
                         allNewAttacks.push(...attackResult.newAttacks);
@@ -584,6 +601,24 @@ export default function SinglePlayerGame({
     
     const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
     
+    const buffedTowerIds = useMemo(() => {
+        const ids = new Set<string>();
+        const auraTowers = placedTowers.filter(t => t.effect?.type === 'aura');
+        if (auraTowers.length === 0) return ids;
+
+        placedTowers.forEach(tower => {
+          if (tower.effect?.type === 'aura') return;
+          for (const auraTower of auraTowers) {
+            const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
+            if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+              ids.add(tower.id);
+              break;
+            }
+          }
+        });
+        return ids;
+    }, [placedTowers]);
+
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
              <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} />

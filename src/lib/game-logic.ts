@@ -61,7 +61,7 @@ export function processAttack(
     target: Enemy,
     allEnemies: Enemy[],
     now: number,
-    isTowerBuffed: boolean
+    isTowerBuffed: boolean // New parameter to check for Aura buffs
 ): {
     updatedEnemies: Enemy[];
     resourcesGained: number;
@@ -137,7 +137,10 @@ export function processAttack(
     
     // --- Process primary attack and its effects ---
     let attackDamage = tower.damage;
-    if (isTowerBuffed) attackDamage *= 1.15; // Apply aura buff if present
+    if (isTowerBuffed) {
+        const auraBuffPotency = 0.15; // Standard potency for aura towers
+        attackDamage *= (1 + auraBuffPotency);
+    }
     
     let isCrit = false;
     if (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0)) {
@@ -229,10 +232,9 @@ export function processAttack(
                  output.resourcesGained += enemy.bounty;
                  output.killed++;
                  
-                 const lifestealEffect = enemy.effects.find(ef => ef.type === 'lifesteal');
-                 if (lifestealEffect) {
-                     // Lifesteal now gives back a small amount of resources instead of health
-                     output.resourcesGained += Math.ceil(enemy.maxHealth * (lifestealEffect.potency ?? 0.05));
+                 // Check if the killing tower has a lifesteal effect on itself (e.g., Nature towers)
+                 if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 0)) {
+                     output.resourcesGained += Math.ceil(enemy.maxHealth * (tower.effect.potency ?? 0.05));
                  }
             }
         }
