@@ -73,11 +73,6 @@ export default function CoopGameLoader() {
 
   // Host-side Game Loop & State Refs
   const countdownRef = useRef<number | null>(null);
-  const spawnRef = useRef<number | null>(null);
-  const spawningRef = useRef(false);
-  const pendingSpawnRef = useRef<Enemy[]>([]);
-  const gameLoopRef = useRef<number>();
-  const lastTickRef = useRef(performance.now());
   const enemyIdCounter = useRef(0);
   
   // Refs for stable access in game loop
@@ -185,12 +180,12 @@ export default function CoopGameLoader() {
 
     const startWave = useCallback((waveIndex: number) => {
         if (!isGameHost) return;
-        if (spawningRef.current) return;
 
         const spec = waves[waveIndex];
         if (!spec) return;
-
+        
         const enemyData = spec.enemies;
+        const now = performance.now();
         const newEnemies: Enemy[] = Array.from({length: enemyData.count}).map((_, i) => ({
             id: `w${waveIndex}-e${enemyIdCounter.current++}`,
             type: enemyData.type,
@@ -204,31 +199,18 @@ export default function CoopGameLoader() {
             position: { row: 1, col: 1 },
             path: currentPathRef.current,
             pathIndex: 0,
-            lastMove: performance.now(),
+            lastMove: now,
             wasHit: false,
             targetNode: { row: GRID_ROWS, col: GRID_COLS },
             movementPattern: enemyData.type === 'schnell' ? 'zigzag' : 'wobble',
         }));
-        pendingSpawnRef.current = newEnemies;
 
-        spawningRef.current = true;
+        setEnemies(newEnemies);
         setIsIntermission(false);
         setCurrentWave(waveIndex);
         setWaveStartCountdown(0);
-
-        spawnRef.current = window.setInterval(() => {
-            const next = pendingSpawnRef.current.shift();
-            if (next) {
-                setEnemies(prev => [...prev, next]);
-            }
-            if (pendingSpawnRef.current.length === 0) {
-                window.clearInterval(spawnRef.current!);
-                spawnRef.current = null;
-                spawningRef.current = false;
-            }
-        }, enemyData.spawnDelay);
-
         setHostRevision(r => r + 1);
+
     }, [isGameHost]);
 
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
@@ -483,16 +465,15 @@ export default function CoopGameLoader() {
 
     // Wave completion detection (HOST ONLY)
     useEffect(() => {
-        if (!isGameHost || gameStatus !== 'playing') return;
-        if (spawningRef.current || enemies.length > 0) return;
+        if (!isGameHost || gameStatus !== 'playing' || isIntermission) return;
 
-        if (!isIntermission) {
-            // Check if there is a next wave
-            if (waves.length > currentWave + 1) {
-                 if ((currentWave + 1) % 5 === 0 && localPlayer?.unlockedElements.length < 8) {
+        // Wave is completed if there are no more enemies
+        if (enemies.length === 0) {
+            const nextWaveIndex = currentWave + 1;
+            if (waves.length > nextWaveIndex) {
+                 if (nextWaveIndex % 5 === 0 && (localPlayer?.unlockedElements.length ?? 0) < 8) {
                     setGameStatus('picking-element');
                  } else {
-                    setCurrentWave(prev => prev + 1);
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
                  }
@@ -506,22 +487,18 @@ export default function CoopGameLoader() {
   
   // MAIN GAME LOOP (HOST ONLY)
   useEffect(() => {
-      if (!isGameHost) {
-          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
-          return;
-      }
+      let gameLoopRef: number;
+      let lastTick = performance.now();
 
       const gameLoop = () => {
-          gameLoopRef.current = requestAnimationFrame(gameLoop);
+          gameLoopRef = requestAnimationFrame(gameLoop);
           const now = performance.now();
-          const delta = now - lastTickRef.current;
+          const delta = now - lastTick;
           if (delta < 16) return; // Cap at ~60fps
-          lastTickRef.current = now;
+          lastTick = now;
 
-          if (gameStatus !== 'playing' || isIntermission) {
-              return;
-          }
-
+          if (gameStatus !== 'playing' || isIntermission) return;
+          
           let livesLost = 0;
           let resourcesGained = 0;
           let killedInTick = 0;
@@ -529,8 +506,9 @@ export default function CoopGameLoader() {
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
           
-          let currentEnemies = [...enemies];
+          let currentEnemies = enemies; // Operate on a mutable copy for this tick
           
+          // 1. Tower attack logic
           const towers = Object.values(towersByCell);
           let firingIds = new Set<string>();
 
@@ -559,17 +537,19 @@ export default function CoopGameLoader() {
                       allNewSplashRings.push(...attackResult.splashRings);
 
                       if (attackResult.resourcesGained > 0) {
-                          setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(attackResult.resourcesGained / ps.length)})));
-                          setTotalKilled(k => k + attackResult.killed);
+                          resourcesGained += attackResult.resourcesGained;
+                          killedInTick += attackResult.killed;
                       }
                   }
               }
           }
           
+          // 2. Queue VFX
           if (firingIds.size > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
           if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
           if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
 
+          // 3. Enemy movement and effects logic
           const stillAlive = currentEnemies.map(enemy => {
               let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
@@ -601,14 +581,10 @@ export default function CoopGameLoader() {
                   livesLost++;
                   return false;
               }
-              if (enemy.health <= 0) {
-                  resourcesGained += enemy.bounty;
-                  killedInTick++;
-                  return false;
-              }
-              return true;
+              return enemy.health > 0;
           });
           
+          // 4. Update state based on tick results
           setEnemies(stillAlive);
 
           if (livesLost > 0) {
@@ -627,10 +603,12 @@ export default function CoopGameLoader() {
           setHostRevision(r => r + 1);
       };
 
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
-
+      if(isGameHost){
+          gameLoopRef = requestAnimationFrame(gameLoop);
+      }
+      
       return () => {
-          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+          if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
   }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave]);
 
@@ -693,7 +671,7 @@ export default function CoopGameLoader() {
                 handleUpgradeTower={onUpgradeTower}
                 handleSellTower={onSellTower}
                 setFocusedTower={setFocusedTower}
-                spawnedThisWave={pendingSpawnRef.current.length > 0 ? (waves[currentWave]?.enemies.count || 0) - pendingSpawnRef.current.length : 0}
+                spawnedThisWave={isIntermission ? 0 : enemies.length}
                 totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
                 totalKilled={totalKilled}
                 totalLeaked={totalLeaked}

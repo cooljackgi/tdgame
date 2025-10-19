@@ -49,6 +49,7 @@ export default function SinglePlayerGame({
     const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('playing');
     const [currentPath, setCurrentPath] = useState<Node[]>([]);
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
+    const [isIntermission, setIsIntermission] = useState(true);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -73,7 +74,6 @@ export default function SinglePlayerGame({
     // --- Game Loop Refs ---
     const gameLoopRef = useRef<number>();
     const lastTickRef = useRef(performance.now());
-    const spawnerStateRef = useRef<{ count: number; timer: number; waveData: any } | null>(null);
     const enemyIdCounter = useRef(0);
     const gameBoardRef = useRef<GameBoardHandle>(null);
 
@@ -274,9 +274,7 @@ export default function SinglePlayerGame({
     
     const handleElementPick = useCallback((element: Element) => {
         setPlayers(prev => [{ ...prev[0], unlockedElements: [...prev[0].unlockedElements, element] }]);
-        setCurrentWave(prev => prev + 1);
         setGameStatus('playing');
-        setWaveStartCountdown(INTERMISSION_TIME);
     }, []);
 
     const handleGameEnd = useCallback(async (won: boolean) => {
@@ -304,17 +302,38 @@ export default function SinglePlayerGame({
     }, [isCheating, user]);
 
     const handleStartNextWaveNow = useCallback(() => {
-      if (spawnerStateRef.current || enemiesRef.current.length > 0) return;
+      if (enemiesRef.current.length > 0) return;
 
       const waveData = waves[currentWaveRef.current];
       if (!waveData) return;
 
-      spawnerStateRef.current = {
-        count: 0,
-        timer: 0,
-        waveData: waveData.enemies,
-      };
-      
+      const now = performance.now();
+      const newEnemies: Enemy[] = Array.from({length: waveData.enemies.count}).map((_, i) => {
+        const difficultyMod = difficultyModifiers[difficultyRef.current];
+        const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
+        return {
+          id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+          type: waveData.enemies.type,
+          health: health,
+          maxHealth: health,
+          armor: waveData.enemies.armor,
+          speed: waveData.enemies.speed,
+          damage: waveData.enemies.damage,
+          bounty: waveData.enemies.bounty,
+          path: currentPathRef.current,
+          pathIndex: 0,
+          position: { row: 1, col: 1 },
+          isBlocked: false,
+          effects: [],
+          lastMove: now - i * waveData.enemies.spawnDelay, // Stagger spawn times
+          wasHit: false,
+          targetNode: { row: GRID_ROWS, col: GRID_COLS },
+          movementPattern: waveData.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+        };
+      });
+
+      setEnemies(newEnemies);
+      setIsIntermission(false);
       setWaveStartCountdown(0);
       audioManager.playWaveMusic();
     }, []);
@@ -396,9 +415,7 @@ export default function SinglePlayerGame({
 
             if (gameStatusRef.current !== 'playing') return;
 
-            const isCurrentlyIntermission = !spawnerStateRef.current && enemiesRef.current.length === 0;
-
-            if (isCurrentlyIntermission) {
+            if (isIntermission) {
                 setWaveStartCountdown(prevTime => {
                     const newTime = prevTime - delta / 1000;
                     if (newTime <= 0) {
@@ -407,47 +424,18 @@ export default function SinglePlayerGame({
                     }
                     return newTime;
                 });
-            }
-
-            if (spawnerStateRef.current && currentPathRef.current.length > 0) {
-                spawnerStateRef.current.timer += delta;
-                if (spawnerStateRef.current.timer >= spawnerStateRef.current.waveData.spawnDelay) {
-                    if (spawnerStateRef.current.count < spawnerStateRef.current.waveData.count) {
-                        spawnerStateRef.current.timer = 0;
-                        const difficultyMod = difficultyModifiers[difficultyRef.current];
-                        const health = Math.round(spawnerStateRef.current.waveData.health * difficultyMod.enemyHealth);
-                        
-                        const newEnemy: Enemy = {
-                            id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`,
-                            type: spawnerStateRef.current.waveData.type,
-                            health: health,
-                            maxHealth: health,
-                            armor: spawnerStateRef.current.waveData.armor,
-                            speed: spawnerStateRef.current.waveData.speed,
-                            damage: spawnerStateRef.current.waveData.damage,
-                            bounty: spawnerStateRef.current.waveData.bounty,
-                            path: currentPathRef.current,
-                            pathIndex: 0,
-                            position: { row: 1, col: 1 },
-                            isBlocked: false,
-                            effects: [],
-                            lastMove: now,
-                            wasHit: false,
-                            targetNode: { row: GRID_ROWS, col: GRID_COLS },
-                            movementPattern: spawnerStateRef.current.waveData.type === 'schnell' ? 'zigzag' : 'wobble'
-                        };
-                        setEnemies(prev => [...prev, newEnemy]);
-                        spawnerStateRef.current.count += 1;
-                    }
-                }
+                return; // No game logic during intermission
             }
 
             let allNewAttacks: Attack[] = [];
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
-            let currentEnemies = [...enemiesRef.current];
+            let currentEnemies = enemiesRef.current;
+            let currentPlayers = playersRef.current;
             const towers = Object.values(towersByCellRef.current);
             let firingIds = new Set<string>();
+            let resourcesGainedThisTick = 0;
+            let killedThisTick = 0;
 
             for (const tower of towers) {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
@@ -474,18 +462,19 @@ export default function SinglePlayerGame({
                         allNewSplashRings.push(...attackResult.splashRings);
 
                         if (attackResult.resourcesGained > 0) {
-                            setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + attackResult.resourcesGained }]);
-                            setTotalKilled(prev => prev + attackResult.killed);
+                           resourcesGainedThisTick += attackResult.resourcesGained;
+                           killedThisTick += attackResult.killed;
                         }
                     }
                 }
             }
 
             if (firingIds.size > 0) setFiringTowerIds(firingIds);
-            if (allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);
-            if (allNewDamageNumbers.length > 0) setDamageNumbers(prev => [...prev, ...allNewDamageNumbers]);
-            if (allNewSplashRings.length > 0) setSplashRings(prev => [...prev, ...allNewSplashRings]);
+            if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
+            if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+            if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
 
+            let livesLostThisTick = 0;
             const stillAlive = currentEnemies.map(enemy => {
                 let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > now) };
 
@@ -497,7 +486,7 @@ export default function SinglePlayerGame({
                     const damage = burnEffect.potency ?? 0;
                     updatedEnemy.health -= damage;
                     burnEffect.lastTick = now;
-                    setDamageNumbers(prev => [...prev, { id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
+                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
                 }
 
                 const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
@@ -512,29 +501,31 @@ export default function SinglePlayerGame({
                     }
                 }
                 return updatedEnemy;
-            }).filter(e => e.health > 0);
+            }).filter(e => {
+                if (e.health <= 0) return false;
+                if (e.pathIndex >= e.path.length - 1) {
+                    livesLostThisTick++;
+                    return false;
+                }
+                return true;
+            });
+            
+            setEnemies(stillAlive);
 
-            const newlyDead = currentEnemies.length - stillAlive.length;
-            const reachedEnd = stillAlive.filter(e => e.pathIndex >= e.path.length - 1).length;
-
-            if (newlyDead > 0) {
-                const bounty = currentEnemies.filter(e => e.health <= 0).reduce((sum, e) => sum + e.bounty, 0);
-                setTotalKilled(prev => prev + newlyDead);
-                setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + bounty }]);
-            }
-            if (reachedEnd > 0) {
-                setTotalLeaked(prev => prev + reachedEnd);
+            if (livesLostThisTick > 0) {
+                setTotalLeaked(prev => prev + livesLostThisTick);
                 setGameState(prev => {
-                    const newLives = prev.lives - reachedEnd;
+                    const newLives = prev.lives - livesLostThisTick;
                     if (newLives <= 0) handleGameEnd(false);
                     return { ...prev, lives: newLives };
                 });
             }
-
-            setEnemies(stillAlive.filter(e => e.pathIndex < e.path.length - 1));
-
-            if (spawnerStateRef.current && spawnerStateRef.current.count >= spawnerStateRef.current.waveData.count && enemiesRef.current.length === 0) {
-                spawnerStateRef.current = null;
+            if (resourcesGainedThisTick > 0) {
+                setTotalKilled(prev => prev + killedThisTick);
+                setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);
+            }
+            
+            if (enemiesRef.current.length === 0 && !isIntermission) {
                 const nextWave = currentWaveRef.current + 1;
                 
                 if (waves[nextWave]) {
@@ -542,20 +533,20 @@ export default function SinglePlayerGame({
                     setGameStatus('picking-element');
                   } else {
                     setCurrentWave(nextWave);
+                    setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
                   }
                 } else {
                     handleGameEnd(true);
                 }
             }
-            
-            gameLoopRef.current = requestAnimationFrame(gameLoop);
         };
+
         gameLoopRef.current = requestAnimationFrame(gameLoop);
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [handleStartNextWaveNow, handleGameEnd, user]);
+    }, [isIntermission, handleStartNextWaveNow, handleGameEnd, user]);
 
     const toggleMute = () => {
       setIsMuted(current => {
@@ -570,7 +561,6 @@ export default function SinglePlayerGame({
     
     if (!localPlayer) return null;
     
-    const isIntermission = !spawnerStateRef.current && enemies.length === 0;
     const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
     
     return (
@@ -606,8 +596,8 @@ export default function SinglePlayerGame({
                     handleUpgradeTower={handleUpgradeTower}
                     handleSellTower={handleSellTower}
                     setFocusedTower={setFocusedTower}
-                    spawnedThisWave={spawnerStateRef.current?.count || 0}
-                    totalEnemiesInWave={spawnerStateRef.current?.waveData.count || 0}
+                    spawnedThisWave={isIntermission ? 0 : enemies.length}
+                    totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
                     totalKilled={totalKilled}
                     totalLeaked={totalLeaked}
                     isIntermission={isIntermission} 

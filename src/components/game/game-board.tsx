@@ -348,6 +348,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
+  const [renderTick, setRenderTick] = useState(0);
   
   const incomingAttacksRef = useRef<Attack[]>([]);
   const incomingRingsRef = useRef<SplashRing[]>([]);
@@ -480,6 +481,15 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     return () => ro.disconnect();
   }, [handleResize]);
 
+  useEffect(() => {
+    let rafId: number;
+    const loop = () => {
+      setRenderTick(t => (t + 1) % 1000);
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
  const renderVfx = useCallback(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
