@@ -511,6 +511,7 @@ export default function CoopGameLoader() {
           
           let livesLost = 0;
           let resourcesGained = 0;
+          let livesGained = 0;
           let killedInTick = 0;
           let allNewAttacks: Attack[] = [];
           let allNewDamageNumbers: DamageNumber[] = [];
@@ -531,6 +532,21 @@ export default function CoopGameLoader() {
           
           // 1. Tower attack logic
           const towers = Object.values(towersByCell);
+          const currentBuffedTowerIds = new Set<string>();
+          const auraTowers = towers.filter(t => t.effect?.type === 'aura');
+          if (auraTowers.length > 0) {
+              towers.forEach(tower => {
+                if (tower.effect?.type === 'aura') return;
+                for (const auraTower of auraTowers) {
+                  const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
+                  if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+                    currentBuffedTowerIds.add(tower.id);
+                    break;
+                  }
+                }
+              });
+          }
+          
           let firingIds = new Set<string>();
 
           for (const tower of towers) {
@@ -550,7 +566,8 @@ export default function CoopGameLoader() {
                       tower.lastAttack = now;
                       firingIds.add(tower.id);
                       
-                      const attackResult = processAttack(tower, target, currentEnemies, now);
+                      const isBuffed = currentBuffedTowerIds.has(tower.id);
+                      const attackResult = processAttack(tower, target, currentEnemies, Date.now(), isBuffed);
 
                       currentEnemies = attackResult.updatedEnemies;
                       allNewAttacks.push(...attackResult.newAttacks);
@@ -560,6 +577,9 @@ export default function CoopGameLoader() {
                       if (attackResult.resourcesGained > 0) {
                           resourcesGained += attackResult.resourcesGained;
                           killedInTick += attackResult.killed;
+                      }
+                      if (attackResult.livesGained > 0) {
+                          livesGained += attackResult.livesGained;
                       }
                   }
               }
@@ -632,6 +652,9 @@ export default function CoopGameLoader() {
                   setGameStatus('gameover');
               }
           }
+          if (livesGained > 0) {
+              setGameState(gs => ({ ...gs, lives: gs.lives + livesGained }));
+          }
           if (resourcesGained > 0) {
               setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGained / ps.length)})));
               setTotalKilled(k => k + killedInTick);
@@ -647,7 +670,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, sendGameData, currentPathRef]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, sendGameData, currentPathRef, players]);
 
 
   const toggleMute = () => {

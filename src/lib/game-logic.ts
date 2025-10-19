@@ -66,6 +66,7 @@ export function processAttack(
     updatedEnemies: Enemy[];
     resourcesGained: number;
     killed: number;
+    livesGained: number;
     damageNumbers: DamageNumber[];
     newAttacks: Attack[];
     splashRings: SplashRing[];
@@ -74,6 +75,7 @@ export function processAttack(
         updatedEnemies: [...allEnemies], // Correctly initialize with a copy of all enemies
         resourcesGained: 0,
         killed: 0,
+        livesGained: 0,
         damageNumbers: [] as DamageNumber[],
         newAttacks: [] as Attack[],
         splashRings: [] as SplashRing[],
@@ -102,7 +104,12 @@ export function processAttack(
         const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
         let finalDamage = Math.max(1, damageAmount - effectiveArmor);
         finalDamage *= (1 + vulnerability);
-        if (isCrit) finalDamage *= (tower.effect?.potency ?? 2);
+        
+        let critMultiplier = 1;
+        if (isCrit) {
+            critMultiplier = sourceEffect?.type === 'crit' ? (sourceEffect.potency ?? 2) : 2;
+            finalDamage *= critMultiplier;
+        }
 
 
         output.damageNumbers.push({
@@ -118,7 +125,7 @@ export function processAttack(
 
         if (sourceEffect) {
             const { type, chance = 1, duration = 0, potency = 0 } = sourceEffect;
-            if (Math.random() < chance) {
+            if (type !== 'crit' && Math.random() < chance) { // Crits are handled separately
                 const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
                 if (existingEffectIndex !== -1) {
                     newEffects[existingEffectIndex] = {
@@ -232,9 +239,8 @@ export function processAttack(
                  output.resourcesGained += enemy.bounty;
                  output.killed++;
                  
-                 // Check if the killing tower has a lifesteal effect on itself (e.g., Nature towers)
                  if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 0)) {
-                     output.resourcesGained += Math.ceil(enemy.maxHealth * (tower.effect.potency ?? 0.05));
+                     output.livesGained++;
                  }
             }
         }
