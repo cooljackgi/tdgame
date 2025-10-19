@@ -1,6 +1,6 @@
 
 
-"use client";
+'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
@@ -277,6 +277,9 @@ export default function SinglePlayerGame({
     
     const handleElementPick = useCallback((element: Element) => {
         setPlayers(prev => [{ ...prev[0], unlockedElements: [...prev[0].unlockedElements, element] }]);
+        setCurrentWave(prev => prev + 1);
+        setIsIntermission(true);
+        setWaveStartCountdown(INTERMISSION_TIME);
         setGameStatus('playing');
     }, []);
 
@@ -429,15 +432,16 @@ export default function SinglePlayerGame({
                 return; // No game logic during intermission
             }
 
+            let currentEnemies = [...enemiesRef.current];
+
             // --- Spawning Logic ---
             const timeSinceWaveStart = now - waveStartTimeRef.current;
-            let newEnemiesThisFrame: Enemy[] = [];
             if (spawnQueueRef.current.length > 0) {
                 const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
-                spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-
-                if (enemiesToSpawnNow.length > 0) {
-                    newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now}));
+                if(enemiesToSpawnNow.length > 0) {
+                    spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
+                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
+                    currentEnemies.push(...newEnemiesThisFrame);
                 }
             }
 
@@ -445,13 +449,11 @@ export default function SinglePlayerGame({
             let allNewAttacks: Attack[] = [];
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
-            let currentEnemies = [...enemiesRef.current, ...newEnemiesThisFrame];
-            let currentPlayers = playersRef.current;
-            const towers = Object.values(towersByCellRef.current);
             let firingIds = new Set<string>();
             let resourcesGainedThisTick = 0;
             let killedThisTick = 0;
 
+            const towers = Object.values(towersByCellRef.current);
             for (const tower of towers) {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
                     let target: Enemy | null = null;

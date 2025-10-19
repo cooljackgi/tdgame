@@ -301,6 +301,9 @@ export default function CoopGameLoader() {
                     ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
                     : p
                 ));
+                setCurrentWave(prev => prev + 1);
+                setIsIntermission(true);
+                setWaveStartCountdown(INTERMISSION_TIME);
                 setGameStatus("playing"); 
                 break;
             }
@@ -480,10 +483,10 @@ export default function CoopGameLoader() {
                  if (nextWaveIndex % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
                     setGameStatus('picking-element');
                  } else {
+                    setCurrentWave(nextWaveIndex);
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
                  }
-                 setCurrentWave(nextWaveIndex);
             } else { // Game won
                 onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
                 setGameStatus('gameover');
@@ -513,17 +516,18 @@ export default function CoopGameLoader() {
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
           
+          let currentEnemies = [...enemies];
+          
+          // --- Spawning Logic ---
           const timeSinceWaveStart = now - waveStartTimeRef.current;
-          let newEnemiesThisFrame: Enemy[] = [];
           if (spawnQueueRef.current.length > 0) {
               const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
               if (enemiesToSpawnNow.length > 0) {
                   spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                  newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now}));
+                  const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
+                  currentEnemies.push(...newEnemiesThisFrame);
               }
           }
-          
-          let currentEnemies = [...enemies, ...newEnemiesThisFrame];
           
           // 1. Tower attack logic
           const towers = Object.values(towersByCell);
@@ -628,7 +632,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, sendGameData]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, sendGameData, currentPathRef]);
 
 
   const toggleMute = () => {
