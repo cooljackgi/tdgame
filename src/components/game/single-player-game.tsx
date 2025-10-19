@@ -180,6 +180,28 @@ export default function SinglePlayerGame({
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
+    const LayoutComponent = useMemo(() => isMobile ? MobileLayout : DesktopLayout, [isMobile]);
+    
+    const buffedTowerIds = useMemo(() => {
+        const ids = new Set<string>();
+        const auraTowers = placedTowers.filter(t => t.effect?.type === 'aura');
+        if (auraTowers.length === 0) return ids;
+
+        placedTowers.forEach(tower => {
+          if (tower.effect?.type === 'aura') return;
+          for (const auraTower of auraTowers) {
+            const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
+            if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+              ids.add(tower.id);
+              break;
+            }
+          }
+        });
+        return ids;
+    }, [placedTowers]);
+
+    if (!localPlayer) return null;
+
     const onFocusTower = (tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
         setFocusedTower(tower);
@@ -594,30 +616,8 @@ export default function SinglePlayerGame({
         return newMuted;
       });
     };
-
-    const LayoutComponent = useMemo(() => isMobile ? MobileLayout : DesktopLayout, [isMobile]);
-    
-    if (!localPlayer) return null;
     
     const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
-    
-    const buffedTowerIds = useMemo(() => {
-        const ids = new Set<string>();
-        const auraTowers = placedTowers.filter(t => t.effect?.type === 'aura');
-        if (auraTowers.length === 0) return ids;
-
-        placedTowers.forEach(tower => {
-          if (tower.effect?.type === 'aura') return;
-          for (const auraTower of auraTowers) {
-            const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-            if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
-              ids.add(tower.id);
-              break;
-            }
-          }
-        });
-        return ids;
-    }, [placedTowers]);
 
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
