@@ -480,7 +480,7 @@ export default function CoopGameLoader() {
         if (enemies.length === 0) {
             const nextWaveIndex = currentWave + 1;
             if (waves.length > nextWaveIndex) {
-                 if (nextWaveIndex % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
+                 if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
                     setGameStatus('picking-element');
                  } else {
                     setCurrentWave(nextWaveIndex);
@@ -565,11 +565,24 @@ export default function CoopGameLoader() {
               }
           }
           
-          // 2. Queue VFX for broadcasting
-          if (firingIds.size > 0) sendGameData('VFX_TOWER_FIRING', Array.from(firingIds));
-          if (allNewAttacks.length > 0) sendGameData('VFX_ATTACK', allNewAttacks);
-          if (allNewDamageNumbers.length > 0) sendGameData('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
-          if (allNewSplashRings.length > 0) sendGameData('VFX_SPLASH', allNewSplashRings);
+          // 2. Queue VFX for broadcasting AND local rendering for the host
+          if (firingIds.size > 0) {
+            setFiringTowerIds(firingIds); // Local update
+            sendGameData('VFX_TOWER_FIRING', Array.from(firingIds));
+            setTimeout(() => setFiringTowerIds(new Set()), 150); // Clear after a bit
+          }
+          if (allNewAttacks.length > 0) {
+            sendGameData('VFX_ATTACK', allNewAttacks);
+            gameBoardRef.current?.queueAttacks(allNewAttacks);
+          }
+          if (allNewDamageNumbers.length > 0) {
+            sendGameData('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
+            gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+          }
+          if (allNewSplashRings.length > 0) {
+            sendGameData('VFX_SPLASH', allNewSplashRings);
+            gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+          }
 
           // 3. Enemy movement and effects logic
           const stillAlive = currentEnemies.map(enemy => {
@@ -584,7 +597,9 @@ export default function CoopGameLoader() {
                       const burnDamage = burnEffect.potency ?? 0;
                       updatedEnemy.health -= burnDamage;
                       burnEffect.lastTick = now;
-                      sendGameData('VFX_DAMAGE_NUMBER', [{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
+                      const dmgNum = { id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' };
+                      sendGameData('VFX_DAMAGE_NUMBER', [dmgNum]);
+                      gameBoardRef.current?.queueDamageNumbers([dmgNum]);
                   }
               }
               
