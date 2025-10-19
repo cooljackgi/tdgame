@@ -2,6 +2,7 @@
 import type { Tower } from './types';
 
 export const towers: Tower[] = [
+{id:"placeholder-0",name:"Fundament",tier:0,isBase:true,elements:["neutral"],cost:1,damage:0,range:0,attackSpeed:0,maxHealth:50,description:"Ein günstiges Fundament. Greift nicht an, kann aber zu einem vollwertigen Turm ausgebaut werden.",upgradesTo:["neutral-1a","neutral-1b"], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"neutral-0",name:"Schützenturm",tier:0,isBase:true,elements:["neutral"],cost:80,damage:85,range:2.5,attackSpeed:1000,maxHealth:100,description:"Die Basis für alles.",upgradesTo:["neutral-1a","neutral-1b"], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"neutral-1a",name:"Scharfschütze",tier:1,isBase:false,elements:["neutral"],cost:180,damage:120,range:4.5,attackSpeed:1800,maxHealth:120,description:"Hohe Reichweite und Schaden.",upgradesTo:["fire-2a","water-2a","earth-2a","air-2a","nature-2a","light-2a","dark-2a"], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"neutral-1b",name:"Balliste",tier:1,isBase:false,elements:["neutral"],cost:190,damage:90,range:3.1,attackSpeed:1100,maxHealth:150,description:"Verursacht Flächenschaden.",effect:{type:"splash",radius:0.8,potency:0.4},upgradesTo:["fire-2b","water-2b","earth-2b","air-2b","nature-2b","light-2b","dark-2b"], get dps() { return this.damage * (1000 / this.attackSpeed); } },
