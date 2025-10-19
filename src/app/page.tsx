@@ -1,3 +1,4 @@
+
 // src/app/page.tsx
 "use client";
 
@@ -265,10 +266,9 @@ export default function Home() {
                 </Card>
             </div>
              <div className="text-center mt-4">
-              <a href="https://github.com/firebase/firebase-studio" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-2">
-                <Github className="h-4 w-4"/>
-                Powered by Firebase Studio
-              </a>
+              <p className="text-xs text-muted-foreground">
+                Programmiert mit viel Erinnerung und 'Arbeit, Arbeit!'
+              </p>
             </div>
         </div>
     );
