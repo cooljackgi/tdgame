@@ -3,7 +3,7 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Pause, Play, LogOut, Swords, Zap, MessageCircle, Bug, Sparkles, Microscope, X } from 'lucide-react';
+import { Pause, Play, LogOut, MessageCircle, X } from 'lucide-react';
 import PlayerStats from '@/components/game/player-stats';
 import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
@@ -11,7 +11,6 @@ import DebugMenu from '@/components/game/debug-menu';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
 import TowerSelection from '@/components/game/tower-selection';
 import WaveStartTimer from '@/components/game/wave-start-timer';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
@@ -88,7 +87,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     resetGame, towers, setTowers, placedTowers, enemies, damageNumbers, splashRings,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
-    onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower,
+    onSelectTowerToBuild, handleUpgradeTower, handleSellTower,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     justPlacedTowerId,
     isCoop,
@@ -120,32 +119,10 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const showDebugFeatures = isCheating || isCoop;
 
 
-  const debugMenu = (
-     <DebugMenu
-        towers={towers}
-        setTowers={setTowers}
-        cheat_unlockAll={cheat_unlockAll}
-        setPlayers={setPlayers}
-        onLoadTestLayout={handleLoadTestLayout}
-        onLoadAllTowersLayout={handleLoadAllTowersLayout}
-        isCheating={isCheating}
-        cheat_addResources={cheat_addResources}
-        cheat_skipWaves={cheat_skipWaves}
-        cheat_heal={cheat_heal}
-        isCoop={isCoop}
-        isWsConnected={isWsConnected}
-        hostPacketsPerSecond={hostPacketsPerSecond}
-        clientPacketsPerSecond={clientPacketsPerSecond}
-        averagePacketSize={averagePacketSize}
-        hostBytesSentPerSecond={hostBytesSentPerSecond}
-        clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
-      />
-  );
-  
   const interactionPromptComponent = (
     <>
     {interactionPrompt && !focusedTower && (
-        <div className="bg-card/80 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-lg mb-4">
+        <div className="bg-card/80 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-lg">
             <MessageCircle className="h-5 w-5 text-accent"/>
             <p className="text-sm font-medium flex-grow">
             {interactionPrompt}
@@ -160,30 +137,22 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     </>
   );
 
-
-  const combinedSidebar = (
-     <Tabs defaultValue="control" className="w-full">
-      <TabsList className={`grid w-full ${showDebugFeatures ? 'grid-cols-3' : 'grid-cols-2'}`}>
-        <TabsTrigger value="control"><Swords className="h-4 w-4 mr-2"/>Steuerung</TabsTrigger>
-        <TabsTrigger value="build" disabled={isSpectator}><Zap className="h-4 w-4 mr-2"/>Bauen</TabsTrigger>
-        {showDebugFeatures && <TabsTrigger value="debug">
-            {isCoop ? <Bug className="h-4 w-4 mr-2"/> : <Sparkles className="h-4 w-4 mr-2"/>}
-            {isCoop ? 'Diagnose' : 'Chaos'}
-        </TabsTrigger>}
-      </TabsList>
-      <TabsContent value="control" className="space-y-6 mt-4">
+  return (
+    <div className="grid grid-cols-[320px_1fr_320px] gap-6 max-w-screen-2xl mx-auto h-full">
+      {/* Left Sidebar */}
+      <aside className="flex flex-col gap-4">
         {interactionPromptComponent}
         <div id="tutorial-player-stats">
-          {players.map(player => player && (
-            <PlayerStats
-              key={player.id}
-              player={player}
-              lives={gameState.lives}
-              maxLives={maxLives}
-              isLocalPlayer={player.id === localPlayer.id}
-              isCoop={isCoop}
-            />
-          ))}
+            {players.map(player => player && (
+              <PlayerStats
+                key={player.id}
+                player={player}
+                lives={gameState.lives}
+                maxLives={maxLives}
+                isLocalPlayer={player.id === localPlayer.id}
+                isCoop={isCoop}
+              />
+            ))}
         </div>
          <Card className="p-4 space-y-2">
           <div className="flex justify-around items-center">
@@ -208,80 +177,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
           totalKilled={totalKilled}
           totalLeaked={totalLeaked}
         />
-        
-      </TabsContent>
-      <TabsContent value="build" className="mt-4" id="tutorial-build-menu">
-        {!isSpectator && (
-          <TowerSelection
-            allTowers={allTowers}
-            onSelectTower={onSelectTowerToBuild}
-            focusedTower={focusedTower}
-            selectedTowerToBuild={selectedTowerToBuild}
-            onUpgradeTower={handleUpgradeTower}
-            onSellTower={handleSellTower}
-            onBack={cancelInteractions}
-            localPlayer={localPlayer}
-          />
-        )}
-      </TabsContent>
-       {showDebugFeatures && (
-        <TabsContent value="debug" className="mt-4">
-          {debugMenu}
-        </TabsContent>
-      )}
-    </Tabs>
-  );
-
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_320px] gap-6 max-w-screen-2xl mx-auto h-full">
-      {/* Left Sidebar - visible on XL */}
-      <aside className="hidden xl:flex xl:flex-col gap-6">
-        {interactionPromptComponent}
-        <div id="tutorial-player-stats-xl">
-            {players.map(player => player && (
-              <PlayerStats
-                key={player.id}
-                player={player}
-                lives={gameState.lives}
-                maxLives={maxLives}
-                isLocalPlayer={player.id === localPlayer.id}
-                isCoop={isCoop}
-              />
-            ))}
-        </div>
-         <Card className="p-4 space-y-2">
-          <div className="flex justify-around items-center">
-            <Button onClick={handleGameControl} variant="outline" size="lg" disabled={gameStatus === 'gameover' || gameStatus === 'picking-element' || (gameStatus === 'waiting' && !isHost) || isSpectator}>
-              {gameStatus === 'playing' ? <Pause /> : <Play />}
-              <span className="ml-2">{gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' ? 'Start' : 'Weiter')}</span>
-            </Button>
-            <Button onClick={resetGame} variant="destructive" size="lg">
-              <LogOut />
-              <span className="ml-2">{isSpectator ? 'Verlassen' : (isCoop ? 'Verlassen' : 'Reset')}</span>
-            </Button>
-          </div>
-        </Card>
-        <div id="tutorial-wave-tracker-xl">
-            <WaveTracker currentWave={currentWave} totalWaves={totalWaves} />
-            {showNextWaveButton && <div id="tutorial-start-wave-button-xl" className="mt-4"><WaveStartTimer countdown={waveStartCountdown} totalTime={intermissionTime} onStartWave={handleStartNextWaveNow} canStartWave={canStartWave}/></div>}
-            <WavePreview currentWave={currentWave} waves={waves} />
-        </div>
-        <GameStatsTracker 
-          spawnedThisWave={spawnedThisWave}
-          totalEnemiesInWave={totalEnemiesInWave}
-          totalKilled={totalKilled}
-          totalLeaked={totalLeaked}
-        />
-        {showDebugFeatures && debugMenu}
       </aside>
 
-      {/* Combined Sidebar - visible on MD and LG */}
-      <aside className="hidden md:flex xl:hidden flex-col gap-6">
-        {combinedSidebar}
-      </aside>
-
-
+      {/* Main Game Area */}
       <div className="flex-grow flex items-center justify-center h-full">
         <div className="w-full h-full max-w-[80vh] aspect-square" id="tutorial-game-board">
             <GameBoard
@@ -310,21 +208,46 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
         </div>
       </div>
 
-      {/* Right Sidebar - visible on XL */}
-      <aside className="hidden xl:flex xl:flex-col gap-6" id="tutorial-build-menu-xl">
-        {!isSpectator && (
-          <TowerSelection
-            allTowers={allTowers}
-            onSelectTower={onSelectTowerToBuild}
-            focusedTower={focusedTower}
-            selectedTowerToBuild={selectedTowerToBuild}
-            onUpgradeTower={handleUpgradeTower}
-            onSellTower={handleSellTower}
-            onBack={cancelInteractions}
-            localPlayer={localPlayer}
-          />
+      {/* Right Sidebar */}
+      <aside className="flex flex-col gap-4">
+        <div id="tutorial-build-menu">
+            {!isSpectator && (
+              <TowerSelection
+                allTowers={allTowers}
+                onSelectTower={onSelectTowerToBuild}
+                focusedTower={focusedTower}
+                selectedTowerToBuild={selectedTowerToBuild}
+                onUpgradeTower={handleUpgradeTower}
+                onSellTower={handleSellTower}
+                onBack={cancelInteractions}
+                localPlayer={localPlayer}
+              />
+            )}
+        </div>
+        {showDebugFeatures && (
+             <DebugMenu
+                towers={towers}
+                setTowers={setTowers}
+                cheat_unlockAll={cheat_unlockAll}
+                setPlayers={setPlayers}
+                onLoadTestLayout={handleLoadTestLayout}
+                onLoadAllTowersLayout={handleLoadAllTowersLayout}
+                isCheating={isCheating}
+                cheat_addResources={cheat_addResources}
+                cheat_skipWaves={cheat_skipWaves}
+                cheat_heal={cheat_heal}
+                isCoop={isCoop}
+                isWsConnected={isWsConnected}
+                hostPacketsPerSecond={hostPacketsPerSecond}
+                clientPacketsPerSecond={clientPacketsPerSecond}
+                averagePacketSize={averagePacketSize}
+                hostBytesSentPerSecond={hostBytesSentPerSecond}
+                clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
+              />
         )}
       </aside>
     </div>
   );
 });
+
+    
