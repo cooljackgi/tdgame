@@ -90,6 +90,8 @@ export default function SinglePlayerGame({
     const gameStatusRef = useRef(gameStatus);
     const localPlayerRef = useRef<Player | undefined>(undefined);
     const currentPathRef = useRef(currentPath);
+    const isIntermissionRef = useRef(isIntermission);
+
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
     useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
@@ -99,6 +101,7 @@ export default function SinglePlayerGame({
     useEffect(() => { difficultyRef.current = difficulty; }, [difficulty]);
     useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
     useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
+    useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
 
 
     useEffect(() => {
@@ -198,21 +201,6 @@ export default function SinglePlayerGame({
         });
         return ids;
     }, [placedTowers]);
-
-    const onFocusTower = useCallback((tower: PlacedTower) => {
-        setSelectedTowerToBuild(null);
-        setFocusedTower(tower);
-    }, []);
-    
-    const cancelInteractions = useCallback(() => {
-        setSelectedTowerToBuild(null);
-        setFocusedTower(null);
-    }, []);
-
-    const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
-        setFocusedTower(null);
-        setSelectedTowerToBuild(tower);
-    }, []);
 
     const handleGameEnd = useCallback(async (won: boolean) => {
         if(gameStatusRef.current === 'gameover') return;
@@ -366,6 +354,20 @@ export default function SinglePlayerGame({
         setGameStatus('playing');
     }, []);
 
+    const onFocusTower = useCallback((tower: PlacedTower) => {
+        setSelectedTowerToBuild(null);
+        setFocusedTower(tower);
+    }, []);
+    
+    const cancelInteractions = useCallback(() => {
+        setSelectedTowerToBuild(null);
+        setFocusedTower(null);
+    }, []);
+
+    const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
+        setFocusedTower(null);
+        setSelectedTowerToBuild(tower);
+    }, []);
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         const mazePath: Node[] = [
@@ -436,14 +438,14 @@ export default function SinglePlayerGame({
     useEffect(() => {
         const gameLoop = () => {
             gameLoopRef.current = requestAnimationFrame(gameLoop);
-            const now = performance.now();
+            const now = Date.now();
             const delta = now - lastTickRef.current;
             if (delta < 16) return;
             lastTickRef.current = now;
 
             if (gameStatusRef.current !== 'playing') return;
 
-            if (isIntermission) {
+            if (isIntermissionRef.current) {
                 setWaveStartCountdown(prevTime => {
                     const newTime = prevTime - delta / 1000;
                     if (newTime <= 0) {
@@ -458,12 +460,12 @@ export default function SinglePlayerGame({
             let currentEnemies = [...enemiesRef.current];
 
             // --- Spawning Logic ---
-            const timeSinceWaveStart = now - waveStartTimeRef.current;
+            const timeSinceWaveStart = performance.now() - waveStartTimeRef.current;
             if (spawnQueueRef.current.length > 0) {
                 const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
                 if(enemiesToSpawnNow.length > 0) {
                     spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: Date.now(), path: currentPathRef.current}));
+                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
                     currentEnemies.push(...newEnemiesThisFrame);
                 }
             }
@@ -512,7 +514,7 @@ export default function SinglePlayerGame({
                         firingIds.add(tower.id);
                         
                         const isBuffed = currentBuffedTowerIds.has(tower.id);
-                        const attackResult = processAttack(tower, target, currentEnemies, Date.now(), isBuffed);
+                        const attackResult = processAttack(tower, target, currentEnemies, now, isBuffed);
                         
                         currentEnemies = attackResult.updatedEnemies;
                         allNewAttacks.push(...attackResult.newAttacks);
@@ -536,42 +538,47 @@ export default function SinglePlayerGame({
             if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
 
             let livesLostThisTick = 0;
-            const stillAlive = currentEnemies.map(enemy => {
-                let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > Date.now()) };
+            const nextEnemies: Enemy[] = [];
+
+            for (const enemy of currentEnemies) {
+                 let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > now) };
 
                 const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                if (stunEffect) return updatedEnemy;
+                if (stunEffect) {
+                    nextEnemies.push(updatedEnemy);
+                    continue;
+                };
                 
                 const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
-                if (burnEffect && (!burnEffect.lastTick || Date.now() - burnEffect.lastTick >= 1000)) {
+                if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
                     const damage = burnEffect.potency ?? 0;
                     updatedEnemy.health -= damage;
-                    burnEffect.lastTick = Date.now();
+                    burnEffect.lastTick = now;
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
+                }
+
+                if (updatedEnemy.health <= 0) {
+                    continue;
                 }
 
                 const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
                 const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
                 const stepMs = 1000 / Math.max(0.001, speed);
 
-                if (Date.now() - updatedEnemy.lastMove >= stepMs) {
+                if (now - updatedEnemy.lastMove >= stepMs) {
                     if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                         updatedEnemy.pathIndex += 1;
                         updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                        updatedEnemy.lastMove = Date.now();
+                        updatedEnemy.lastMove = now;
+                    } else {
+                        livesLostThisTick++;
+                        continue; 
                     }
                 }
-                return updatedEnemy;
-            }).filter(e => {
-                if (e.health <= 0) return false;
-                if (e.pathIndex >= e.path.length - 1) {
-                    livesLostThisTick++;
-                    return false;
-                }
-                return true;
-            });
+                nextEnemies.push(updatedEnemy);
+            }
             
-            setEnemies(stillAlive);
+            setEnemies(nextEnemies);
 
             if (livesLostThisTick > 0) {
                 setTotalLeaked(prev => prev + livesLostThisTick);
@@ -589,7 +596,7 @@ export default function SinglePlayerGame({
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);
             }
             
-            if (enemiesRef.current.length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
+            if (nextEnemies.length === 0 && spawnQueueRef.current.length === 0 && !isIntermissionRef.current) {
                 const nextWave = currentWaveRef.current + 1;
                 
                 if (waves[nextWave]) {
@@ -610,7 +617,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [isIntermission, handleStartNextWaveNow, handleGameEnd, user]);
+    }, [handleStartNextWaveNow, handleGameEnd, user]);
 
     const toggleMute = () => {
       setIsMuted(current => {

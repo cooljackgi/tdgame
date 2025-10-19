@@ -471,48 +471,26 @@ export default function CoopGameLoader() {
             countdownRef.current = null;
         };
     }, [isGameHost, isIntermission, gameStatus, startWave, currentWave]);
-
-    // Wave completion detection (HOST ONLY)
-    useEffect(() => {
-        if (!isGameHost || gameStatus !== 'playing' || isIntermission || spawnQueueRef.current.length > 0) return;
-
-        // Wave is completed if there are no more enemies
-        if (enemies.length === 0) {
-            const nextWaveIndex = currentWave + 1;
-            if (waves.length > nextWaveIndex) {
-                 if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
-                    setGameStatus('picking-element');
-                 } else {
-                    setCurrentWave(nextWaveIndex);
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                 }
-            } else { // Game won
-                onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
-                setGameStatus('gameover');
-            }
-             setHostRevision(r => r + 1);
-        }
-    }, [isGameHost, gameStatus, enemies.length, isIntermission, currentWave, difficulty, towersByCell, user, gameId, players]);
   
   // MAIN GAME LOOP (HOST ONLY)
   useEffect(() => {
       let gameLoopRef: number;
-      let lastTick = performance.now();
+      let lastTick = Date.now();
 
       const gameLoop = () => {
           gameLoopRef = requestAnimationFrame(gameLoop);
-          const now = performance.now();
+          const now = Date.now();
           const delta = now - lastTick;
           if (delta < 16) return; // Cap at ~60fps
           lastTick = now;
 
           if (gameStatus !== 'playing' || isIntermission) return;
           
-          let livesLost = 0;
-          let resourcesGained = 0;
-          let livesGained = 0;
-          let killedInTick = 0;
+          let livesLostThisTick = 0;
+          let resourcesGainedThisTick = 0;
+          let livesGainedThisTick = 0;
+          let killedThisTick = 0;
+          
           let allNewAttacks: Attack[] = [];
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
@@ -520,7 +498,7 @@ export default function CoopGameLoader() {
           let currentEnemies = [...enemies];
           
           // --- Spawning Logic ---
-          const timeSinceWaveStart = now - waveStartTimeRef.current;
+          const timeSinceWaveStart = performance.now() - waveStartTimeRef.current;
           if (spawnQueueRef.current.length > 0) {
               const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
               if (enemiesToSpawnNow.length > 0) {
@@ -567,7 +545,7 @@ export default function CoopGameLoader() {
                       firingIds.add(tower.id);
                       
                       const isBuffed = currentBuffedTowerIds.has(tower.id);
-                      const attackResult = processAttack(tower, target, currentEnemies, Date.now(), isBuffed);
+                      const attackResult = processAttack(tower, target, currentEnemies, now, isBuffed);
 
                       currentEnemies = attackResult.updatedEnemies;
                       allNewAttacks.push(...attackResult.newAttacks);
@@ -575,11 +553,11 @@ export default function CoopGameLoader() {
                       allNewSplashRings.push(...attackResult.splashRings);
 
                       if (attackResult.resourcesGained > 0) {
-                          resourcesGained += attackResult.resourcesGained;
-                          killedInTick += attackResult.killed;
+                          resourcesGainedThisTick += attackResult.resourcesGained;
+                          killedThisTick += attackResult.killed;
                       }
                       if (attackResult.livesGained > 0) {
-                          livesGained += attackResult.livesGained;
+                          livesGainedThisTick += attackResult.livesGained;
                       }
                   }
               }
@@ -605,11 +583,15 @@ export default function CoopGameLoader() {
           }
 
           // 3. Enemy movement and effects logic
-          const stillAlive = currentEnemies.map(enemy => {
+          const stillAlive: Enemy[] = [];
+          for (const enemy of currentEnemies) {
               let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-              if (stunEffect) return updatedEnemy;
+              if (stunEffect) {
+                  stillAlive.push(updatedEnemy);
+                  continue;
+              }
 
               const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
               if (burnEffect) {
@@ -622,6 +604,10 @@ export default function CoopGameLoader() {
                       gameBoardRef.current?.queueDamageNumbers([dmgNum]);
                   }
               }
+
+              if (updatedEnemy.health <= 0) {
+                  continue; // Will be filtered out later
+              }
               
               const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
               const speedMultiplier = slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1;
@@ -629,35 +615,52 @@ export default function CoopGameLoader() {
               
               const stepMs = 1000 / Math.max(0.01, speed);
               if (now - updatedEnemy.lastMove > stepMs) {
-                  return { ...updatedEnemy, pathIndex: updatedEnemy.pathIndex + 1, position: updatedEnemy.path[updatedEnemy.pathIndex + 1], lastMove: now };
+                  if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
+                      updatedEnemy.pathIndex += 1;
+                      updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
+                      updatedEnemy.lastMove = now;
+                  } else {
+                      livesLostThisTick++;
+                      continue;
+                  }
               }
-              return updatedEnemy;
-
-          }).filter(enemy => {
-              if (enemy.pathIndex >= enemy.path.length -1) {
-                  livesLost++;
-                  return false;
-              }
-              return enemy.health > 0;
-          });
+              stillAlive.push(updatedEnemy);
+          }
+          
           
           // 4. Update state based on tick results
           setEnemies(stillAlive);
 
-          if (livesLost > 0) {
-              setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLost) }));
-              setTotalLeaked(l => l + livesLost);
-              if (gameState.lives - livesLost <= 0 && gameStatus !== 'gameover') {
+          if (livesLostThisTick > 0) {
+              setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLostThisTick) }));
+              setTotalLeaked(l => l + livesLostThisTick);
+              if (gameState.lives - livesLostThisTick <= 0 && gameStatus !== 'gameover') {
                   onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
                   setGameStatus('gameover');
               }
           }
-          if (livesGained > 0) {
-              setGameState(gs => ({ ...gs, lives: gs.lives + livesGained }));
+          if (livesGainedThisTick > 0) {
+              setGameState(gs => ({ ...gs, lives: gs.lives + livesGainedThisTick }));
           }
-          if (resourcesGained > 0) {
-              setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGained / ps.length)})));
-              setTotalKilled(k => k + killedInTick);
+          if (resourcesGainedThisTick > 0) {
+              setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGainedThisTick / ps.length)})));
+              setTotalKilled(k => k + killedThisTick);
+          }
+
+          if (stillAlive.length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
+              const nextWaveIndex = currentWave + 1;
+              if (waves.length > nextWaveIndex) {
+                  if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
+                      setGameStatus('picking-element');
+                  } else {
+                      setCurrentWave(nextWaveIndex);
+                      setIsIntermission(true);
+                      setWaveStartCountdown(INTERMISSION_TIME);
+                  }
+              } else {
+                  onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
+                  setGameStatus('gameover');
+              }
           }
 
           setHostRevision(r => r + 1);
