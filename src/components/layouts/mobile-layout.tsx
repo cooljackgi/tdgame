@@ -76,6 +76,7 @@ interface MobileLayoutProps {
   cheat_unlockAll: () => void;
   firingTowerIds: Set<string>;
   allTowers: Tower[];
+  attacks?: Attack[];
     // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -98,6 +99,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     cheat_unlockAll,
     firingTowerIds,
     allTowers,
+    attacks,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -189,6 +191,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           ref={gameBoardRef}
           placedTowers={placedTowers}
           enemies={enemies}
+          attacks={attacks}
           damageNumbers={damageNumbers}
           splashRings={splashRings}
           currentPath={currentPath}
