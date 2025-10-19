@@ -76,6 +76,9 @@ export default function SinglePlayerGame({
     const lastTickRef = useRef(performance.now());
     const enemyIdCounter = useRef(0);
     const gameBoardRef = useRef<GameBoardHandle>(null);
+    const spawnQueueRef = useRef<any[]>([]);
+    const waveStartTimeRef = useRef<number>(0);
+
 
     // --- Refs for stable access in game loop ---
     const playersRef = useRef(players);
@@ -302,40 +305,39 @@ export default function SinglePlayerGame({
     }, [isCheating, user]);
 
     const handleStartNextWaveNow = useCallback(() => {
-      if (enemiesRef.current.length > 0) return;
+        const waveData = waves[currentWaveRef.current];
+        if (!waveData) return;
 
-      const waveData = waves[currentWaveRef.current];
-      if (!waveData) return;
-
-      const now = performance.now();
-      const newEnemies: Enemy[] = Array.from({length: waveData.enemies.count}).map((_, i) => {
         const difficultyMod = difficultyModifiers[difficultyRef.current];
-        const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
-        return {
-          id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`,
-          type: waveData.enemies.type,
-          health: health,
-          maxHealth: health,
-          armor: waveData.enemies.armor,
-          speed: waveData.enemies.speed,
-          damage: waveData.enemies.damage,
-          bounty: waveData.enemies.bounty,
-          path: currentPathRef.current,
-          pathIndex: 0,
-          position: { row: 1, col: 1 },
-          isBlocked: false,
-          effects: [],
-          lastMove: now - i * waveData.enemies.spawnDelay, // Stagger spawn times
-          wasHit: false,
-          targetNode: { row: GRID_ROWS, col: GRID_COLS },
-          movementPattern: waveData.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
-        };
-      });
-
-      setEnemies(newEnemies);
-      setIsIntermission(false);
-      setWaveStartCountdown(0);
-      audioManager.playWaveMusic();
+        const enemiesToSpawn = Array.from({ length: waveData.enemies.count }).map((_, i) => {
+            const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
+            return {
+                id: `enemy-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                type: waveData.enemies.type,
+                health: health,
+                maxHealth: health,
+                armor: waveData.enemies.armor,
+                speed: waveData.enemies.speed,
+                damage: waveData.enemies.damage,
+                bounty: waveData.enemies.bounty,
+                path: currentPathRef.current,
+                pathIndex: 0,
+                position: { row: 1, col: 1 },
+                isBlocked: false,
+                effects: [],
+                lastMove: 0, // Will be set on actual spawn
+                wasHit: false,
+                targetNode: { row: GRID_ROWS, col: GRID_COLS },
+                movementPattern: waveData.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+                _spawnTime: i * waveData.enemies.spawnDelay,
+            };
+        });
+        
+        spawnQueueRef.current = enemiesToSpawn;
+        waveStartTimeRef.current = performance.now();
+        setIsIntermission(false);
+        setWaveStartCountdown(0);
+        audioManager.playWaveMusic();
     }, []);
 
     // --- CHEAT/DEBUG FUNCTIONS ---
@@ -427,10 +429,23 @@ export default function SinglePlayerGame({
                 return; // No game logic during intermission
             }
 
+            // --- Spawning Logic ---
+            const timeSinceWaveStart = now - waveStartTimeRef.current;
+            let newEnemiesThisFrame: Enemy[] = [];
+            if (spawnQueueRef.current.length > 0) {
+                const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
+                spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
+
+                if (enemiesToSpawnNow.length > 0) {
+                    newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now}));
+                }
+            }
+
+
             let allNewAttacks: Attack[] = [];
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
-            let currentEnemies = enemiesRef.current;
+            let currentEnemies = [...enemiesRef.current, ...newEnemiesThisFrame];
             let currentPlayers = playersRef.current;
             const towers = Object.values(towersByCellRef.current);
             let firingIds = new Set<string>();
@@ -525,7 +540,7 @@ export default function SinglePlayerGame({
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);
             }
             
-            if (enemiesRef.current.length === 0 && !isIntermission) {
+            if (enemiesRef.current.length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
                 const nextWave = currentWaveRef.current + 1;
                 
                 if (waves[nextWave]) {
@@ -596,7 +611,7 @@ export default function SinglePlayerGame({
                     handleUpgradeTower={handleUpgradeTower}
                     handleSellTower={handleSellTower}
                     setFocusedTower={setFocusedTower}
-                    spawnedThisWave={isIntermission ? 0 : enemies.length}
+                    spawnedThisWave={isIntermission ? 0 : (waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
                     totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
                     totalKilled={totalKilled}
                     totalLeaked={totalLeaked}
