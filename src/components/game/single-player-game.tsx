@@ -106,46 +106,51 @@ export default function SinglePlayerGame({
             const now = performance.now();
             const loadedTowers = initialSavedGame.towersByCell;
             for (const key in loadedTowers) {
-                // Reset cooldown by setting last attack time to be in the past
                 loadedTowers[key].lastAttack = now - (loadedTowers[key].attackSpeed + Math.random() * 500); 
             }
 
             setPlayers([initialSavedGame.players.player1]);
             setGameState(initialSavedGame.gameState);
-            setTowersByCell(loadedTowers); // Use the modified towers
+            setTowersByCell(loadedTowers);
             setEnemies(initialSavedGame.enemies);
             setCurrentWave(initialSavedGame.currentWave);
             setDifficulty(initialSavedGame.difficulty);
             setGameStatus('playing');
+            // If the saved game has no enemies and is not in intermission, it means a wave just ended.
+            // Start the next intermission.
+            if (initialSavedGame.enemies.length === 0) {
+                 setIsIntermission(true);
+                 setWaveStartCountdown(INTERMISSION_TIME);
+            }
             const path = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(initialSavedGame.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
             setCurrentPath(path);
-            return;
+        } else {
+            const difficultyMod = difficultyModifiers[initialDifficulty];
+            const player1: Player = {
+                id: 'player1',
+                name: user?.displayName || 'Spieler 1',
+                resources: difficultyMod.startResources,
+                unlockedElements: ['neutral'],
+                avatarUrl: user?.photoURL || null,
+            };
+
+            setPlayers([player1]);
+            setGameState({ lives: difficultyMod.startLives });
+            setTowersByCell({});
+            setEnemies([]);
+            setCurrentWave(0);
+            setDifficulty(initialDifficulty);
+            setGameStatus('playing');
+            setIsIntermission(true);
+            setWaveStartCountdown(INTERMISSION_TIME);
+            setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
         }
-
-        const difficultyMod = difficultyModifiers[initialDifficulty];
-        const player1: Player = {
-            id: 'player1',
-            name: user?.displayName || 'Spieler 1',
-            resources: difficultyMod.startResources,
-            unlockedElements: ['neutral'],
-            avatarUrl: user?.photoURL || null,
-        };
-
-        setPlayers([player1]);
-        setGameState({ lives: difficultyMod.startLives });
-        setTowersByCell({});
-        setEnemies([]);
-        setCurrentWave(0);
-        setDifficulty(initialDifficulty);
-        setGameStatus('playing');
-        setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
     }, [initialSavedGame, initialDifficulty, user]);
     
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
             if (isCheating || gameStatusRef.current !== 'playing') {
-                // Don't save cheat games or if game is already over
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -154,7 +159,7 @@ export default function SinglePlayerGame({
             if (!player1) return;
 
             const saveState: GameSaveState = {
-                players: { player1: player1, player2: null },
+                players: { player1: { ...player1, avatarUrl: player1.avatarUrl || null }, player2: null },
                 gameState: gameStateRef.current,
                 towersByCell: towersByCellRef.current,
                 enemies: enemiesRef.current,
@@ -167,7 +172,6 @@ export default function SinglePlayerGame({
         window.addEventListener('beforeunload', saveGame);
         
         return () => {
-            // Save on component unmount as well (e.g., navigating away)
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
@@ -276,7 +280,7 @@ export default function SinglePlayerGame({
     }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
-        setPlayers(prev => [{ ...prev[0], unlockedElements: [...prev[0].unlockedElements, element] }]);
+        setPlayers(prev => [{ ...prev[0], unlockedElements: Array.from(new Set([...prev[0].unlockedElements, element])) }]);
         setCurrentWave(prev => prev + 1);
         setIsIntermission(true);
         setWaveStartCountdown(INTERMISSION_TIME);
@@ -440,7 +444,7 @@ export default function SinglePlayerGame({
                 const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
                 if(enemiesToSpawnNow.length > 0) {
                     spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
+                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: Date.now(), path: currentPathRef.current}));
                     currentEnemies.push(...newEnemiesThisFrame);
                 }
             }
@@ -471,7 +475,7 @@ export default function SinglePlayerGame({
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
                         
-                        const attackResult = processAttack(tower, target, currentEnemies, now);
+                        const attackResult = processAttack(tower, target, currentEnemies, Date.now());
                         
                         currentEnemies = attackResult.updatedEnemies;
                         allNewAttacks.push(...attackResult.newAttacks);
@@ -493,28 +497,28 @@ export default function SinglePlayerGame({
 
             let livesLostThisTick = 0;
             const stillAlive = currentEnemies.map(enemy => {
-                let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > now) };
+                let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > Date.now()) };
 
-                const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun' && e.expires > now);
+                const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
                 if (stunEffect) return updatedEnemy;
                 
-                const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn' && e.expires > now);
-                if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
+                const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
+                if (burnEffect && (!burnEffect.lastTick || Date.now() - burnEffect.lastTick >= 1000)) {
                     const damage = burnEffect.potency ?? 0;
                     updatedEnemy.health -= damage;
-                    burnEffect.lastTick = now;
+                    burnEffect.lastTick = Date.now();
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
                 }
 
-                const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow' && e.expires > now);
+                const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
                 const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
                 const stepMs = 1000 / Math.max(0.001, speed);
 
-                if (now - updatedEnemy.lastMove >= stepMs) {
+                if (Date.now() - updatedEnemy.lastMove >= stepMs) {
                     if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                         updatedEnemy.pathIndex += 1;
                         updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                        updatedEnemy.lastMove = now;
+                        updatedEnemy.lastMove = Date.now();
                     }
                 }
                 return updatedEnemy;
