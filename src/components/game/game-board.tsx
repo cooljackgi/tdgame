@@ -206,7 +206,30 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
         ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
         ctx.stroke();
 
-    } else {
+    } else if (a.projectile === 'chain') {
+        const segments = 5;
+        const randomness = 15;
+        ctx.lineWidth = 3.5;
+        ctx.globalAlpha = (1 - t*t);
+        ctx.strokeStyle = baseColor;
+        ctx.shadowBlur = 12;
+
+        ctx.beginPath();
+        ctx.moveTo(fromPos.x, fromPos.y);
+
+        for (let i = 1; i < segments; i++) {
+            const progress = i / segments;
+            const currentX = fromPos.x + dx * progress;
+            const currentY = fromPos.y + dy * progress;
+            ctx.lineTo(
+                currentX + (Math.random() - 0.5) * randomness,
+                currentY + (Math.random() - 0.5) * randomness
+            );
+        }
+        ctx.lineTo(toPos.x, toPos.y);
+        ctx.stroke();
+
+    } else { // BEAM
         const headX = fromPos.x + dx * t;
         const headY = fromPos.y + dy * t;
         const tailT = Math.max(0, t - 0.15);
@@ -214,7 +237,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
         const tailY = fromPos.y + dy * tailT;
         
         ctx.strokeStyle = baseColor;
-        ctx.lineWidth = a.projectile === 'chain' ? 2 : 3;
+        ctx.lineWidth = 3;
         ctx.globalAlpha = (1 - t*t);
         
         ctx.beginPath();
@@ -560,10 +583,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     if (!toPx) continue;
             
                     const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
-                    const dynamicLife =
-                        a.projectile === "beam" || a.projectile === "chain"
-                        ? 220
-                        : clamp(dist * 2.6, 320, 750);
+                    let dynamicLife = clamp(dist * 2.6, 320, 750);
+                    if (a.projectile === "beam") dynamicLife = 220;
+                    if (a.projectile === "chain") dynamicLife = 250;
             
                     attacksPoolRef.current.alloc({
                         ...a,
