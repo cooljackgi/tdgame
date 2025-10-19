@@ -529,106 +529,100 @@ export default function CoopGameLoader() {
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
           
-          setEnemies(prevEnemies => {
-              const stillAlive = prevEnemies.map(enemy => {
-                  let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
+          let currentEnemies = [...enemies];
+          
+          const towers = Object.values(towersByCell);
+          let firingIds = new Set<string>();
 
-                  const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                  if (stunEffect) return updatedEnemy;
+          for (const tower of towers) {
+              if (now - tower.lastAttack >= tower.attackSpeed) {
+                  let target: Enemy | null = null;
+                  let minDistanceSq = tower.range * tower.range;
+                  
+                  currentEnemies.forEach(enemy => {
+                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                      if (distSq <= minDistanceSq) {
+                          minDistanceSq = distSq;
+                          target = enemy;
+                      }
+                  });
 
-                  // Handle DoT effects (like burn)
-                  const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
-                  if (burnEffect) {
-                      if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
-                          const burnDamage = burnEffect.potency ?? 0;
-                          updatedEnemy.health -= burnDamage;
-                          burnEffect.lastTick = now;
-                          allNewDamageNumbers.push({ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber);
+                  if (target) {
+                      tower.lastAttack = now;
+                      firingIds.add(tower.id);
+                      
+                      const attackResult = processAttack(tower, target, currentEnemies, now);
+
+                      currentEnemies = attackResult.updatedEnemies; // Use the returned enemies array
+                      allNewAttacks.push(...attackResult.newAttacks);
+                      allNewDamageNumbers.push(...attackResult.damageNumbers);
+                      allNewSplashRings.push(...attackResult.splashRings);
+
+                      if (attackResult.resourcesGained > 0) {
+                          setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(attackResult.resourcesGained / ps.length)})));
+                          setTotalKilled(k => k + attackResult.killed);
                       }
                   }
-                  
-                  // Handle movement
-                  const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
-                  const speedMultiplier = slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1;
-                  const speed = updatedEnemy.speed * speedMultiplier;
-                  
-                  const stepMs = 1000 / Math.max(0.01, speed);
-                  if (now - updatedEnemy.lastMove > stepMs) {
-                      return { ...updatedEnemy, pathIndex: updatedEnemy.pathIndex + 1, position: updatedEnemy.path[updatedEnemy.pathIndex + 1], lastMove: now };
-                  }
-                  return updatedEnemy;
+              }
+          }
+          
+          if (firingIds.size > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
+          if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+          if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
 
-              }).filter(enemy => {
-                  if (enemy.pathIndex >= enemy.path.length -1) {
-                      livesLost++;
-                      return false;
-                  }
-                  if (enemy.health <= 0) {
-                      resourcesGained += enemy.bounty;
-                      killedInTick++;
-                      return false;
-                  }
-                  return true;
-              });
+          const stillAlive = currentEnemies.map(enemy => {
+              let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
-              if (livesLost > 0) {
-                  setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLost) }));
-                  setTotalLeaked(l => l + livesLost);
-                  if (gameState.lives - livesLost <= 0 && gameStatus !== 'gameover') {
-                      onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
-                      setGameStatus('gameover');
+              const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
+              if (stunEffect) return updatedEnemy;
+
+              const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
+              if (burnEffect) {
+                  if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
+                      const burnDamage = burnEffect.potency ?? 0;
+                      updatedEnemy.health -= burnDamage;
+                      burnEffect.lastTick = now;
+                      gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
                   }
               }
-              if (resourcesGained > 0) {
-                  setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGained / ps.length)})));
-                  setTotalKilled(k => k + killedInTick);
+              
+              const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
+              const speedMultiplier = slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1;
+              const speed = updatedEnemy.speed * speedMultiplier;
+              
+              const stepMs = 1000 / Math.max(0.01, speed);
+              if (now - updatedEnemy.lastMove > stepMs) {
+                  return { ...updatedEnemy, pathIndex: updatedEnemy.pathIndex + 1, position: updatedEnemy.path[updatedEnemy.pathIndex + 1], lastMove: now };
               }
+              return updatedEnemy;
 
-              return stillAlive;
+          }).filter(enemy => {
+              if (enemy.pathIndex >= enemy.path.length -1) {
+                  livesLost++;
+                  return false;
+              }
+              if (enemy.health <= 0) {
+                  resourcesGained += enemy.bounty;
+                  killedInTick++;
+                  return false;
+              }
+              return true;
           });
           
-          setTowersByCell(prevTowers => {
-              const newTowers = { ...prevTowers };
-              let firingIds = new Set<string>();
+          setEnemies(stillAlive);
 
-              Object.values(newTowers).forEach(tower => {
-                   if (now - tower.lastAttack >= tower.attackSpeed) {
-                       let target: Enemy | null = null;
-                       let minDistanceSq = tower.range * tower.range;
-                       
-                       enemies.forEach(enemy => {
-                          const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                          if (distSq <= minDistanceSq) {
-                              minDistanceSq = distSq;
-                              target = enemy;
-                          }
-                       });
-
-                       if (target) {
-                           tower.lastAttack = now;
-                           firingIds.add(tower.id);
-                           
-                            const attackResult = processAttack(tower, target, enemies, now);
-
-                            setEnemies(attackResult.updatedEnemies);
-                            allNewAttacks.push(...attackResult.newAttacks);
-                            allNewDamageNumbers.push(...attackResult.damageNumbers);
-                            allNewSplashRings.push(...attackResult.splashRings);
-
-                            if (attackResult.resourcesGained > 0) {
-                                setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(attackResult.resourcesGained / ps.length)})));
-                                setTotalKilled(k => k + attackResult.killed);
-                            }
-                       }
-                   }
-              });
-
-              if(firingIds.size > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
-              if(allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
-              if(allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
-
-              return newTowers;
-          });
+          if (livesLost > 0) {
+              setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLost) }));
+              setTotalLeaked(l => l + livesLost);
+              if (gameState.lives - livesLost <= 0 && gameStatus !== 'gameover') {
+                  onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
+                  setGameStatus('gameover');
+              }
+          }
+          if (resourcesGained > 0) {
+              setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGained / ps.length)})));
+              setTotalKilled(k => k + killedInTick);
+          }
 
           setHostRevision(r => r + 1);
       };
@@ -638,7 +632,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave]);
 
 
   const toggleMute = () => {
