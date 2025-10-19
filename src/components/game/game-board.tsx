@@ -63,7 +63,7 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
     if (!a) {
       targetPos = gridToPx(enemy.position);
     } else {
-      const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
+      const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > Date.now());
       const speed = enemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
       const stepMs = 1000 / Math.max(0.001, speed);
 
@@ -1029,7 +1029,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         const pos = interpolatedEnemyPositions.get(enemy.id);
                         if (!pos) return null;
                         
-                        const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > performance.now());
+                        const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > Date.now());
                         
                         const isGhost = !enemies.find(e => e.id === enemy.id);
 
