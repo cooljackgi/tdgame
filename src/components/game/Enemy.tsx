@@ -111,7 +111,16 @@ const EnemyComponent = React.memo(function EnemyComponent({
           const Icon = effectIconMap[effect.type];
           const iconPositionClass = effectIconClasses[effect.type];
           if (Icon && iconPositionClass) {
-            return <Icon key={`effect-${effect.type}-${i}`} className={cn("effect-icon absolute", iconPositionClass)} />;
+            return (
+              <Icon
+                key={`effect-${effect.type}-${i}`}
+                className={cn(
+                  "absolute z-10 h-3.5 w-3.5 drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]",
+                  iconPositionClass
+                )}
+                strokeWidth={2.5}
+              />
+            );
           }
           return null;
       })}

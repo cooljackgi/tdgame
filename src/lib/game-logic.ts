@@ -154,10 +154,8 @@ export function processAttack(
             if (enemy.id === target.id) return enemy; // Already damaged
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
-                const splashTargetIndex = output.updatedEnemies.findIndex(e => e.id === enemy.id);
-                if (splashTargetIndex > -1) {
-                    return applyDamage(enemy, splashDamage, tower.effect);
-                }
+                // Return a new enemy object with the applied damage
+                return applyDamage(enemy, splashDamage, tower.effect);
             }
             return enemy;
         });
@@ -186,6 +184,7 @@ export function processAttack(
                 const chainDamage = tower.damage * (tower.effect?.potency ?? 0.5);
                 const nextTargetIndex = output.updatedEnemies.findIndex(e => e.id === nextTarget!.id);
                 if (nextTargetIndex > -1) {
+                    // Update immutably
                     output.updatedEnemies[nextTargetIndex] = applyDamage(output.updatedEnemies[nextTargetIndex], chainDamage);
                 }
 
@@ -215,7 +214,8 @@ export function processAttack(
             stillAlive.push(enemy);
         } else {
             // Check if this enemy was already counted as killed to prevent double counting
-            if (!allEnemies.find(e => e.id === enemy.id) || allEnemies.find(e => e.id === enemy.id)!.health > 0) {
+            const originalEnemy = allEnemies.find(e => e.id === enemy.id);
+            if (originalEnemy && originalEnemy.health > 0) {
                  output.resourcesGained += enemy.bounty;
                  output.killed++;
             }
