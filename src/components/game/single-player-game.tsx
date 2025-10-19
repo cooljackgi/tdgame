@@ -5,7 +5,7 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import { waves, generateProceduralWave, waveFormulaCoefficients } from '@/lib/game-data/enemies';
+import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
@@ -129,9 +129,9 @@ export default function SinglePlayerGame({
             const player1: Player = {
                 id: 'player1',
                 name: user?.displayName || 'Spieler 1',
+                avatarUrl: user?.photoURL || null,
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
-                avatarUrl: user?.photoURL || null,
             };
 
             setPlayers([player1]);
@@ -159,7 +159,7 @@ export default function SinglePlayerGame({
             if (!player1) return;
 
             const saveState: GameSaveState = {
-                players: { player1: { ...player1, avatarUrl: player1.avatarUrl || null }, player2: null },
+                players: { player1, player2: null },
                 gameState: gameStateRef.current,
                 towersByCell: towersByCellRef.current,
                 enemies: enemiesRef.current,
@@ -199,23 +199,21 @@ export default function SinglePlayerGame({
         });
         return ids;
     }, [placedTowers]);
-
-    if (!localPlayer) return null;
-
-    const onFocusTower = (tower: PlacedTower) => {
+    
+    const onFocusTower = useCallback((tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
         setFocusedTower(tower);
-    }
+    }, []);
     
-    const cancelInteractions = () => {
+    const cancelInteractions = useCallback(() => {
         setSelectedTowerToBuild(null);
         setFocusedTower(null);
-    }
+    }, []);
 
-    const onSelectTowerToBuild = (tower: Tower | null) => {
+    const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
         setSelectedTowerToBuild(tower);
-    }
+    }, []);
     
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild) return;
@@ -617,6 +615,8 @@ export default function SinglePlayerGame({
       });
     };
     
+    if (!localPlayer) return null;
+
     const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
 
     return (
