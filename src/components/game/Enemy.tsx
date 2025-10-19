@@ -74,7 +74,6 @@ const EnemyComponent = React.memo(function EnemyComponent({
     isDamaged && "animate-wobble"
   );
   
-  // FIX: Use Date.now() to match the timestamp basis of the host/server.
   const activeEffects = effects.filter(e => e.expires > Date.now());
   
   const allVisibleEffects = React.useMemo(() => {
