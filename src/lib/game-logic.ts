@@ -60,7 +60,8 @@ export function processAttack(
     tower: PlacedTower,
     target: Enemy,
     allEnemies: Enemy[],
-    now: number
+    now: number,
+    isTowerBuffed: boolean
 ): {
     updatedEnemies: Enemy[];
     resourcesGained: number;
@@ -92,6 +93,7 @@ export function processAttack(
     const applyDamage = (
         enemyToDamage: Enemy,
         damageAmount: number,
+        isCrit: boolean = false,
         sourceEffect?: TowerEffect
     ): Enemy => {
         const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
@@ -100,12 +102,15 @@ export function processAttack(
         const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
         let finalDamage = Math.max(1, damageAmount - effectiveArmor);
         finalDamage *= (1 + vulnerability);
+        if (isCrit) finalDamage *= (tower.effect?.potency ?? 2);
+
 
         output.damageNumbers.push({
             id: crypto.randomUUID(),
             amount: finalDamage,
             targetId: enemyToDamage.id,
-            color: '#fff',
+            isCrit,
+            color: isCrit ? '#facc15' : '#fff',
         } as DamageNumber);
 
         const newHealth = enemyToDamage.health - finalDamage;
@@ -131,16 +136,24 @@ export function processAttack(
     };
     
     // --- Process primary attack and its effects ---
+    let attackDamage = tower.damage;
+    if (isTowerBuffed) attackDamage *= 1.15; // Apply aura buff if present
+    
+    let isCrit = false;
+    if (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0)) {
+        isCrit = true;
+    }
+
     const targetIndex = output.updatedEnemies.findIndex(e => e.id === target.id);
     if (targetIndex > -1) {
-        output.updatedEnemies[targetIndex] = applyDamage(output.updatedEnemies[targetIndex], tower.damage, tower.effect);
+        output.updatedEnemies[targetIndex] = applyDamage(output.updatedEnemies[targetIndex], attackDamage, isCrit, tower.effect);
     }
     
     // --- Process Splash Damage ---
     if (tower.effect?.type === 'splash' && tower.effect.radius) {
         const splashPotency = tower.effect.potency ?? 0.5;
         const splashRadiusSq = tower.effect.radius * tower.effect.radius;
-        const splashDamage = tower.damage * splashPotency;
+        const splashDamage = attackDamage * splashPotency;
 
         output.splashRings.push({
             id: crypto.randomUUID(),
@@ -154,8 +167,7 @@ export function processAttack(
             if (enemy.id === target.id) return enemy; // Already damaged
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
-                // Return a new enemy object with the applied damage
-                return applyDamage(enemy, splashDamage, tower.effect);
+                return applyDamage(enemy, splashDamage, false, tower.effect);
             }
             return enemy;
         });
@@ -181,10 +193,9 @@ export function processAttack(
             });
 
             if (nextTarget) {
-                const chainDamage = tower.damage * (tower.effect?.potency ?? 0.5);
+                const chainDamage = attackDamage * (tower.effect?.potency ?? 0.5);
                 const nextTargetIndex = output.updatedEnemies.findIndex(e => e.id === nextTarget!.id);
                 if (nextTargetIndex > -1) {
-                    // Update immutably
                     output.updatedEnemies[nextTargetIndex] = applyDamage(output.updatedEnemies[nextTargetIndex], chainDamage);
                 }
 
@@ -207,17 +218,22 @@ export function processAttack(
         }
     }
     
-    // --- Final check for defeated enemies ---
+    // --- Final check for defeated enemies and Lifesteal ---
     const stillAlive: Enemy[] = [];
     for (const enemy of output.updatedEnemies) {
         if (enemy.health > 0) {
             stillAlive.push(enemy);
         } else {
-            // Check if this enemy was already counted as killed to prevent double counting
             const originalEnemy = allEnemies.find(e => e.id === enemy.id);
             if (originalEnemy && originalEnemy.health > 0) {
                  output.resourcesGained += enemy.bounty;
                  output.killed++;
+                 
+                 const lifestealEffect = enemy.effects.find(ef => ef.type === 'lifesteal');
+                 if (lifestealEffect) {
+                     // Lifesteal now gives back a small amount of resources instead of health
+                     output.resourcesGained += Math.ceil(enemy.maxHealth * (lifestealEffect.potency ?? 0.05));
+                 }
             }
         }
     }
