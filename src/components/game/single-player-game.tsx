@@ -256,7 +256,7 @@ export default function SinglePlayerGame({
         });
         
         spawnQueueRef.current = enemiesToSpawn;
-        waveStartTimeRef.current = performance.now();
+        waveStartTimeRef.current = Date.now();
         setIsIntermission(false);
         setWaveStartCountdown(0);
         audioManager.playWaveMusic();
@@ -460,12 +460,13 @@ export default function SinglePlayerGame({
             let currentEnemies = [...enemiesRef.current];
 
             // --- Spawning Logic ---
-            const timeSinceWaveStart = performance.now() - waveStartTimeRef.current;
+            const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
             if (spawnQueueRef.current.length > 0) {
                 const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
                 if(enemiesToSpawnNow.length > 0) {
                     spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
+                    const nowEpoch = Date.now();
+                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPathRef.current}));
                     currentEnemies.push(...newEnemiesThisFrame);
                 }
             }

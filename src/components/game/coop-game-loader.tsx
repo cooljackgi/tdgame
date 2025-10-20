@@ -103,23 +103,7 @@ export default function CoopGameLoader() {
     switch(type) {
       case 'GAME_STATE_SNAPSHOT':
         setPlayers(payload.players);
-        // --- Client-side interpolation logic ---
-        setEnemies(currentEnemies => {
-            const now = performance.now();
-            const newEnemies = payload.enemies;
-            const enemyMap = new Map(currentEnemies.map(e => [e.id, e]));
-            
-            return newEnemies.map((incomingEnemy: Enemy) => {
-                const existing = enemyMap.get(incomingEnemy.id);
-                if (existing) {
-                    // Prevent pathIndex from going backwards, but accept host's new position
-                    incomingEnemy.pathIndex = Math.max(existing.pathIndex, incomingEnemy.pathIndex);
-                }
-                // Normalize time base to client's clock for smooth interpolation
-                incomingEnemy.lastMove = now;
-                return incomingEnemy;
-            });
-        });
+        setEnemies(payload.enemies);
         setTowersByCell(payload.towersByCell);
         setGameState(payload.gameState);
         setCurrentWave(payload.currentWave);
@@ -211,7 +195,7 @@ export default function CoopGameLoader() {
         });
 
         spawnQueueRef.current = enemiesToSpawn;
-        waveStartTimeRef.current = performance.now();
+        waveStartTimeRef.current = Date.now();
         setIsIntermission(false);
         setCurrentWave(waveIndex);
         setWaveStartCountdown(0);
@@ -525,12 +509,13 @@ export default function CoopGameLoader() {
           let currentEnemies = [...enemies];
           
           // --- Spawning Logic ---
-          const timeSinceWaveStart = performance.now() - waveStartTimeRef.current;
+          const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
           if (spawnQueueRef.current.length > 0) {
               const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
               if (enemiesToSpawnNow.length > 0) {
                   spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                  const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: now, path: currentPathRef.current}));
+                  const nowEpoch = Date.now();
+                  const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPathRef.current}));
                   currentEnemies.push(...newEnemiesThisFrame);
               }
           }

@@ -18,8 +18,8 @@ import TowerContextMenu from './TowerContextMenu';
 const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
 const NETWORK_INTERP_LAG_MS = 120;
-const LERP_FACTOR = 0.18; // 1.0 = hard jump, < 1.0 = smooth
-const SNAP_THRESHOLD = 1.8 * CELL_SIZE;
+const LERP_FACTOR = 0.22; // 1.0 = hard jump, < 1.0 = smooth
+const SNAP_THRESHOLD = 2.0 * CELL_SIZE;
 
 
 export type GameBoardHandle = {
@@ -505,7 +505,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const renderVfx = useCallback(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
-    const now = playerRole === 'player1' ? performance.now() : performance.now() - NETWORK_INTERP_LAG_MS;
+    const now = playerRole === 'player1' ? Date.now() : Date.now() - NETWORK_INTERP_LAG_MS;
     if (now - lastTsRef.current < fpsCapMs) return;
     lastTsRef.current = now;
 
