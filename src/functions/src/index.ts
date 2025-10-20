@@ -63,6 +63,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
         'players.player2': {
             id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
         },
+        // The game status is NOT set to playing here anymore. The host starts it from the lobby.
       });
     });
     return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };

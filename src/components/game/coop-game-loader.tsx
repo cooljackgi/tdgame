@@ -296,15 +296,54 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { playerId, element } = payload;
-                setPlayers(prev => prev.map(p => 
-                  p.id === playerId 
-                    ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
-                    : p
-                ));
-                setCurrentWave(prev => prev + 1);
-                setIsIntermission(true);
-                setWaveStartCountdown(INTERMISSION_TIME);
-                setGameStatus("playing"); 
+                const waveForPick = currentWave + 1;
+
+                const updatedPlayers = players.map(p => 
+                    p.id === playerId 
+                        ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
+                        : p
+                );
+                setPlayers(updatedPlayers);
+                
+                const allPlayersDone = updatedPlayers.every(p => {
+                    const isEligible = p.unlockedElements.length < 8;
+                    const hasPicked = p.unlockedElements.includes(element) || p.id !== playerId;
+                    return !isEligible || (p.id === playerId);
+                });
+                
+                const everyoneEligibleHasPicked = updatedPlayers.every(p => {
+                     // A player is eligible if they have less than 8 elements.
+                    const isEligibleToPick = p.unlockedElements.length < 8;
+                    if (!isEligibleToPick) return true; // If not eligible, they are "done".
+                    
+                    // Check if they have more elements than they started with. 
+                    // This implies they have picked at least once.
+                    // This logic is a bit brittle, assumes initial state is just 'neutral'.
+                    const hasPlayerPickedThisRound = p.unlockedElements.length > (players.find(op => op.id === p.id)?.unlockedElements.length || 0);
+                    return hasPlayerPickedThisRound;
+                });
+                
+                const shouldContinue = updatedPlayers.every(p => {
+                    // This is the wave where a pick is granted
+                    const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
+                    if (!needsToPick) return true; // No pick needed, so they are "done"
+
+                    // If they are eligible to pick (not maxed out)
+                    if (p.unlockedElements.length < 8) {
+                        // Check if their element list has grown since the round started
+                        const originalPlayerState = players.find(op => op.id === p.id);
+                        return p.unlockedElements.length > (originalPlayerState?.unlockedElements.length ?? 0);
+                    }
+                    return true; // Already maxed out elements, so they are "done"
+                });
+
+
+                if (shouldContinue) {
+                    setCurrentWave(waveForPick);
+                    setIsIntermission(true);
+                    setWaveStartCountdown(INTERMISSION_TIME);
+                    setGameStatus("playing");
+                }
                 break;
             }
             case 'start_wave_now':
