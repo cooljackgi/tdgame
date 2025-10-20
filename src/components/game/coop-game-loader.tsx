@@ -686,7 +686,7 @@ export default function CoopGameLoader() {
               setGameState(gs => ({ ...gs, lives: gs.lives + livesGainedThisTick }));
           }
           if (resourcesGainedThisTick > 0) {
-              setPlayers(ps => ps.map(p => ({...p, resources: p.resources + Math.floor(resourcesGainedThisTick / ps.length)})));
+              setPlayers(ps => ps.map(p => ({ ...p, resources: p.resources + Math.floor(resourcesGainedThisTick / ps.length) })));
               setTotalKilled(k => k + killedThisTick);
           }
 
