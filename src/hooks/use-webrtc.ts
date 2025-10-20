@@ -219,13 +219,36 @@ export function useWebRTC(
     }, [setupDataChannelEvents]);
     
     useEffect(() => {
-        // --- PRECONDITIONS ---
-        // Do not start if essential info is missing. The hook will re-run when they are available.
         if (!gameId || !user || typeof isHost !== 'boolean') {
-          return;
+            return;
         }
 
         let stopped = false;
+        
+        const cleanup = () => {
+            if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = undefined; }
+            if (periodicLogIntervalRef.current) { clearInterval(periodicLogIntervalRef.current); periodicLogIntervalRef.current = undefined; }
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
+            
+            const ws = signalingSocketRef.current;
+            if (ws) {
+              ws.onclose = null;
+              ws.close();
+              signalingSocketRef.current = null;
+            }
+            const pc = peerConnectionRef.current;
+            if (pc) {
+                pc.onconnectionstatechange = null;
+                pc.onicecandidate = null;
+                pc.ondatachannel = null;
+                pc.close();
+                peerConnectionRef.current = null;
+            }
+            setIsConnected(false);
+            gameDataChannelRef.current = null;
+            actionsChannelRef.current = null;
+        }
         
         const connect = () => {
              if (stopped) return;
@@ -263,14 +286,41 @@ export function useWebRTC(
                 sendHello();
                 if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                 helloIntervalRef.current = setInterval(sendHello, 25000);
+                
+                if (isHost) {
+                    if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
+                      peerConnectionRef.current = createPeerConnection(gameId, currentRole);
+                    }
+                    const pc = peerConnectionRef.current!;
+
+                    if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
+                      const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
+                      logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: gdc.label });
+                      setupDataChannelEvents(gdc);
+                    }
+                    if(!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
+                        const ac = pc.createDataChannel('actions', { ordered: true });
+                        logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: ac.label });
+                        setupDataChannelEvents(ac);
+                    }
+
+                    pc.createOffer()
+                      .then(offer => pc.setLocalDescription(offer))
+                      .then(() => {
+                        const offerMsg = { kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription };
+                        if(ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify(offerMsg));
+                            logWebRTCEvent(gameId, currentRole, 'PC_OFFER_CREATED_EAGER');
+                        }
+                      })
+                      .catch(e => console.error('Offer failed', e));
+                }
             };
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.from && msg.from === selfIdRef.current) return;
                 
-                // The native WebSocket API handles ping/pong automatically. 
-                // We just need to handle our application-level messages.
                 if(msg.type === 'ping') {
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
@@ -285,27 +335,8 @@ export function useWebRTC(
                 if(!pc) return;
                 
                 try {
-                    if (msg.type === 'hello' && isHost) {
-                        if (pc.signalingState !== 'stable') return;
-
-                        if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
-                          const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
-                          logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: gdc.label });
-                          setupDataChannelEvents(gdc); // Setup handlers for host
-                        }
-                        if(!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
-                            const ac = pc.createDataChannel('actions', { ordered: true });
-                            logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: ac.label });
-                            setupDataChannelEvents(ac); // Setup handlers for host
-                        }
-                        
-                        const offer = await pc.createOffer();
-                        await pc.setLocalDescription(offer);
-                        const offerMsg = { kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription };
-                        ws.send(JSON.stringify(offerMsg));
-                        logWebRTCEvent(gameId, currentRole, 'PC_OFFER_CREATED_REHELLO');
-                    
-                    } else if (msg.type === 'offer' && !isHost) {
+                    // This logic is now only needed for the CLIENT side
+                    if (msg.type === 'offer' && !isHost) {
                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
@@ -345,6 +376,7 @@ export function useWebRTC(
             };
         };
 
+        cleanup(); // Clean up any previous state before starting
         connect();
 
         if (!statsIntervalRef.current) {
@@ -388,22 +420,7 @@ export function useWebRTC(
 
         return () => {
             stopped = true;
-            if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = undefined; }
-            if (periodicLogIntervalRef.current) { clearInterval(periodicLogIntervalRef.current); periodicLogIntervalRef.current = undefined; }
-            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-            if (helloIntervalRef.current) clearInterval(helloIntervalRef.current);
-            
-            const ws = signalingSocketRef.current;
-            if (ws) {
-              ws.onclose = null;
-              ws.close();
-              signalingSocketRef.current = null;
-            }
-            if (peerConnectionRef.current) {
-                peerConnectionRef.current.close();
-                peerConnectionRef.current = null;
-            }
-            setIsConnected(false);
+            cleanup();
         };
     }, [gameId, isHost, user, isMonitor, createPeerConnection, setupDataChannelEvents]);
 
