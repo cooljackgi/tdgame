@@ -296,8 +296,7 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { playerId, element } = payload;
-                const waveForPick = currentWave + 1;
-
+                
                 const updatedPlayers = players.map(p => 
                     p.id === playerId 
                         ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
@@ -305,41 +304,23 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
                 
-                const allPlayersDone = updatedPlayers.every(p => {
-                    const isEligible = p.unlockedElements.length < 8;
-                    const hasPicked = p.unlockedElements.includes(element) || p.id !== playerId;
-                    return !isEligible || (p.id === playerId);
-                });
-                
-                const everyoneEligibleHasPicked = updatedPlayers.every(p => {
-                     // A player is eligible if they have less than 8 elements.
-                    const isEligibleToPick = p.unlockedElements.length < 8;
-                    if (!isEligibleToPick) return true; // If not eligible, they are "done".
-                    
-                    // Check if they have more elements than they started with. 
-                    // This implies they have picked at least once.
-                    // This logic is a bit brittle, assumes initial state is just 'neutral'.
-                    const hasPlayerPickedThisRound = p.unlockedElements.length > (players.find(op => op.id === p.id)?.unlockedElements.length || 0);
-                    return hasPlayerPickedThisRound;
-                });
-                
+                // Check if all players who are eligible to pick have made a selection this round
                 const shouldContinue = updatedPlayers.every(p => {
-                    // This is the wave where a pick is granted
+                    const waveForPick = currentWave + 1; // The wave they just finished
                     const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
                     if (!needsToPick) return true; // No pick needed, so they are "done"
 
-                    // If they are eligible to pick (not maxed out)
-                    if (p.unlockedElements.length < 8) {
-                        // Check if their element list has grown since the round started
+                    if (p.unlockedElements.length < 8) { // Are they eligible to pick?
                         const originalPlayerState = players.find(op => op.id === p.id);
+                        // Check if their element list has grown since the round started.
+                        // This implies they've made their pick for this round.
                         return p.unlockedElements.length > (originalPlayerState?.unlockedElements.length ?? 0);
                     }
                     return true; // Already maxed out elements, so they are "done"
                 });
 
-
                 if (shouldContinue) {
-                    setCurrentWave(waveForPick);
+                    setCurrentWave(prev => prev + 1);
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
                     setGameStatus("playing");
@@ -438,7 +419,9 @@ export default function CoopGameLoader() {
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
-                if (currentRole === 'player1') {
+                // Host loads its state directly from Firestore ONCE, then takes over.
+                // Subsequent Firestore updates are for reconnecting clients.
+                if (currentRole === 'player1' && !gameDataLoaded) {
                     setPlayers(normalizePlayers(gameData.players));
                     setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
                     setTowersByCell(gameData.towersByCell || {});
@@ -448,6 +431,7 @@ export default function CoopGameLoader() {
                     setGameStatus(gameData.gameStatus || 'waiting');
                 }
                 
+                // Player 2 also loads the initial state to get ready.
                 if(currentRole === 'player2' && players.length === 0){
                     setPlayers(normalizePlayers(gameData.players));
                 }
@@ -474,7 +458,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, players.length]);
+  }, [user, gameId, router, toast, players.length, gameDataLoaded]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
