@@ -135,7 +135,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
-  const showNextWaveButton = isIntermission && gameStatus === 'playing';
+  const showNextWaveButton = (isIntermission && gameStatus === 'playing') || gameStatus === 'waiting';
   const canStartWave = !isSpectator && (!isCoop || isHost);
 
   const maxLives = difficultyModifiers[difficulty].startLives;
@@ -299,7 +299,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             >
               {gameStatus === 'playing' ? <Pause /> : <Play />}
               <span className="text-[11px] mt-1">
-                {gameStatus === 'playing' ? 'Pause' : gameStatus === 'waiting' ? 'Start' : 'Weiter'}
+                {gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' && !isHost ? 'Wartet...' : 'Weiter')}
               </span>
             </Button>
 

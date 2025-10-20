@@ -347,7 +347,11 @@ export default function CoopGameLoader() {
                 break;
             }
             case 'start_wave_now':
-                if (isIntermission) {
+                if (gameStatus === 'waiting') {
+                    setGameStatus('playing');
+                    setIsIntermission(true);
+                    setWaveStartCountdown(INTERMISSION_TIME);
+                } else if (isIntermission) {
                     if (countdownRef.current) window.clearInterval(countdownRef.current);
                     countdownRef.current = null;
                     startWave(currentWave);
@@ -355,7 +359,7 @@ export default function CoopGameLoader() {
                 break;
         }
         setHostRevision(r => r + 1);
-    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave]);
+    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus]);
 
 
     const handleActionData = useCallback((msg: any) => {

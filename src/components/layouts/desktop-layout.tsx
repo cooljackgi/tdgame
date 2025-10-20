@@ -131,7 +131,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
 
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
-  const showNextWaveButton = isIntermission && gameStatus === 'playing';
+  const showNextWaveButton = (isIntermission && gameStatus === 'playing') || gameStatus === 'waiting';
   const canStartWave = !isSpectator && (!isCoop || isHost);
   
   const maxLives = difficultyModifiers[difficulty].startLives;
@@ -175,9 +175,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
         </div>
          <Card className="p-4 space-y-2">
           <div className="flex justify-around items-center">
-            <Button onClick={handleGameControl} variant="outline" size="lg" disabled={gameStatus === 'gameover' || gameStatus === 'picking-element' || (gameStatus === 'waiting' && !isHost) || isSpectator}>
+             <Button onClick={handleGameControl} variant="outline" size="lg" disabled={gameStatus === 'gameover' || gameStatus === 'picking-element' || (gameStatus === 'waiting' && !isHost) || isSpectator}>
               {gameStatus === 'playing' ? <Pause /> : <Play />}
-              <span className="ml-2">{gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' ? 'Start' : 'Weiter')}</span>
+              <span className="ml-2">{gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' && !isHost ? 'Wartet...' : 'Weiter')}</span>
             </Button>
             <Button onClick={resetGame} variant="destructive" size="lg">
               <LogOut />
