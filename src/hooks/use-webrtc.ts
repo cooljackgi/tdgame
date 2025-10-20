@@ -268,23 +268,28 @@ export function useWebRTC(
             ws.onopen = () => {
                 backoffRef.current = 0;
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_OPEN');
-                if (!isHostRef.current) {
-                    const sendHello = () => {
-                       if (ws.readyState === WebSocket.OPEN) {
-                         const msg = { kind:'signal', type:'hello', from:selfIdRef.current };
-                         ws.send(JSON.stringify(msg));
-                       }
-                    };
-                    sendHello();
-                    if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
-                    helloIntervalRef.current = setInterval(sendHello, 2000);
-                }
+                const sendHello = () => {
+                   if (ws.readyState === WebSocket.OPEN) {
+                     const msg = { kind:'signal', type:'hello', from:selfIdRef.current };
+                     ws.send(JSON.stringify(msg));
+                   }
+                };
+                sendHello();
+                if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
+                helloIntervalRef.current = setInterval(sendHello, 25000);
             };
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.from && msg.from === selfIdRef.current) return;
                 
+                // The native WebSocket API handles ping/pong automatically. 
+                // We just need to handle our application-level messages.
+                if(msg.type === 'ping') {
+                    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
+                    return;
+                }
+
                 logWebRTCEvent(gid, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
 
                 if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
@@ -315,9 +320,6 @@ export function useWebRTC(
                         logWebRTCEvent(gid, currentRole, 'PC_OFFER_CREATED_REHELLO');
                     
                     } else if (msg.type === 'offer' && !isHostRef.current) {
-                        if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
-                        helloIntervalRef.current = undefined;
-
                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);

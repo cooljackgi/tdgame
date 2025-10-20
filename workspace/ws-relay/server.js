@@ -106,10 +106,24 @@ wss.on("connection", (ws, request) => {
 
     // A message from a monitor is ignored.
     if (ws.__isMonitor) return;
+    
+    let msgObj;
+    try {
+        msgObj = JSON.parse(data.toString());
+    } catch(e) {
+        // Not a JSON message, relay as is
+    }
 
+    if (msgObj && msgObj.type === 'hello') {
+        // This is our manual keep-alive. Mark the connection as alive.
+        ws.isAlive = true;
+        // console.log(`[RELAY] Received hello for room ${gameId}`);
+        return; // Don't relay hello messages
+    }
+    
     // A message from a player is broadcast to the other player and all monitors.
     const messageString = data.toString();
-    console.log(`[RELAY] Broadcasting from player in room ${gameId}:`, messageString.substring(0, 100));
+    // console.log(`[RELAY] Broadcasting from player in room ${gameId}:`, messageString.substring(0, 100));
     
     // Send to the other player in the room.
     for (const peer of room.players) {
@@ -161,7 +175,9 @@ const interval = setInterval(() => {
       return ws.terminate();
     }
     ws.isAlive = false;
-    ws.ping();
+    // We now rely on the client to send 'hello' messages instead of ping/pong.
+    // The client-side ping is just to keep its own connection alive from its end if needed.
+    // ws.ping(); 
   });
 }, 30000);
 
