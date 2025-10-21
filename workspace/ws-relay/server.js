@@ -154,7 +154,8 @@ wss.on("connection", (ws, request) => {
 
 // Cloud Run Upgrade-Handling
 server.on("upgrade", (request, socket, head) => {
-  const { pathname } = url.parse(request.url);
+  // CORRECTED: Parse the URL with `true` to correctly separate pathname and query.
+  const { pathname } = url.parse(request.url, true);
   console.log(`[UPGRADE] Attempt for path: ${pathname}`);
 
   if (pathname !== "/ws") {
