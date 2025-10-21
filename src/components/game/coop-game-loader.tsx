@@ -69,7 +69,14 @@ export default function CoopGameLoader() {
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
   const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, placedTowers.map(t => t.position), 12, 12) || [], [placedTowers]);
-  const localPlayer = useMemo(() => players.find(p => p.id === localPlayerId), [players, localPlayerId]);
+  
+  const localPlayer = useMemo(() => {
+    const p = players.find(p => p.id === localPlayerId);
+    if (p) return p;
+    // Fallback (verhindert Crashes in Kindkomponenten)
+    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'] } : null;
+  }, [players, localPlayerId]);
+
 
   // Host-side Game Loop & State Refs
   const countdownRef = useRef<number | null>(null);
@@ -435,64 +442,71 @@ export default function CoopGameLoader() {
     }, [hostRevision, isGameHost, broadcastSnapshot]);
 
 
-  useEffect(() => {
-    let gameUnsubscribe: Unsubscribe | undefined;
-    
-    const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
-        router.push('/');
-        return;
-      }
-      setUser(currentUser);
+    const didSetLoadedRef = useRef(false);
 
-      const gameDocRef = doc(db, 'games', gameId);
-      gameUnsubscribe = onSnapshot(gameDocRef, async (snap) => {
-          if (!snap.exists()) {
-               toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
-               router.push('/');
-               return;
-          }
-          
-          const gameData = snap.data();
-          if (!gameData) return;
-          
-          let currentRole: 'player1' | 'player2' | 'spectator' = 'spectator';
-          if(gameData.player1Id === currentUser.uid) currentRole = 'player1';
-          else if(gameData.player2Id === currentUser.uid) currentRole = 'player2';
+    useEffect(() => {
+      if (!gameId) return;
 
-          setLocalPlayerId(currentRole);
-          setDifficulty(gameData.difficulty || 'Normal');
-          
-          // Host loads state from DB on first load, then owns it.
-          if (currentRole === 'player1' && !gameDataLoaded) {
-              setPlayers(normalizePlayers(gameData.players));
-              setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
-              setTowersByCell(gameData.towersByCell || {});
-              setCurrentWave(gameData.currentWave || 0);
-              setIsIntermission(gameData.isIntermission ?? true);
-              setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
-              setGameStatus(gameData.gameStatus || 'waiting');
-          } else if(currentRole !== 'player1') { 
-              // Client always trusts the data from the DB initially
-               setPlayers(normalizePlayers(gameData.players));
-          }
-          
-          setGameDataLoaded(true);
-          setLoading(false);
-      }, (error) => {
-        console.error("Error listening to game document:", error);
-        toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
-        router.push('/');
+      const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (!currentUser) {
+          toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
+          router.push('/');
+          return;
+        }
+        setUser(currentUser);
       });
-    });
 
-    return () => {
-        authUnsubscribe();
-        if (gameUnsubscribe) gameUnsubscribe();
-    };
-  }, [gameId, router, toast, gameDataLoaded]); // Removed dependencies that cause re-runs
-  
+      return () => authUnsubscribe();
+    }, [gameId, router, toast]);
+
+    useEffect(() => {
+        if (!user || !gameId) return;
+        const gameDocRef = doc(db, 'games', gameId);
+
+        const unsub = onSnapshot(gameDocRef, (snap) => {
+            if (!snap.exists()) {
+                toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
+                router.push('/');
+                return;
+            }
+            const data = snap.data();
+            if (!data) return;
+
+            // Rolle bestimmen
+            let role: 'player1' | 'player2' | 'spectator' = 'spectator';
+            if (data.player1Id === user.uid) role = 'player1';
+            else if (data.player2Id === user.uid) role = 'player2';
+            setLocalPlayerId(role);
+
+            // Host lädt nur einmal initial, Client vertraut DB initial
+            if (role === 'player1' && !didSetLoadedRef.current) {
+                setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                setTowersByCell(data.towersByCell || {});
+                setCurrentWave(data.currentWave || 0);
+                setIsIntermission(data.isIntermission ?? true);
+                setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
+                setGameStatus(data.gameStatus || 'waiting');
+            }
+            
+            // Players IMMER normalisieren
+            setPlayers(normalizePlayers(data.players));
+            setDifficulty(data.difficulty || 'Normal');
+            
+            if (!didSetLoadedRef.current) {
+              didSetLoadedRef.current = true;
+              setGameDataLoaded(true);
+              setLoading(false);
+            }
+
+        }, (err) => {
+            console.error("Error listening to game document:", err);
+            toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
+            router.push('/');
+        });
+
+        return () => unsub();
+    }, [user, gameId, router, toast]);
+
     // Intermission countdown timer (HOST ONLY)
     useEffect(() => {
         if (!isGameHost || !isIntermission || gameStatus !== 'playing') {
@@ -734,7 +748,7 @@ export default function CoopGameLoader() {
     });
   };
 
-  if (loading || !gameDataLoaded || !localPlayerId || !localPlayer) {
+  if (loading || !gameDataLoaded || !localPlayerId) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
@@ -758,7 +772,7 @@ export default function CoopGameLoader() {
                 players={players} 
                 setPlayers={setPlayers} 
                 gameState={gameState} 
-                localPlayer={localPlayer}
+                localPlayer={localPlayer!}
                 currentWave={currentWave} 
                 totalWaves={waves.length} 
                 difficulty={difficulty} 
@@ -822,5 +836,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
+    
 
     
