@@ -12,7 +12,7 @@ export type Node = {
 };
 
 export type Player = {
-  id: 'player1' | 'player2';
+  id: 'player1' | 'player2' | 'spectator';
   name: string;
   avatarUrl?: string | null;
   resources: number;

@@ -19,7 +19,7 @@ import { Separator } from '../ui/separator';
 
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
-  Attack, DamageNumber, SplashRing, Difficulty
+  Attack, DamageNumber, SplashRing, Difficulty, PingKind
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -77,6 +77,7 @@ interface MobileLayoutProps {
   firingTowerIds: Set<string>;
   allTowers: Tower[];
   attacks?: Attack[];
+  sendPing?: (kind: PingKind, row: number, col: number) => void;
     // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -100,6 +101,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     firingTowerIds,
     allTowers,
     attacks,
+    sendPing,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -209,6 +211,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           onSellTower={handleSellTower}
           allTowers={allTowers}
           localPlayer={localPlayer}
+          onPing={sendPing}
         >
           {/* TOP OVERLAYS */}
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">

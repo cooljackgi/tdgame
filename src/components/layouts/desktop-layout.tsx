@@ -14,7 +14,7 @@ import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -72,6 +72,7 @@ interface DesktopLayoutProps {
   firingTowerIds: Set<string>;
   allTowers: Tower[];
   attacks?: Attack[];
+  sendPing?: (kind: PingKind, row: number, col: number) => void;
   // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -102,6 +103,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     firingTowerIds,
     allTowers,
     attacks,
+    sendPing,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -231,6 +233,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 onSellTower={handleSellTower}
                 allTowers={allTowers}
                 localPlayer={localPlayer}
+                onPing={sendPing}
             />
         </div>
       </div>
