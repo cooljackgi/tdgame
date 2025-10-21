@@ -117,8 +117,8 @@ wss.on("connection", (ws, request) => {
     if (msgObj && msgObj.type === 'hello') {
         // This is our manual keep-alive. Mark the connection as alive.
         ws.isAlive = true;
-        // console.log(`[RELAY] Received hello for room ${gameId}`);
-        return; // Don't relay hello messages
+        // console.log(`[RELAY] Received hello for room ${gameId}, will relay.`);
+        // DO NOT return here, we must relay this message!
     }
     
     // A message from a player is broadcast to the other player and all monitors.
