@@ -4,11 +4,11 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Target, RefreshCcw } from 'lucide-react';
+import { Target, RefreshCcw, Hand, AlertTriangle, Shield, Swords } from 'lucide-react';
 import TowerComponent, { TOWER_MUZZLE_POINTS } from "@/components/game/Tower";
 import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
@@ -141,6 +141,7 @@ type GameBoardProps = {
   allTowers: Tower[];
   localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined;
   attacks?: Attack[];
+  onPing?: (kind: PingKind, row: number, col: number) => void;
 };
 
 
@@ -373,6 +374,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     onSellTower,
     allTowers,
     localPlayer,
+    onPing,
 }, ref) => {
 
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -410,6 +412,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const isPanningRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, row: number, col: number } | null>(null);
+
   const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
   const lastTouchRef = useRef<{dist: number; cx: number; cy: number} | null>(null);
 
@@ -735,8 +739,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     return pathString;
   }, [selectedTowerToBuild, hoveredCell, placedTowers]);
 
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    closeContextMenu();
     if (e.button !== 0) return;
     isPanningRef.current = true;
     panStartRef.current = { x: e.clientX, y: e.clientY, panX: panRef.current.x, panY: panRef.current.y };
@@ -785,6 +793,25 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         }
     } else {
         cancelInteractions();
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (playerRole === 'spectator') return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const worldX = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+    const worldY = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
+
+    const col = Math.floor(worldX / CELL_SIZE) + 1;
+    const row = Math.floor(worldY / CELL_SIZE) + 1;
+
+    if (row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS) {
+      setContextMenu({ x: e.clientX, y: e.clientY, row, col });
     }
   };
   
@@ -970,6 +997,13 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     }
   }, [onFocusTower, selectedTowerToBuild]);
 
+   const handlePingSelect = (kind: PingKind) => {
+    if (contextMenu && onPing) {
+      onPing(kind, contextMenu.row, contextMenu.col);
+    }
+    closeContextMenu();
+  };
+
   return (
     <TooltipProvider>
       <Card 
@@ -983,6 +1017,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onContextMenu={handleContextMenu}
         onMouseLeave={() => { setHoveredCell(null); }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -993,6 +1028,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
           onClick={(e) => {
+            closeContextMenu();
             if (suppressNextClickRef.current) {
               suppressNextClickRef.current = false;
               e.stopPropagation();
@@ -1269,6 +1305,26 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             style={{ zIndex: 20, left: 0, top: 0, width: '100%', height: '100%' }}
         />
         
+        {contextMenu && (
+            <div
+            style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 50 }}
+            className="flex flex-col gap-1 bg-card/80 backdrop-blur-md p-1 rounded-lg border border-primary/50 shadow-lg"
+            >
+                <Button variant="ghost" className="justify-start px-2 py-1 h-auto" onClick={() => handlePingSelect('attention')}>
+                    <AlertTriangle className="mr-2 h-4 w-4 text-yellow-400" /> Achtung!
+                </Button>
+                <Button variant="ghost" className="justify-start px-2 py-1 h-auto" onClick={() => handlePingSelect('defend')}>
+                    <Shield className="mr-2 h-4 w-4 text-blue-400" /> Verteidig.
+                </Button>
+                <Button variant="ghost" className="justify-start px-2 py-1 h-auto" onClick={() => handlePingSelect('attack')}>
+                    <Swords className="mr-2 h-4 w-4 text-red-400" /> Angriff
+                </Button>
+                 <Button variant="ghost" className="justify-start px-2 py-1 h-auto" onClick={() => handlePingSelect('build')}>
+                    <Hand className="mr-2 h-4 w-4 text-green-400" /> Hier bauen
+                </Button>
+            </div>
+        )}
+
         <div 
           className="absolute bottom-2 right-2 z-50 bg-card/50 backdrop-blur-sm p-1 rounded-md flex items-center gap-1"
           onMouseDown={(e) => e.stopPropagation()}
@@ -1287,3 +1343,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
