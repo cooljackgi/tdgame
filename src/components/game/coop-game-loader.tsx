@@ -494,7 +494,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, gameDataLoaded]);
+  }, [user, gameId, router, toast]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
