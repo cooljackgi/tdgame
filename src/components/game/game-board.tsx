@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -27,6 +27,9 @@ export type GameBoardHandle = {
     queueAttacks: (attacks: Attack[]) => void;
     queueDamageNumbers: (damageNumbers: DamageNumber[]) => void;
     queueSplashRings: (splashRings: SplashRing[]) => void;
+    queuePing: (p: PingPayload) => void;
+    queueRequest: (r: RequestPayload) => void;
+    resolveRequest: (res: RequestResolve) => void;
 };
 
 
@@ -382,6 +385,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const attacksPoolRef = useRef(createPool<LiveAttack>(150));
   const splashRingsPoolRef = useRef(createPool<LiveSplashRing>(60));
   const damageNumbersPoolRef = useRef(createPool<LiveDamageNumber>(100));
+  
+  const pingsRef = useRef<Map<string, PingPayload>>(new Map());
+  const requestsRef = useRef<Map<string, RequestPayload>>(new Map());
 
   const [hoveredCell, setHoveredCell] = useState<Node|null>(null);
 
@@ -451,6 +457,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     queueSplashRings: (splashRingsToQueue) => {
         incomingRingsRef.current.push(...splashRingsToQueue);
     },
+    queuePing: (p) => { pingsRef.current.set(p.id, p); setTimeout(() => pingsRef.current.delete(p.id), p.ttl ?? 4000); },
+    queueRequest: (r) => { requestsRef.current.set(r.id, r); },
+    resolveRequest: (res) => { requestsRef.current.delete(res.id); /* optional: kleinen „✔/✖“-Pop zeigen */ },
   }));
 
   useEffect(() => {
@@ -663,6 +672,21 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             ctx.shadowColor = 'black';
             ctx.shadowBlur = dn.isCrit ? 4 : 2;
             ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
+        });
+        
+        pingsRef.current.forEach((p) => {
+          const { x, y } = gridToPx({ row: p.row, col: p.col });
+          const age = now - p.createdAt;
+          const ttl = p.ttl ?? 4000;
+          const t = Math.max(0, 1 - age/ttl);
+          ctx.save();
+          ctx.strokeStyle = p.from === 'player1' ? 'hsl(var(--primary))' : 'hsl(var(--destructive))';
+          ctx.globalAlpha = 0.25 + 0.5*t;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
         });
 
 
@@ -1196,6 +1220,44 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                   </div>
                   </>
                 )}
+                {Array.from(requestsRef.current.values()).map(r => {
+                  const pos = gridToPx({row: r.row!, col: r.col!});
+                  return (
+                    <div key={r.id}
+                      style={{ position:'absolute', left: pos.x, top: pos.y, transform:'translate(-50%,-100%)', zIndex: 40 }}
+                      className="pointer-events-auto"
+                      onClick={(e)=> e.stopPropagation()}
+                    >
+                      <div className="rounded-md bg-card/90 shadow p-2 flex gap-2 items-center">
+                        <span className="text-xs">
+                          {r.kind === 'REQUEST_SELL_TOWER' ? 'Verkaufen?' :
+                           r.kind === 'REQUEST_BUILD_AT' ? 'Hier bauen?' :
+                           r.kind === 'REQUEST_UPGRADE_TOWER' ? 'Upgrade?' : 'Aktion?'}
+                        </span>
+                        {isCoop && playerRole === 'player1' && (
+                          <>
+                            <button className="btn btn-xs" onClick={()=>{
+                              if (r.kind === 'REQUEST_SELL_TOWER' && r.row && r.col) {
+                                // This is a simplification. A real implementation would need to find the tower at row/col
+                                // and pass its ID to onSellTower. For now, this is a placeholder.
+                                const towerToSell = placedTowers.find(t => t.position.row === r.row && t.position.col === r.col);
+                                if (towerToSell) onFocusTower(towerToSell); // Focus it first
+                                setTimeout(onSellTower, 50); // Then sell
+                              } else if (r.kind === 'REQUEST_BUILD_AT' && r.row && r.col) {
+                                // Build action is initiated from toolbar, this just confirms location.
+                              }
+                              requestsRef.current.delete(r.id);
+                            }}>Ja</button>
+                            <button className="btn btn-xs" onClick={()=>{
+                              requestsRef.current.delete(r.id);
+                            }}>Nein</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
                 <div ref={hoverOverlayRef} className="absolute transition-opacity duration-100 opacity-0 pointer-events-none border-2 border-white/25 bg-white/5" style={{width: CELL_SIZE, height: CELL_SIZE}} />
             </div>
           </div>

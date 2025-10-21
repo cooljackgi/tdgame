@@ -196,4 +196,32 @@ export type Wave = {
   enemies: WaveEnemyData;
 };
 
+// --- PING & REQUEST SYSTEM ---
+
+export type PingKind = 'attention' | 'defend' | 'attack' | 'build' | 'sell';
+export type PingPayload = {
+  id: string;
+  kind: PingKind;
+  from: 'player1' | 'player2';
+  row: number;
+  col: number;
+  msg?: string;
+  ttl?: number;
+  createdAt: number;
+};
+
+export type RequestKind = 'REQUEST_BUILD_AT' | 'REQUEST_SELL_TOWER' | 'REQUEST_UPGRADE_TOWER';
+export type RequestPayload = {
+  id: string;
+  kind: RequestKind;
+  from: 'player1' | 'player2';
+  row?: number;
+  col?: number;
+  towerId?: string;
+  upgradeId?: string;
+  msg?: string;
+  createdAt: number;
+};
+
+export type RequestResolve = { id: string; result: 'accepted' | 'declined'; by: 'player1'|'player2'; at: number };
     

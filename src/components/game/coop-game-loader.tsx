@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, PingKind, RequestKind, RequestResolve } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -134,6 +134,15 @@ export default function CoopGameLoader() {
         setJustPlacedTowerId(payload.towerId);
         setTimeout(() => setJustPlacedTowerId(null), 400);
         break;
+      case 'PING':
+        gameBoardRef.current?.queuePing(payload);
+        return;
+      case 'REQUEST':
+        gameBoardRef.current?.queueRequest(payload);
+        return;
+      case 'REQUEST_RESOLVE':
+        gameBoardRef.current?.resolveRequest(payload);
+        return;
     }
   }, [isGameHost]);
 
@@ -341,8 +350,19 @@ export default function CoopGameLoader() {
             case 'SELL_TOWER_REQUEST':       onHostAction('sell', payload); return;
             case 'PICK_ELEMENT_REQUEST':     onHostAction('pick_element', payload); return;
             case 'START_WAVE_NOW_REQUEST':   onHostAction('start_wave_now', payload); return;
+            case 'PING_REQUEST':
+                gameBoardRef.current?.queuePing(payload);
+                sendGameData('PING', payload);
+                return;
+            case 'REQUEST':
+                gameBoardRef.current?.queueRequest(payload);
+                sendGameData('REQUEST', payload);
+                return;
+            case 'REQUEST_RESOLVE':
+                sendGameData('REQUEST_RESOLVE', payload);
+                return;
         }
-    }, [isGameHost, onHostAction]);
+    }, [isGameHost, onHostAction, sendGameData]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
 
@@ -379,6 +399,32 @@ export default function CoopGameLoader() {
             onLocalAction(action, finalPayload);
         }
     }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
+  
+  const sendPing = useCallback((kind: PingKind, row: number, col: number, msg?: string) => {
+      if (!localPlayerId) return;
+      const payload: PingPayload = {
+        id: crypto.randomUUID(),
+        kind, from: localPlayerId as 'player1' | 'player2', row, col, msg, createdAt: Date.now(), ttl: 4000,
+      };
+      if (isGameHost) {
+        gameBoardRef.current?.queuePing(payload);
+        sendGameData('PING', payload);
+      } else {
+        sendAction('PING_REQUEST', payload);
+      }
+    }, [isGameHost, localPlayerId, sendAction, sendGameData]);
+
+    const sendRequest = useCallback((req: Omit<RequestPayload,'id'|'from'|'createdAt'>) => {
+      if (!localPlayerId) return;
+      const payload: RequestPayload = { id: crypto.randomUUID(), from: localPlayerId as 'player1' | 'player2', createdAt: Date.now(), ...req };
+      if (isGameHost) {
+        gameBoardRef.current?.queueRequest(payload);
+        sendGameData('REQUEST', payload);
+      } else {
+        sendAction('REQUEST', payload);
+      }
+    }, [isGameHost, localPlayerId, sendAction, sendGameData]);
+
 
   useEffect(() => {
     let gameUnsubscribe: Unsubscribe | undefined;
