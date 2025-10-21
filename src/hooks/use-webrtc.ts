@@ -121,12 +121,15 @@ export function useWebRTC(
 
     const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
         const handleOpen = () => {
+            if (!gameId) return;
+            logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_OPEN' : 'DC_OPEN', { label: dc.label });
             const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
             const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
             if (isGameOpen && isActionsOpen) setIsConnected(true);
         };
 
         const handleClose = () => {
+            if (gameId) logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_CLOSE' : 'DC_CLOSE', { label: dc.label });
             setIsConnected(false);
         };
 
@@ -153,7 +156,7 @@ export function useWebRTC(
         } else if (dc.label === 'actions') {
             actionsChannelRef.current = dc;
         }
-    }, []);
+    }, [gameId, isHost]);
 
     const createPeerConnection = useCallback((gid: string, role: string) => {
         if (!gid) return null;
@@ -286,41 +289,36 @@ export function useWebRTC(
                 sendHello();
                 if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
                 helloIntervalRef.current = setInterval(sendHello, 25000);
-                
-                if (isHost) {
-                    if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
-                      peerConnectionRef.current = createPeerConnection(gameId, currentRole);
-                    }
-                    const pc = peerConnectionRef.current!;
-
-                    if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
-                      const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
-                      logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: gdc.label });
-                      setupDataChannelEvents(gdc);
-                    }
-                    if(!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
-                        const ac = pc.createDataChannel('actions', { ordered: true });
-                        logWebRTCEvent(gameId, currentRole, 'DC_CREATED', { label: ac.label });
-                        setupDataChannelEvents(ac);
-                    }
-
-                    pc.createOffer()
-                      .then(offer => pc.setLocalDescription(offer))
-                      .then(() => {
-                        const offerMsg = { kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription };
-                        if(ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify(offerMsg));
-                            logWebRTCEvent(gameId, currentRole, 'PC_OFFER_CREATED_EAGER');
-                        }
-                      })
-                      .catch(e => console.error('Offer failed', e));
-                }
             };
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.from && msg.from === selfIdRef.current) return;
                 
+                if (msg.type === 'hello' && isHost) {
+                    if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
+                      peerConnectionRef.current = createPeerConnection(gameId, currentRole);
+                    }
+                    const pc = peerConnectionRef.current!;
+                    if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
+                      const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
+                      setupDataChannelEvents(gdc);
+                    }
+                    if (!actionsChannelRef.current || actionsChannelRef.current.readyState !== 'open') {
+                      const ac = pc.createDataChannel('actions', { ordered: true });
+                      setupDataChannelEvents(ac);
+                    }
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    if (signalingSocketRef.current?.readyState === WebSocket.OPEN) {
+                      signalingSocketRef.current.send(JSON.stringify({
+                        kind:'signal', type:'offer', from:selfIdRef.current, payload: pc.localDescription
+                      }));
+                      logWebRTCEvent(gameId, currentRole, 'PC_OFFER_CREATED_REHELLO');
+                    }
+                    return;
+                }
+
                 if(msg.type === 'ping') {
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
@@ -335,7 +333,6 @@ export function useWebRTC(
                 if(!pc) return;
                 
                 try {
-                    // This logic is now only needed for the CLIENT side
                     if (msg.type === 'offer' && !isHost) {
                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
                         const answer = await pc.createAnswer();
@@ -376,7 +373,7 @@ export function useWebRTC(
             };
         };
 
-        cleanup(); // Clean up any previous state before starting
+        cleanup();
         connect();
 
         if (!statsIntervalRef.current) {
