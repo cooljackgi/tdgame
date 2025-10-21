@@ -802,7 +802,7 @@ export default function CoopGameLoader() {
                 totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
                 totalKilled={totalKilled}
                 totalLeaked={totalLeaked}
-                isIntermission={isIntermission} 
+                isIntermission={isIntermission} P
                 waveStartCountdown={Math.max(0, Math.ceil(waveStartCountdown))}
                 intermissionTime={INTERMISSION_TIME} 
                 handleStartNextWaveNow={handleStartNextWaveNow}
@@ -836,3 +836,5 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
+    
