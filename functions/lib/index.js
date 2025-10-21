@@ -78,15 +78,14 @@ exports.joinGame = functions.https.onCall(async (data, context) => {
                 return;
             }
             const resources = gameData?.players?.player1?.resources ?? 1250;
+            // The game status is NOT changed here anymore. It remains 'waiting'.
+            // The host will trigger the start of the game from the game screen.
             transaction.update(gameRef, {
                 player2Id: uid,
                 'members': { ...gameData?.members, [uid]: true },
                 'players.player2': {
                     id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
                 },
-                gameStatus: 'playing', // Set game to playing now that P2 has joined
-                isIntermission: true,
-                waveStartCountdown: 15, // Start the actual intermission countdown
             });
         });
         return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };

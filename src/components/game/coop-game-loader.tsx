@@ -348,7 +348,15 @@ export default function CoopGameLoader() {
     }, [isGameHost, onHostAction]);
     
     // --- Hook that provides the send functions ---
-    const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
+    // IMPORTANT: This hook is only called AFTER localPlayerId is determined.
+    const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+        localPlayerId ? gameId : null, 
+        isGameHost, 
+        user, 
+        false, 
+        handleGameData, 
+        handleActionData
+    );
 
     // --- Update refs whenever the functions from useWebRTC change ---
     useEffect(() => {
@@ -450,6 +458,7 @@ export default function CoopGameLoader() {
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
+                // Host loads state from DB on first load, then owns it.
                 if (currentRole === 'player1' && !gameDataLoaded) {
                     setPlayers(normalizePlayers(gameData.players));
                     setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
@@ -458,12 +467,11 @@ export default function CoopGameLoader() {
                     setIsIntermission(gameData.isIntermission ?? true);
                     setWaveStartCountdown(gameData.waveStartCountdown ?? INTERMISSION_TIME);
                     setGameStatus(gameData.gameStatus || 'waiting');
+                } else if(currentRole !== 'player1') { 
+                    // Client always trusts the data from the DB initially
+                     setPlayers(normalizePlayers(gameData.players));
                 }
                 
-                if(currentRole === 'player2' && players.length === 0){
-                    setPlayers(normalizePlayers(gameData.players));
-                }
-
                 setGameDataLoaded(true);
                 setLoading(false);
             }, (error) => {
@@ -486,7 +494,7 @@ export default function CoopGameLoader() {
     return () => {
         if (gameUnsubscribe) gameUnsubscribe();
     };
-  }, [user, gameId, router, toast, players.length, gameDataLoaded]);
+  }, [user, gameId, router, toast, gameDataLoaded]);
 
   useEffect(() => {
     const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
