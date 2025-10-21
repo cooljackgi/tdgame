@@ -96,58 +96,10 @@ export default function CoopGameLoader() {
     setSelectedTowerToBuild(tower);
   };
 
-  // --- WebRTC Logic ---
+  // --- Refs to hold stable function references ---
+  const sendActionRef = useRef<(type: string, payload: any) => void>(() => {});
+  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
   
-  const handleGameData = useCallback((msg: any) => {
-    if (isGameHost) return;
-    const { type, payload } = msg;
-
-    switch(type) {
-      case 'GAME_STATE_SNAPSHOT':
-        setPlayers(payload.players);
-        setEnemies(payload.enemies);
-        setTowersByCell(payload.towersByCell);
-        setGameState(payload.gameState);
-        setCurrentWave(payload.currentWave);
-        setIsIntermission(payload.isIntermission);
-        setWaveStartCountdown(payload.waveStartCountdown);
-        setGameStatus(payload.gameStatus);
-        setTotalKilled(payload.totalKilled);
-        setTotalLeaked(payload.totalLeaked);
-        break;
-      case 'VFX_ATTACK':
-        gameBoardRef.current?.queueAttacks(payload);
-        break;
-      case 'VFX_DAMAGE_NUMBER':
-        gameBoardRef.current?.queueDamageNumbers(payload);
-        break;
-      case 'VFX_SPLASH':
-        gameBoardRef.current?.queueSplashRings(payload);
-        break;
-      case 'VFX_TOWER_FIRING':
-        setFiringTowerIds(new Set(payload));
-        setTimeout(() => setFiringTowerIds(new Set()), 150);
-        break;
-      case 'TOWER_UPGRADE_VFX':
-        setLastUpgradedTowerId(payload.towerId);
-        setTimeout(() => setLastUpgradedTowerId(null), 500);
-        break;
-      case 'TOWER_PLACE_VFX':
-        setJustPlacedTowerId(payload.towerId);
-        setTimeout(() => setJustPlacedTowerId(null), 400);
-        break;
-      case 'PING':
-        gameBoardRef.current?.queuePing(payload);
-        return;
-      case 'REQUEST':
-        gameBoardRef.current?.queueRequest(payload);
-        return;
-      case 'REQUEST_RESOLVE':
-        gameBoardRef.current?.resolveRequest(payload);
-        return;
-    }
-  }, [isGameHost]);
-    
     const hostCanPlace = useCallback((row: number, col: number) => {
         const occupied = Object.values(towersByCell).map(t => t.position);
         const tentative = [...occupied, { row, col }];
@@ -315,18 +267,57 @@ export default function CoopGameLoader() {
         setHostRevision(r => r + 1);
     }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus]);
     
-    // --- Refs to hold stable function references ---
-    const sendActionRef = useRef<(type: string, payload: any) => void>(() => {});
-    const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
-    
-    // --- Hook that provides the send functions ---
-    const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
+  // --- WebRTC Logic ---
+  
+  const handleGameData = useCallback((msg: any) => {
+    if (isGameHost) return;
+    const { type, payload } = msg;
 
-    // --- Update refs whenever the functions from useWebRTC change ---
-    useEffect(() => {
-      sendActionRef.current = sendAction;
-      sendGameDataRef.current = sendGameData;
-    }, [sendAction, sendGameData]);
+    switch(type) {
+      case 'GAME_STATE_SNAPSHOT':
+        setPlayers(payload.players);
+        setEnemies(payload.enemies);
+        setTowersByCell(payload.towersByCell);
+        setGameState(payload.gameState);
+        setCurrentWave(payload.currentWave);
+        setIsIntermission(payload.isIntermission);
+        setWaveStartCountdown(payload.waveStartCountdown);
+        setGameStatus(payload.gameStatus);
+        setTotalKilled(payload.totalKilled);
+        setTotalLeaked(payload.totalLeaked);
+        break;
+      case 'VFX_ATTACK':
+        gameBoardRef.current?.queueAttacks(payload);
+        break;
+      case 'VFX_DAMAGE_NUMBER':
+        gameBoardRef.current?.queueDamageNumbers(payload);
+        break;
+      case 'VFX_SPLASH':
+        gameBoardRef.current?.queueSplashRings(payload);
+        break;
+      case 'VFX_TOWER_FIRING':
+        setFiringTowerIds(new Set(payload));
+        setTimeout(() => setFiringTowerIds(new Set()), 150);
+        break;
+      case 'TOWER_UPGRADE_VFX':
+        setLastUpgradedTowerId(payload.towerId);
+        setTimeout(() => setLastUpgradedTowerId(null), 500);
+        break;
+      case 'TOWER_PLACE_VFX':
+        setJustPlacedTowerId(payload.towerId);
+        setTimeout(() => setJustPlacedTowerId(null), 400);
+        break;
+      case 'PING':
+        gameBoardRef.current?.queuePing(payload);
+        return;
+      case 'REQUEST':
+        gameBoardRef.current?.queueRequest(payload);
+        return;
+      case 'REQUEST_RESOLVE':
+        gameBoardRef.current?.resolveRequest(payload);
+        return;
+    }
+  }, [isGameHost]);
 
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -355,6 +346,15 @@ export default function CoopGameLoader() {
                 return;
         }
     }, [isGameHost, onHostAction]);
+    
+    // --- Hook that provides the send functions ---
+    const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
+
+    // --- Update refs whenever the functions from useWebRTC change ---
+    useEffect(() => {
+      sendActionRef.current = sendAction;
+      sendGameDataRef.current = sendGameData;
+    }, [sendAction, sendGameData]);
 
   useEffect(() => {
       if (isConnected && !isGameHost && localPlayerId === 'player2') {
