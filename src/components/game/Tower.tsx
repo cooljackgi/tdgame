@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { elementIcons, elementProjectileColors } from "@/lib/game-data/constants";
-import type { Element } from "@/lib/game-data/types";
+import type { Element, Player } from "@/lib/game-data/types";
 
 
 export type TowerProps = {
@@ -19,6 +19,8 @@ export type TowerProps = {
   className?: string;
   cooldownProgress?: number;
   attackSpeed?: number;
+  ownerId?: Player['id'];
+  isCoop?: boolean;
 };
 
 // Export the muzzle points to be used by the game board for projectile origins
@@ -78,6 +80,8 @@ const Tower = React.memo(function Tower({
   cooldownProgress = 1,
   isFiring = false,
   isBuffed = false,
+  ownerId,
+  isCoop = false,
 }: TowerProps) {
   const tone = element === 'fire' ? 'text-orange-400' :
                element === 'water' ? 'text-sky-400' :
@@ -95,6 +99,10 @@ const Tower = React.memo(function Tower({
   const cooldownColor = elementProjectileColors[element] || 'hsl(var(--primary))';
   
   const disableAnimations = size <= 20;
+
+  const ownerColor = isCoop 
+    ? ownerId === 'player1' ? 'hsl(217 91% 60%)' : 'hsl(0 84% 60%)' 
+    : 'rgba(30,41,59,1)'; // slate-800
 
   const renderBase = (
      <g>
@@ -117,6 +125,17 @@ const Tower = React.memo(function Tower({
              <circle cx="50" cy="68" r="30" fill="hsl(45 95% 52% / 0.4)" className="animate-aura-pulse" />
           )}
           
+          {/* Coop Owner Color Plate */}
+          {isCoop && (
+            <path
+              d="M 50 50 L 67 60 L 67 76 L 50 86 L 33 76 L 33 60 Z"
+              fill={ownerColor}
+              stroke={ownerColor}
+              strokeWidth="2"
+              opacity="0.8"
+            />
+          )}
+
           {/* Hexagonal base with upgrade details */}
           <g filter={!disableAnimations ? "url(#soft)" : undefined}>
             <path 

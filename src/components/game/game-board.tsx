@@ -276,7 +276,7 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
 }
 
 const MemoizedTower = React.memo(function GameCell({
-  tower, isFocused, isJustUpgraded, isJustBuilt, onTowerClick, cooldownProgress, variant, isFiring, isBuffed
+  tower, isFocused, isJustUpgraded, isJustBuilt, onTowerClick, cooldownProgress, variant, isFiring, isBuffed, isCoop,
 }: {
   tower: PlacedTower,
   isFocused: boolean, isJustUpgraded: boolean, isJustBuilt: boolean,
@@ -285,6 +285,7 @@ const MemoizedTower = React.memo(function GameCell({
   variant: "basic" | "sniper" | "ballista",
   isFiring: boolean,
   isBuffed: boolean,
+  isCoop: boolean,
 }) {
   const {x, y} = gridToPx(tower.position);
   
@@ -303,6 +304,8 @@ const MemoizedTower = React.memo(function GameCell({
         attackSpeed={tower.attackSpeed}
         isFiring={isFiring}
         isBuffed={isBuffed}
+        ownerId={tower.ownerId}
+        isCoop={isCoop}
       />
     </div>
   );
@@ -1090,6 +1093,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                             variant={variant}
                             isFiring={firingTowerIds.has(tower.id)}
                             isBuffed={buffedTowerIds.has(tower.id)}
+                            isCoop={isCoop}
                           />
                         )
                       })}
