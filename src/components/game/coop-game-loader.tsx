@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, PingKind, RequestKind, RequestResolve } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -95,6 +95,8 @@ export default function CoopGameLoader() {
     cancelInteractions();
     setSelectedTowerToBuild(tower);
   };
+
+  // --- WebRTC Logic ---
   
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
@@ -145,25 +147,6 @@ export default function CoopGameLoader() {
         return;
     }
   }, [isGameHost]);
-
-    const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
-
-    const broadcastSnapshot = useCallback(() => {
-        if (!isGameHost || !sendGameDataRef.current) return;
-        
-        const snapshot = {
-            players, enemies, towersByCell, gameState,
-            currentWave, isIntermission, waveStartCountdown, gameStatus,
-            totalKilled, totalLeaked,
-        };
-        sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked]);
-    
-    // This effect runs on the host to broadcast state changes.
-    useEffect(() => {
-        if (!isGameHost || hostRevision === 0) return;
-        broadcastSnapshot();
-    }, [hostRevision, isGameHost, broadcastSnapshot]);
     
     const hostCanPlace = useCallback((row: number, col: number) => {
         const occupied = Object.values(towersByCell).map(t => t.position);
@@ -297,19 +280,16 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
                 
-                // Check if all players who are eligible to pick have made a selection this round
                 const shouldContinue = updatedPlayers.every(p => {
-                    const waveForPick = currentWave + 1; // The wave they just finished
+                    const waveForPick = currentWave + 1;
                     const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
-                    if (!needsToPick) return true; // No pick needed, so they are "done"
+                    if (!needsToPick) return true;
 
-                    if (p.unlockedElements.length < 8) { // Are they eligible to pick?
+                    if (p.unlockedElements.length < 8) {
                         const originalPlayerState = players.find(op => op.id === p.id);
-                        // Check if their element list has grown since the round started.
-                        // This implies they've made their pick for this round.
                         return p.unlockedElements.length > (originalPlayerState?.unlockedElements.length ?? 0);
                     }
-                    return true; // Already maxed out elements, so they are "done"
+                    return true;
                 });
 
                 if (shouldContinue) {
@@ -334,7 +314,19 @@ export default function CoopGameLoader() {
         }
         setHostRevision(r => r + 1);
     }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus]);
+    
+    // --- Refs to hold stable function references ---
+    const sendActionRef = useRef<(type: string, payload: any) => void>(() => {});
+    const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
+    
+    // --- Hook that provides the send functions ---
+    const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
 
+    // --- Update refs whenever the functions from useWebRTC change ---
+    useEffect(() => {
+      sendActionRef.current = sendAction;
+      sendGameDataRef.current = sendGameData;
+    }, [sendAction, sendGameData]);
 
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -352,30 +344,23 @@ export default function CoopGameLoader() {
             case 'START_WAVE_NOW_REQUEST':   onHostAction('start_wave_now', payload); return;
             case 'PING_REQUEST':
                 gameBoardRef.current?.queuePing(payload);
-                sendGameData('PING', payload);
+                sendGameDataRef.current('PING', payload);
                 return;
             case 'REQUEST':
                 gameBoardRef.current?.queueRequest(payload);
-                sendGameData('REQUEST', payload);
+                sendGameDataRef.current('REQUEST', payload);
                 return;
             case 'REQUEST_RESOLVE':
-                sendGameData('REQUEST_RESOLVE', payload);
+                sendGameDataRef.current('REQUEST_RESOLVE', payload);
                 return;
         }
-    }, [isGameHost, onHostAction, sendGameData]);
-
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(gameId, isGameHost, user, false, handleGameData, handleActionData);
-
-  useEffect(() => {
-    sendGameDataRef.current = sendGameData;
-  }, [sendGameData]);
-
+    }, [isGameHost, onHostAction]);
 
   useEffect(() => {
       if (isConnected && !isGameHost && localPlayerId === 'player2') {
-          sendAction('CLIENT_READY', {});
+          sendActionRef.current('CLIENT_READY', {});
       }
-  }, [isConnected, isGameHost, localPlayerId, sendAction]);
+  }, [isConnected, isGameHost, localPlayerId]);
 
   const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
       if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
@@ -388,42 +373,58 @@ export default function CoopGameLoader() {
         start_wave_now: 'START_WAVE_NOW_REQUEST',
       }
       const actionType = actionTypeMap[action];
-      sendAction(actionType, { ...payload, playerId: localPlayerId });
-  }, [localPlayerId, isGameHost, sendAction]);
+      sendActionRef.current(actionType, { ...payload, playerId: localPlayerId });
+  }, [localPlayerId, isGameHost]);
   
-    const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
-        const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
-        if (isGameHost) {
-            onHostAction(action, finalPayload);
-        } else {
-            onLocalAction(action, finalPayload);
-        }
-    }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
+  const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
+      const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
+      if (isGameHost) {
+          onHostAction(action, finalPayload);
+      } else {
+          onLocalAction(action, finalPayload);
+      }
+  }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
   
   const sendPing = useCallback((kind: PingKind, row: number, col: number, msg?: string) => {
-      if (!localPlayerId) return;
+      if (!localPlayerId || localPlayerId === 'spectator') return;
       const payload: PingPayload = {
         id: crypto.randomUUID(),
         kind, from: localPlayerId as 'player1' | 'player2', row, col, msg, createdAt: Date.now(), ttl: 4000,
       };
       if (isGameHost) {
         gameBoardRef.current?.queuePing(payload);
-        sendGameData('PING', payload);
+        sendGameDataRef.current('PING', payload);
       } else {
-        sendAction('PING_REQUEST', payload);
+        sendActionRef.current('PING_REQUEST', payload);
       }
-    }, [isGameHost, localPlayerId, sendAction, sendGameData]);
+    }, [isGameHost, localPlayerId]);
 
     const sendRequest = useCallback((req: Omit<RequestPayload,'id'|'from'|'createdAt'>) => {
-      if (!localPlayerId) return;
+      if (!localPlayerId || localPlayerId === 'spectator') return;
       const payload: RequestPayload = { id: crypto.randomUUID(), from: localPlayerId as 'player1' | 'player2', createdAt: Date.now(), ...req };
       if (isGameHost) {
         gameBoardRef.current?.queueRequest(payload);
-        sendGameData('REQUEST', payload);
+        sendGameDataRef.current('REQUEST', payload);
       } else {
-        sendAction('REQUEST', payload);
+        sendActionRef.current('REQUEST', payload);
       }
-    }, [isGameHost, localPlayerId, sendAction, sendGameData]);
+    }, [isGameHost, localPlayerId]);
+    
+    const broadcastSnapshot = useCallback(() => {
+        if (!isGameHost) return;
+        
+        const snapshot = {
+            players, enemies, towersByCell, gameState,
+            currentWave, isIntermission, waveStartCountdown, gameStatus,
+            totalKilled, totalLeaked,
+        };
+        sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked]);
+    
+    useEffect(() => {
+        if (!isGameHost || hostRevision === 0) return;
+        broadcastSnapshot();
+    }, [hostRevision, isGameHost, broadcastSnapshot]);
 
 
   useEffect(() => {
@@ -449,8 +450,6 @@ export default function CoopGameLoader() {
                 setLocalPlayerId(currentRole);
                 setDifficulty(gameData.difficulty || 'Normal');
                 
-                // Host loads its state directly from Firestore ONCE, then takes over.
-                // Subsequent Firestore updates are for reconnecting clients.
                 if (currentRole === 'player1' && !gameDataLoaded) {
                     setPlayers(normalizePlayers(gameData.players));
                     setGameState(gameData.gameState || { lives: difficultyModifiers[gameData.difficulty || 'Normal'].startLives });
@@ -461,7 +460,6 @@ export default function CoopGameLoader() {
                     setGameStatus(gameData.gameStatus || 'waiting');
                 }
                 
-                // Player 2 also loads the initial state to get ready.
                 if(currentRole === 'player2' && players.length === 0){
                     setPlayers(normalizePlayers(gameData.players));
                 }
@@ -624,19 +622,19 @@ export default function CoopGameLoader() {
           // 2. Queue VFX for broadcasting AND local rendering for the host
           if (firingIds.size > 0) {
             setFiringTowerIds(firingIds); // Local update
-            sendGameData('VFX_TOWER_FIRING', Array.from(firingIds));
+            sendGameDataRef.current('VFX_TOWER_FIRING', Array.from(firingIds));
             setTimeout(() => setFiringTowerIds(new Set()), 150); // Clear after a bit
           }
           if (allNewAttacks.length > 0) {
-            sendGameData('VFX_ATTACK', allNewAttacks);
+            sendGameDataRef.current('VFX_ATTACK', allNewAttacks);
             gameBoardRef.current?.queueAttacks(allNewAttacks);
           }
           if (allNewDamageNumbers.length > 0) {
-            sendGameData('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
+            sendGameDataRef.current('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
             gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
           }
           if (allNewSplashRings.length > 0) {
-            sendGameData('VFX_SPLASH', allNewSplashRings);
+            sendGameDataRef.current('VFX_SPLASH', allNewSplashRings);
             gameBoardRef.current?.queueSplashRings(allNewSplashRings);
           }
 
@@ -658,7 +656,7 @@ export default function CoopGameLoader() {
                       updatedEnemy.health -= burnDamage;
                       burnEffect.lastTick = now;
                       const dmgNum = { id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' };
-                      sendGameData('VFX_DAMAGE_NUMBER', [dmgNum]);
+                      sendGameDataRef.current('VFX_DAMAGE_NUMBER', [dmgNum]);
                       gameBoardRef.current?.queueDamageNumbers([dmgNum]);
                   }
               }
@@ -731,7 +729,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, sendGameData, currentPathRef, players]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, currentPathRef, players]);
 
 
   const toggleMute = () => {
