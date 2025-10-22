@@ -738,7 +738,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   
   const ghostTowerPath = useMemo(() => {
     if (!selectedTowerToBuild || !hoveredCell) return null;
-    const newPath = findPath({row:1,col:1}, {row:GRID_ROWS, col:GRID_COLS}, [...placedTowers.map(t => t.position), hoveredCell], GRID_ROWS, GRID_COLS);
+    const newPath = findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, [...placedTowers.map(t => t.position), hoveredCell], GRID_ROWS, GRID_COLS);
     if (!newPath) return 'invalid';
 
     const startPos = gridToPx({row:1, col:1});
