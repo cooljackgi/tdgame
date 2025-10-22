@@ -51,6 +51,14 @@ function gridToPx(node: Node) {
     };
 }
 
+// Helper to resolve CSS variables for canvas rendering
+function cssVar(name: string): string {
+    if (typeof window === 'undefined') return '#ffffff'; // Fallback for SSR
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v ? `hsl(${v})` : '#ffffff';
+}
+
+
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
 
 function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
@@ -678,13 +686,16 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
         });
         
+        const primaryColor = cssVar('--primary');
+        const destructiveColor = cssVar('--destructive');
+        
         pingsRef.current.forEach((p) => {
           const { x, y } = gridToPx({ row: p.row, col: p.col });
           const age = now - p.createdAt;
           const ttl = p.ttl ?? 4000;
           const t = Math.max(0, 1 - age/ttl);
           ctx.save();
-          ctx.strokeStyle = p.from === 'player1' ? 'hsl(var(--primary))' : 'hsl(var(--destructive))';
+          ctx.strokeStyle = p.from === 'player1' ? primaryColor : destructiveColor;
           ctx.globalAlpha = 0.25 + 0.5*t;
           ctx.lineWidth = 3;
           ctx.beginPath();
@@ -797,8 +808,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (playerRole === 'spectator' || !onPing) return;
     e.preventDefault();
+    if (playerRole === 'spectator' || !onPing) return;
     e.stopPropagation();
 
     const rect = containerRef.current?.getBoundingClientRect();
