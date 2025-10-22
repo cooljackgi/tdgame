@@ -341,6 +341,7 @@ export default function CoopGameLoader() {
             case 'PICK_ELEMENT_REQUEST':     onHostAction('pick_element', payload); return;
             case 'START_WAVE_NOW_REQUEST':   onHostAction('start_wave_now', payload); return;
             case 'PING_REQUEST':
+                console.log('[P1] received PING_REQUEST -> broadcasting PING');
                 gameBoardRef.current?.queuePing(payload);
                 sendGameDataRef.current('PING', payload);
                 return;
@@ -410,6 +411,7 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.queuePing(payload);
         sendGameDataRef.current('PING', payload);
       } else {
+        console.log('[P2] sendAction PING_REQUEST');
         sendActionRef.current('PING_REQUEST', payload);
       }
     }, [isGameHost, localPlayerId]);
