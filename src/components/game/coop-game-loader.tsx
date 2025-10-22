@@ -244,6 +244,7 @@ export default function CoopGameLoader() {
                 const expectedElements = 1 + Math.floor(waveForPick / 5);
 
                 const allPlayersHavePicked = needsToPick && updatedPlayers.every(p => {
+                    if (!p) return true; // Ignore empty slots
                     if (p.unlockedElements.length >= 8) return true;
                     return p.unlockedElements.length >= expectedElements;
                 });
@@ -839,4 +840,5 @@ export default function CoopGameLoader() {
     
 
     
+
 
