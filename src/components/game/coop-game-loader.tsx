@@ -411,7 +411,7 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.queuePing(payload);
         sendGameDataRef.current('PING', payload);
       } else {
-        console.log('[P2] sendAction PING_REQUEST');
+        console.log('[P2] sendAction PING_REQUEST, dcState=', actionsChannelRef.current?.readyState);
         sendActionRef.current('PING_REQUEST', payload);
       }
     }, [isGameHost, localPlayerId]);
@@ -803,7 +803,7 @@ export default function CoopGameLoader() {
                 totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
                 totalKilled={totalKilled}
                 totalLeaked={totalLeaked}
-                isIntermission={isIntermission} P
+                isIntermission={isIntermission}
                 waveStartCountdown={Math.max(0, Math.ceil(waveStartCountdown))}
                 intermissionTime={INTERMISSION_TIME} 
                 handleStartNextWaveNow={handleStartNextWaveNow}
