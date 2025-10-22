@@ -231,7 +231,9 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { playerId, element } = payload;
-                
+                const originalPlayerState = players.find(p => p.id === playerId);
+                if (!originalPlayerState) return;
+
                 const updatedPlayers = players.map(p => 
                     p.id === playerId 
                         ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
@@ -239,16 +241,14 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
                 
-                const waveForPick = currentWave; // We are in the reward phase *after* this wave
+                const waveForPick = currentWave;
                 const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
 
                 if (needsToPick) {
-                    // e.g. after wave 5 (currentWave=5), we expect 1+5/5=2 elements.
                     const expectedElementsAfterPick = 1 + (waveForPick / 5);
-
                     const allPlayersHavePicked = updatedPlayers.every(p => {
-                        if (!p) return true; // Ignore empty player slots
-                        if (p.unlockedElements.length >= 8) return true; // Max elements
+                        if (!p) return true;
+                        if (p.unlockedElements.length >= 8) return true;
                         return p.unlockedElements.length >= expectedElementsAfterPick;
                     });
                     
@@ -403,11 +403,17 @@ export default function CoopGameLoader() {
       }
   }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
   
-  const sendPing = useCallback((kind: PingKind, row: number, col: number, msg?: string) => {
-      if (!localPlayerId || localPlayerId === 'spectator') return;
+  const localPlayerIdRef = useRef(localPlayerId);
+  useEffect(() => {
+      localPlayerIdRef.current = localPlayerId;
+  }, [localPlayerId]);
+
+  const sendPing = (kind: PingKind, row: number, col: number, msg?: string) => {
+      const currentLocalPlayerId = localPlayerIdRef.current;
+      if (!currentLocalPlayerId || currentLocalPlayerId === 'spectator') return;
       const payload: PingPayload = {
         id: crypto.randomUUID(),
-        kind, from: localPlayerId as 'player1' | 'player2', row, col, msg, createdAt: Date.now(), ttl: 4000,
+        kind, from: currentLocalPlayerId as 'player1' | 'player2', row, col, msg, createdAt: Date.now(), ttl: 4000,
       };
       if (isGameHost) {
         gameBoardRef.current?.queuePing(payload);
@@ -415,18 +421,19 @@ export default function CoopGameLoader() {
       } else {
         sendActionRef.current('PING_REQUEST', payload);
       }
-    }, [isGameHost, localPlayerId]);
+    };
 
-    const sendRequest = useCallback((req: Omit<RequestPayload,'id'|'from'|'createdAt'>) => {
-      if (!localPlayerId || localPlayerId === 'spectator') return;
-      const payload: RequestPayload = { id: crypto.randomUUID(), from: localPlayerId as 'player1' | 'player2', createdAt: Date.now(), ...req };
+    const sendRequest = (req: Omit<RequestPayload,'id'|'from'|'createdAt'>) => {
+      const currentLocalPlayerId = localPlayerIdRef.current;
+      if (!currentLocalPlayerId || currentLocalPlayerId === 'spectator') return;
+      const payload: RequestPayload = { id: crypto.randomUUID(), from: currentLocalPlayerId as 'player1' | 'player2', createdAt: Date.now(), ...req };
       if (isGameHost) {
         gameBoardRef.current?.queueRequest(payload);
         sendGameDataRef.current('REQUEST', payload);
       } else {
         sendActionRef.current('REQUEST', payload);
       }
-    }, [isGameHost, localPlayerId]);
+    };
     
     const broadcastSnapshot = useCallback(() => {
         if (!isGameHost) return;
@@ -846,5 +853,7 @@ export default function CoopGameLoader() {
 
 
 
+
+    
 
     
