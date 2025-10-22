@@ -77,7 +77,7 @@ interface MobileLayoutProps {
   firingTowerIds: Set<string>;
   allTowers: Tower[];
   attacks?: Attack[];
-  sendPing?: (kind: PingKind, row: number, col: number) => void;
+  onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
     // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -101,7 +101,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     firingTowerIds,
     allTowers,
     attacks,
-    sendPing,
+    onPing,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -211,7 +211,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           onSellTower={handleSellTower}
           allTowers={allTowers}
           localPlayer={localPlayer}
-          onPing={sendPing}
+          onPing={onPing}
         >
           {/* TOP OVERLAYS */}
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">

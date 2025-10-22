@@ -72,7 +72,6 @@ interface DesktopLayoutProps {
   firingTowerIds: Set<string>;
   allTowers: Tower[];
   attacks?: Attack[];
-  sendPing?: (kind: PingKind, row: number, col: number) => void;
   // Network Stats
   isWsConnected?: boolean;
   hostPacketsPerSecond?: number;
@@ -80,6 +79,7 @@ interface DesktopLayoutProps {
   clientPacketsPerSecond?: number;
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
+  onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
 }
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
@@ -103,7 +103,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     firingTowerIds,
     allTowers,
     attacks,
-    sendPing,
+    onPing,
     isWsConnected,
     hostPacketsPerSecond,
     hostBytesSentPerSecond,
@@ -233,7 +233,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 onSellTower={handleSellTower}
                 allTowers={allTowers}
                 localPlayer={localPlayer}
-                onPing={sendPing}
+                onPing={onPing}
             />
         </div>
       </div>
