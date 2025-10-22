@@ -411,7 +411,7 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.queuePing(payload);
         sendGameDataRef.current('PING', payload);
       } else {
-        console.log('[P2] sendAction PING_REQUEST, dcState=', actionsChannelRef.current?.readyState);
+        console.log('[P2] sendAction PING_REQUEST');
         sendActionRef.current('PING_REQUEST', payload);
       }
     }, [isGameHost, localPlayerId]);

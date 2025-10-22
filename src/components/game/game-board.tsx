@@ -1320,6 +1320,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             <div
             style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 50 }}
             className="flex flex-col gap-1 bg-card/80 backdrop-blur-md p-1 rounded-lg border border-primary/50 shadow-lg"
+            onMouseUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
             >
                 <Button variant="ghost" className="justify-start px-2 py-1 h-auto" onClick={() => handlePingSelect('attention')}>
                     <AlertTriangle className="mr-2 h-4 w-4 text-yellow-400" /> Achtung!
