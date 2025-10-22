@@ -239,19 +239,16 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
                 
-                const shouldContinue = updatedPlayers.every(p => {
-                    const waveForPick = currentWave + 1;
-                    const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
-                    if (!needsToPick) return true;
+                const waveForPick = currentWave + 1;
+                const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
+                const expectedElements = 1 + Math.floor(waveForPick / 5);
 
-                    if (p.unlockedElements.length < 8) {
-                        const originalPlayerState = players.find(op => op.id === p.id);
-                        return p.unlockedElements.length > (originalPlayerState?.unlockedElements.length ?? 0);
-                    }
-                    return true;
+                const allPlayersHavePicked = needsToPick && updatedPlayers.every(p => {
+                    if (p.unlockedElements.length >= 8) return true;
+                    return p.unlockedElements.length >= expectedElements;
                 });
-
-                if (shouldContinue) {
+                
+                if (!needsToPick || allPlayersHavePicked) {
                     setCurrentWave(prev => prev + 1);
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
@@ -411,7 +408,7 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.queuePing(payload);
         sendGameDataRef.current('PING', payload);
       } else {
-        console.log('[P2] sendAction PING_REQUEST');
+        console.log('[P2] sendAction PING_REQUEST, dcState=', actionsChannelRef.current?.readyState);
         sendActionRef.current('PING_REQUEST', payload);
       }
     }, [isGameHost, localPlayerId]);
@@ -750,7 +747,7 @@ export default function CoopGameLoader() {
     });
   };
 
-  if (loading || !gameDataLoaded || !localPlayerId) {
+  if (loading || !gameDataLoaded || !localPlayerId || !localPlayer) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
@@ -818,7 +815,7 @@ export default function CoopGameLoader() {
                 firingTowerIds={firingTowerIds} 
                 allTowers={initialTowers}
                 isWsConnected={isConnected} 
-                sendPing={sendPing}
+                onPing={sendPing}
                 hostPacketsPerSecond={stats.sentPacketsPerSecond} 
                 hostBytesSentPerSecond={stats.sentBytesPerSecond}
                 clientPacketsPerSecond={stats.packetsPerSecond}
@@ -842,3 +839,4 @@ export default function CoopGameLoader() {
     
 
     
+

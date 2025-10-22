@@ -11,7 +11,7 @@ import type { Element, Wave } from "@/lib/game-data/types";
 import { waves } from "@/lib/game-data/enemies";
 import { elementIcons, elementColors, elementBackgroundColors, ALL_PICKABLE_ELEMENTS } from "@/lib/game-data/constants";
 import { cn } from "@/lib/utils";
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "../ui/tooltip";
 
@@ -57,58 +57,90 @@ const getRecommendation = (nextWaves: Wave[]): Element | null => {
 }
 
 
-export function ElementPickDialog({ isOpen, unlockedElements, onElementPick, playerName, currentWave }: ElementPickDialogProps) {
-  const choices = ALL_PICKABLE_ELEMENTS.filter(e => !unlockedElements.has(e));
-  
+export function ElementPickDialog({
+  isOpen,
+  unlockedElements,
+  onElementPick,
+  playerName,
+  currentWave
+}: ElementPickDialogProps) {
+  // GUARD: pro Runde nur EIN Pick auslösen
+  const [picked, setPicked] = useState<Element | null>(null);
+
+  // Sobald der Dialog neu aufgeht (nächste Runde), Reset
+  React.useEffect(() => {
+    if (isOpen) setPicked(null);
+  }, [isOpen]);
+
+  const choices = ALL_PICKABLE_ELEMENTS.filter((e) => !unlockedElements.has(e));
+
   const recommendedElement = useMemo(() => {
     const nextFiveWaves = waves.slice(currentWave, currentWave + 5);
     return getRecommendation(nextFiveWaves);
   }, [currentWave]);
 
+  const handlePick = useCallback((element: Element) => {
+    // nur erster Klick zählt
+    if (picked) return;
+    setPicked(element);
+    onElementPick(element); // Parent schließt den Dialog / synced Coop
+  }, [picked, onElementPick]);
 
-  if (choices.length === 0) {
-    return null;
-  }
+  if (choices.length === 0) return null;
 
   return (
     <Dialog open={isOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{playerName}, wähle dein nächstes Element</DialogTitle>
+          <DialogTitle>
+            {picked
+              ? `${playerName}, ausgewählt: ${picked} – warte auf Mitspieler…`
+              : `${playerName}, wähle dein nächstes Element`}
+          </DialogTitle>
           <DialogDescription>
-            Deine Wahl schaltet neue Türme und Upgrade-Pfade frei. Wähle weise!
+            {picked
+              ? "Deine Buttons sind jetzt gesperrt. Gleich geht’s weiter."
+              : "Deine Wahl schaltet neue Türme und Upgrade-Pfade frei. Wähle weise!"}
           </DialogDescription>
         </DialogHeader>
+
         <TooltipProvider>
           <div className="flex justify-center items-center flex-wrap gap-4 py-4">
-            {choices.map(element => {
+            {choices.map((element) => {
               const Icon = elementIcons[element];
               const isRecommended = element === recommendedElement;
 
               return (
                 <Tooltip key={element}>
-                    <TooltipTrigger asChild>
-                      <div className="relative">
-                          <Button
-                              onClick={() => onElementPick(element)}
-                              variant="outline"
-                              className={cn(
-                                  "flex flex-col items-center justify-center h-24 w-24 rounded-lg border-2 transition-all hover:border-primary",
-                                  elementBackgroundColors[element],
-                                  isRecommended && "border-primary shadow-lg shadow-primary/30 animate-pulse"
-                              )}
-                          >
-                              <Icon className={cn("h-8 w-8 mb-2", elementColors[element])} />
-                              <span className="capitalize font-semibold">{element}</span>
-                          </Button>
-                          {isRecommended && (
-                              <Badge variant="default" className="absolute -top-2 -right-3">Empfehlung</Badge>
-                          )}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>{elementStrengths[element] || "Keine Beschreibung verfügbar."}</p>
-                    </TooltipContent>
+                  <TooltipTrigger asChild>
+                    <div className="relative">
+                      <Button
+                        onClick={() => handlePick(element)}
+                        variant="outline"
+                        disabled={!!picked}              // << Single-pick Guard
+                        aria-disabled={!!picked}
+                        className={cn(
+                          "flex flex-col items-center justify-center h-24 w-24 rounded-lg border-2 transition-all",
+                          "hover:border-primary",
+                          elementBackgroundColors[element],
+                          isRecommended && "border-primary shadow-lg shadow-primary/30 animate-pulse",
+                          picked && "opacity-60 cursor-not-allowed" // visuelles Feedback nach Wahl
+                        )}
+                      >
+                        <Icon className={cn("h-8 w-8 mb-2", elementColors[element])} />
+                        <span className="capitalize font-semibold">{element}</span>
+                      </Button>
+
+                      {isRecommended && !picked && (
+                        <Badge variant="default" className="absolute -top-2 -right-3">
+                          Empfehlung
+                        </Badge>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{elementStrengths[element] || "Keine Beschreibung verfügbar."}</p>
+                  </TooltipContent>
                 </Tooltip>
               );
             })}
