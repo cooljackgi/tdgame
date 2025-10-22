@@ -141,7 +141,7 @@ type GameBoardProps = {
   allTowers: Tower[];
   localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined;
   attacks?: Attack[];
-  onPing?: (kind: PingKind, row: number, col: number) => void;
+  onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
 };
 
 
@@ -797,7 +797,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (playerRole === 'spectator') return;
+    if (playerRole === 'spectator' || !onPing) return;
     e.preventDefault();
     e.stopPropagation();
 
@@ -1343,5 +1343,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
-    
