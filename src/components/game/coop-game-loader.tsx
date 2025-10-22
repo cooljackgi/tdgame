@@ -239,21 +239,25 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
                 
-                const waveForPick = currentWave + 1;
-                const needsToPick = (waveForPick > 0 && waveForPick % 5 === 0);
-                const expectedElements = 1 + Math.floor(waveForPick / 5);
+                const waveForPick = currentWave; // We are in the reward phase *after* this wave
+                const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
 
-                const allPlayersHavePicked = needsToPick && updatedPlayers.every(p => {
-                    if (!p) return true; // Ignore empty slots
-                    if (p.unlockedElements.length >= 8) return true;
-                    return p.unlockedElements.length >= expectedElements;
-                });
-                
-                if (!needsToPick || allPlayersHavePicked) {
-                    setCurrentWave(prev => prev + 1);
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                    setGameStatus("playing");
+                if (needsToPick) {
+                    // e.g. after wave 5 (currentWave=5), we expect 1+5/5=2 elements.
+                    const expectedElementsAfterPick = 1 + (waveForPick / 5);
+
+                    const allPlayersHavePicked = updatedPlayers.every(p => {
+                        if (!p) return true; // Ignore empty player slots
+                        if (p.unlockedElements.length >= 8) return true; // Max elements
+                        return p.unlockedElements.length >= expectedElementsAfterPick;
+                    });
+                    
+                    if (allPlayersHavePicked) {
+                        setCurrentWave(prev => prev + 1);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setGameStatus("playing");
+                    }
                 }
                 break;
             }
@@ -409,7 +413,6 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.queuePing(payload);
         sendGameDataRef.current('PING', payload);
       } else {
-        console.log('[P2] sendAction PING_REQUEST, dcState=', actionsChannelRef.current?.readyState);
         sendActionRef.current('PING_REQUEST', payload);
       }
     }, [isGameHost, localPlayerId]);
@@ -633,16 +636,16 @@ export default function CoopGameLoader() {
             setTimeout(() => setFiringTowerIds(new Set()), 150); // Clear after a bit
           }
           if (allNewAttacks.length > 0) {
-            sendGameDataRef.current('VFX_ATTACK', allNewAttacks);
             gameBoardRef.current?.queueAttacks(allNewAttacks);
+            sendGameDataRef.current('VFX_ATTACK', allNewAttacks);
           }
           if (allNewDamageNumbers.length > 0) {
-            sendGameDataRef.current('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
             gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+            sendGameDataRef.current('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
           }
           if (allNewSplashRings.length > 0) {
-            sendGameDataRef.current('VFX_SPLASH', allNewSplashRings);
             gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+            sendGameDataRef.current('VFX_SPLASH', allNewSplashRings);
           }
 
           // 3. Enemy movement and effects logic
@@ -663,8 +666,8 @@ export default function CoopGameLoader() {
                       updatedEnemy.health -= burnDamage;
                       burnEffect.lastTick = now;
                       const dmgNum = { id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' };
-                      sendGameDataRef.current('VFX_DAMAGE_NUMBER', [dmgNum]);
                       gameBoardRef.current?.queueDamageNumbers([dmgNum]);
+                      sendGameDataRef.current('VFX_DAMAGE_NUMBER', [dmgNum]);
                   }
               }
 
@@ -842,3 +845,6 @@ export default function CoopGameLoader() {
     
 
 
+
+
+    
