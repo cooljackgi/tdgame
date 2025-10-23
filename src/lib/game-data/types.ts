@@ -1,4 +1,3 @@
-
 import type { LucideIcon } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 
@@ -171,6 +170,7 @@ export type Enemy = {
   // New properties for pull effect
   vx: number; // velocity x
   vy: number; // velocity y
+  deathTimestamp?: number; // New property for death animation
 };
 
 

@@ -677,7 +677,15 @@ export default function CoopGameLoader() {
 
           // 3. Enemy movement and effects logic
           const stillAlive: Enemy[] = [];
-          for (const enemy of currentEnemies) {
+          for (let enemy of currentEnemies) {
+              if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                continue; // Remove after death animation
+              }
+              if (enemy.deathTimestamp) {
+                stillAlive.push(enemy);
+                continue;
+              }
+
               let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
@@ -699,7 +707,9 @@ export default function CoopGameLoader() {
               }
 
               if (updatedEnemy.health <= 0) {
-                  continue; // Will be filtered out later
+                 updatedEnemy.deathTimestamp = now;
+                 stillAlive.push(updatedEnemy);
+                 continue;
               }
               
               const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
@@ -740,7 +750,7 @@ export default function CoopGameLoader() {
               setTotalKilled(k => k + killedThisTick);
           }
 
-          if (stillAlive.length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
+          if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
               const nextWaveIndex = currentWave + 1;
               if (waves.length > nextWaveIndex) {
                   if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
@@ -877,5 +887,4 @@ export default function CoopGameLoader() {
     
 
     
-
 

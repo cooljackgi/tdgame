@@ -1,10 +1,9 @@
-
 // src/components/game/Enemy.tsx
 "use client";
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { enemyIconPaths } from "./icons/enemy-icons";
+import { enemyIconPaths, enemyTombstonePath } from "./icons/enemy-icons";
 import type { EnemyType, EnemyStatusEffect } from '@/lib/game-data/types';
 import { Progress } from "../ui/progress";
 import { Flame, ShieldOff, ShieldAlert, Snowflake, Biohazard, Sparkle, Wind, VenetianMask, Zap, Star } from "lucide-react";
@@ -20,6 +19,7 @@ export type EnemyProps = {
   effects: EnemyStatusEffect[];
   isGhost?: boolean; // Debug-Prop
   className?: string;
+  isDying?: boolean; // New prop for death animation
 };
 
 const effectIconMap: Partial<Record<EnemyStatusEffect['type'], React.FC<any>>> = {
@@ -56,6 +56,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
   effects,
   isGhost,
   className,
+  isDying,
 }: EnemyProps) {
   const iconPath = enemyIconPaths[type];
   const healthPercentage = (health / maxHealth) * 100;
@@ -100,40 +101,54 @@ const EnemyComponent = React.memo(function EnemyComponent({
     <div
       className={cn("relative w-8 h-8 flex items-center justify-center", className)}
     >
-      <div className="absolute bottom-full mb-1 w-10">
-        <Progress value={healthPercentage} className="h-1.5 bg-black/30" />
-      </div>
-      <svg
-        viewBox="0 0 24 24"
-        className={cn(
-          "h-full w-full drop-shadow-lg", 
-          iconClass,
-          isGhost && "border-2 border-red-500 rounded-full" // Debug-Highlight
-        )}
-        fill="currentColor"
-        stroke="black"
-        strokeWidth="0.5"
-      >
-        <path d={iconPath} />
-      </svg>
-      
-      {allVisibleEffects.map((effect, i) => {
-          const Icon = effectIconMap[effect.type];
-          const iconPositionClass = effectIconClasses[effect.type];
-          if (Icon && iconPositionClass) {
-            return (
-              <Icon
-                key={`effect-${effect.type}-${i}`}
-                className={cn(
-                  "absolute z-10 h-3.5 w-3.5 drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]",
-                  iconPositionClass
-                )}
-                strokeWidth={2.5}
-              />
-            );
-          }
-          return null;
-      })}
+      {isDying ? (
+        <svg
+          viewBox="0 0 24 24"
+          className="h-full w-full text-slate-600 animate-grave-fade"
+          fill="currentColor"
+          stroke="black"
+          strokeWidth="1"
+        >
+          <path d={enemyTombstonePath} />
+        </svg>
+      ) : (
+        <>
+          <div className="absolute bottom-full mb-1 w-10">
+            <Progress value={healthPercentage} className="h-1.5 bg-black/30" />
+          </div>
+          <svg
+            viewBox="0 0 24 24"
+            className={cn(
+              "h-full w-full drop-shadow-lg", 
+              iconClass,
+              isGhost && "border-2 border-red-500 rounded-full" // Debug-Highlight
+            )}
+            fill="currentColor"
+            stroke="black"
+            strokeWidth="0.5"
+          >
+            <path d={iconPath} />
+          </svg>
+          
+          {allVisibleEffects.map((effect, i) => {
+              const Icon = effectIconMap[effect.type];
+              const iconPositionClass = effectIconClasses[effect.type];
+              if (Icon && iconPositionClass) {
+                return (
+                  <Icon
+                    key={`effect-${effect.type}-${i}`}
+                    className={cn(
+                      "absolute z-10 h-3.5 w-3.5 drop-shadow-[0_0_2px_rgba(0,0,0,0.9)]",
+                      iconPositionClass
+                    )}
+                    strokeWidth={2.5}
+                  />
+                );
+              }
+              return null;
+          })}
+        </>
+      )}
     </div>
   );
 });
