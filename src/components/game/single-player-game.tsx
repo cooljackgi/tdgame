@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -62,9 +62,6 @@ export default function SinglePlayerGame({
 
 
     // --- VFX State ---
-    const [attacks, setAttacks] = useState<Attack[]>([]);
-    const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
-    const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     
     // --- Stats State ---
@@ -475,6 +472,7 @@ export default function SinglePlayerGame({
             let allNewAttacks: Attack[] = [];
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
+            let allNewLifeGainVfx: LifeGainVfx[] = [];
             let firingIds = new Set<string>();
             let resourcesGainedThisTick = 0;
             let livesGainedThisTick = 0;
@@ -521,6 +519,7 @@ export default function SinglePlayerGame({
                         allNewAttacks.push(...attackResult.newAttacks);
                         allNewDamageNumbers.push(...attackResult.damageNumbers);
                         allNewSplashRings.push(...attackResult.splashRings);
+                        allNewLifeGainVfx.push(...attackResult.lifeGainVfx);
 
                         if (attackResult.resourcesGained > 0) {
                            resourcesGainedThisTick += attackResult.resourcesGained;
@@ -537,6 +536,8 @@ export default function SinglePlayerGame({
             if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
             if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
             if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+            if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
+
 
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
@@ -652,8 +653,8 @@ export default function SinglePlayerGame({
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies} 
-                    damageNumbers={damageNumbers} 
-                    splashRings={splashRings}
+                    damageNumbers={[]} 
+                    splashRings={[]}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
@@ -687,7 +688,7 @@ export default function SinglePlayerGame({
                     cheat_unlockAll={handleUnlockAll}
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
-                    attacks={attacks}
+                    attacks={[]}
                 />
             </div>
 

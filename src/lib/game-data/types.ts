@@ -107,6 +107,11 @@ export type DamageNumber = {
   active?: boolean;
 };
 
+export type LifeGainVfx = {
+  id: string;
+  amount: number;
+};
+
 export type SplashRing = {
     id: string;
     x: number;

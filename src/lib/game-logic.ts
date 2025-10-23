@@ -2,7 +2,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
-import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element } from './game-data/types';
+import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx } from './game-data/types';
 import { elementProjectileColors } from './game-data/constants';
 
 // This file is intended for reusable game logic that can be shared
@@ -71,6 +71,7 @@ export function processAttack(
     damageNumbers: DamageNumber[];
     newAttacks: Attack[];
     splashRings: SplashRing[];
+    lifeGainVfx: LifeGainVfx[];
 } {
     const output = {
         updatedEnemies: [...allEnemies], // Correctly initialize with a copy of all enemies
@@ -80,6 +81,7 @@ export function processAttack(
         damageNumbers: [] as DamageNumber[],
         newAttacks: [] as Attack[],
         splashRings: [] as SplashRing[],
+        lifeGainVfx: [] as LifeGainVfx[],
     };
 
     const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
@@ -246,6 +248,7 @@ export function processAttack(
                  
                  if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 0)) {
                      output.livesGained++;
+                     output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
                  }
             }
         }

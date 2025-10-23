@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -304,6 +304,9 @@ export default function CoopGameLoader() {
       case 'VFX_SPLASH':
         gameBoardRef.current?.queueSplashRings(payload);
         break;
+      case 'VFX_LIFE_GAIN':
+        gameBoardRef.current?.queueLifeGainVfx(payload);
+        break;
       case 'VFX_TOWER_FIRING':
         setFiringTowerIds(new Set(payload));
         setTimeout(() => setFiringTowerIds(new Set()), 150);
@@ -566,6 +569,7 @@ export default function CoopGameLoader() {
           let allNewAttacks: Attack[] = [];
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
+          let allNewLifeGainVfx: LifeGainVfx[] = [];
           
           let currentEnemies = [...enemies];
           
@@ -624,6 +628,7 @@ export default function CoopGameLoader() {
                       allNewAttacks.push(...attackResult.newAttacks);
                       allNewDamageNumbers.push(...attackResult.damageNumbers);
                       allNewSplashRings.push(...attackResult.splashRings);
+                      allNewLifeGainVfx.push(...attackResult.lifeGainVfx);
 
                       if (attackResult.resourcesGained > 0) {
                           resourcesGainedThisTick += attackResult.resourcesGained;
@@ -653,6 +658,10 @@ export default function CoopGameLoader() {
           if (allNewSplashRings.length > 0) {
             gameBoardRef.current?.queueSplashRings(allNewSplashRings);
             sendGameDataRef.current('VFX_SPLASH', allNewSplashRings);
+          }
+           if (allNewLifeGainVfx.length > 0) {
+            gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
+            sendGameDataRef.current('VFX_LIFE_GAIN', allNewLifeGainVfx);
           }
 
           // 3. Enemy movement and effects logic

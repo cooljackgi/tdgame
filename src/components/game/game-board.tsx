@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -30,6 +30,7 @@ export type GameBoardHandle = {
     queuePing: (p: PingPayload) => void;
     queueRequest: (r: RequestPayload) => void;
     resolveRequest: (res: RequestResolve) => void;
+    queueLifeGainVfx: (vfx: LifeGainVfx[]) => void;
 };
 
 
@@ -156,6 +157,7 @@ type GameBoardProps = {
 type LiveAttack = Attack & { _vfx: { start: number; life: number; fromPx: {x:number, y:number}; toPx: {x:number,y:number} } };
 type LiveDamageNumber = DamageNumber & { start: number; life: number; };
 type LiveSplashRing = SplashRing & { start: number; life: number; };
+type LiveLifeGain = LifeGainVfx & { start: number; life: number; };
 
 function createPool<T extends {id: string}>(size: number) {
     const pool: (T & { _active: boolean })[] = Array.from({ length: size }, () => ({ _active: false } as any));
@@ -421,10 +423,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const incomingAttacksRef = useRef<Attack[]>([]);
   const incomingRingsRef = useRef<SplashRing[]>([]);
   const incomingDmgRef = useRef<DamageNumber[]>([]);
+  const incomingLifeGainRef = useRef<LifeGainVfx[]>([]);
 
   const attacksPoolRef = useRef(createPool<LiveAttack>(150));
   const splashRingsPoolRef = useRef(createPool<LiveSplashRing>(60));
   const damageNumbersPoolRef = useRef(createPool<LiveDamageNumber>(100));
+  const lifeGainPoolRef = useRef(createPool<LiveLifeGain>(10));
   
   const pingsRef = useRef<Map<string, PingPayload>>(new Map());
   const requestsRef = useRef<Map<string, RequestPayload>>(new Map());
@@ -502,6 +506,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     queuePing: (p) => { pingsRef.current.set(p.id, p); setTimeout(() => pingsRef.current.delete(p.id), p.ttl ?? 4000); },
     queueRequest: (r) => { requestsRef.current.set(r.id, r); },
     resolveRequest: (res) => { requestsRef.current.delete(res.id); /* optional: kleinen „✔/✖“-Pop zeigen */ },
+    queueLifeGainVfx: (vfx) => { incomingLifeGainRef.current.push(...vfx); },
   }));
 
   useEffect(() => {
@@ -657,10 +662,20 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 q.length = 0; 
             }
         }
+        {
+          const q = incomingLifeGainRef.current;
+          if(q.length > 0) {
+            for(const vfx of q) {
+              lifeGainPoolRef.current.alloc({ ...vfx, start: now, life: 1500 });
+            }
+            q.length = 0;
+          }
+        }
         
         attacksPoolRef.current.forEachActive(attack => {
-            if (!attack._vfx) return;
             const now = Date.now();
+            if (!attack._vfx) return attacksPoolRef.current.free(attack);
+            
             const liveTarget = enemiesById.get(attack.targetId);
             if (liveTarget) {
                 attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
@@ -675,7 +690,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             }
             
             const tower = towersMap.get(attack.towerId);
-            if (!tower) {
+            if (!tower) { // Tower was sold while projectile was in-flight
                 attacksPoolRef.current.free(attack);
                 return;
             }
@@ -709,6 +724,21 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             ctx.shadowColor = 'black';
             ctx.shadowBlur = dn.isCrit ? 4 : 2;
             ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
+        });
+
+        lifeGainPoolRef.current.forEachActive(lg => {
+            const t = clamp((now - lg.start) / lg.life, 0, 1);
+            if (t >= 1) { lifeGainPoolRef.current.free(lg); return; }
+
+            const endNodePos = gridToPx({row: GRID_ROWS, col: GRID_COLS});
+
+            ctx.font = `bold 16px system-ui, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 1 - t;
+            ctx.fillStyle = '#22c55e'; // Green
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 4;
+            ctx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
         });
         
         const primaryColor = cssVar('--primary');
@@ -1399,4 +1429,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
