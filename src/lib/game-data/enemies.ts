@@ -11,7 +11,9 @@ export const waveFormulaCoefficients = {
   "count_base": 10,
   "count_increment": 1.5,
   "bounty_base": 10,
-  "bounty_exponent": 1.02
+  "bounty_exponent": 1.02,
+  "spawn_delay_base": 8000,
+  "spawn_delay_min": 250
 };
 
 export function generateProceduralWave(waveNumber: number, formulas: typeof waveFormulaCoefficients): Wave {
@@ -44,7 +46,7 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     const enemies: WaveEnemyData = {
       type: type,
       count: finalCount,
-      spawnDelay: Math.max(250, 8000 / finalCount), // Increased base delay
+      spawnDelay: Math.max(f.spawn_delay_min, f.spawn_delay_base / finalCount),
       health: finalHealth,
       armor: Math.round(finalHealth * params.armorFactor * 0.5), // Reduced armor globally
       speed: parseFloat((speed * params.speedFactor).toFixed(2)),
@@ -707,3 +709,4 @@ export let waves: Wave[] = [
     }
   }
 ];
+

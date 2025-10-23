@@ -3,7 +3,7 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Home, Waves, Save, Loader2, BarChart2, RefreshCw } from 'lucide-react';
+import { Home, Waves, Save, Loader2, BarChart2, RefreshCw, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -157,7 +157,7 @@ export default function WavesBalancingPage() {
               </Button>
             </div>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="p-4 border rounded-lg space-y-4 bg-muted/20">
                 <h3 className="font-semibold text-lg">Lebenspunkte (HP)</h3>
                 <div className="space-y-2">
@@ -200,6 +200,17 @@ export default function WavesBalancingPage() {
                  <div className="space-y-2">
                     <Label htmlFor="bounty_exponent">Belohnungs-Exponent</Label>
                     <Input id="bounty_exponent" type="number" step="0.001" value={formulas.bounty_exponent} onChange={e => handleFormulaChange('bounty_exponent', e.target.value)} />
+                </div>
+            </div>
+            <div className="p-4 border rounded-lg space-y-4 bg-muted/20">
+                <h3 className="font-semibold text-lg flex items-center gap-2"><Timer /> Spawn-Verzögerung</h3>
+                <div className="space-y-2">
+                    <Label htmlFor="spawn_delay_base">Basis-Verzögerung (ms)</Label>
+                    <Input id="spawn_delay_base" type="number" value={formulas.spawn_delay_base} onChange={e => handleFormulaChange('spawn_delay_base', e.target.value)} />
+                </div>
+                 <div className="space-y-2">
+                    <Label htmlFor="spawn_delay_min">Min. Verzögerung (ms)</Label>
+                    <Input id="spawn_delay_min" type="number" step="10" value={formulas.spawn_delay_min} onChange={e => handleFormulaChange('spawn_delay_min', e.target.value)} />
                 </div>
             </div>
         </CardContent>
