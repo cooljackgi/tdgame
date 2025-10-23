@@ -1,3 +1,4 @@
+
 import type { Wave, WaveEnemyData, EnemyType } from './types';
 
 // Diese Formeln dienen jetzt als Basis für die *initiale* Generierung
@@ -43,9 +44,9 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     const enemies: WaveEnemyData = {
       type: type,
       count: finalCount,
-      spawnDelay: Math.max(200, 3000 / finalCount),
+      spawnDelay: Math.max(200, 5000 / finalCount), // Changed from 3000 to 5000
       health: finalHealth,
-      armor: Math.round(finalHealth * params.armorFactor),
+      armor: Math.round(finalHealth * params.armorFactor * 0.5), // Reduced armor globally
       speed: parseFloat((speed * params.speedFactor).toFixed(2)),
       damage: Math.round(finalHealth / 10), // Damage is relative to health
       bounty: Math.round(bounty * params.bountyFactor),
@@ -60,9 +61,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 10,
-      "spawnDelay": 300,
+      "spawnDelay": 500,
       "health": 110,
-      "armor": 6,
+      "armor": 3,
       "speed": 1.2,
       "damage": 11,
       "bounty": 10
@@ -73,9 +74,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 12,
-      "spawnDelay": 250,
+      "spawnDelay": 417,
       "health": 123,
-      "armor": 6,
+      "armor": 3,
       "speed": 1.21,
       "damage": 12,
       "bounty": 10
@@ -86,11 +87,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "schnell",
       "count": 14,
-      "spawnDelay": 214.28571428571428,
-      "health": 123,
-      "armor": 2,
+      "spawnDelay": 357,
+      "health": 110,
+      "armor": 1,
       "speed": 1.82,
-      "damage": 12,
+      "damage": 11,
       "bounty": 11
     }
   },
@@ -99,9 +100,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 15,
-      "spawnDelay": 200,
+      "spawnDelay": 333,
       "health": 155,
-      "armor": 8,
+      "armor": 4,
       "speed": 1.22,
       "damage": 16,
       "bounty": 11
@@ -112,11 +113,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "gepanzert",
       "count": 13,
-      "spawnDelay": 230.76923076923077,
-      "health": 298,
-      "armor": 45,
+      "spawnDelay": 385,
+      "health": 266,
+      "armor": 27,
       "speed": 0.98,
-      "damage": 30,
+      "damage": 27,
       "bounty": 14
     }
   },
@@ -125,11 +126,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "schnell",
       "count": 19,
-      "spawnDelay": 157.89473684210526,
-      "health": 165,
-      "armor": 3,
+      "spawnDelay": 263,
+      "health": 148,
+      "armor": 1,
       "speed": 1.84,
-      "damage": 17,
+      "damage": 15,
       "bounty": 12
     }
   },
@@ -138,11 +139,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "heilend",
       "count": 17,
-      "spawnDelay": 176.47058823529412,
-      "health": 299,
-      "armor": 24,
+      "spawnDelay": 294,
+      "health": 267,
+      "armor": 13,
       "speed": 1.24,
-      "damage": 30,
+      "damage": 27,
       "bounty": 14
     }
   },
@@ -151,9 +152,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 21,
-      "spawnDelay": 142.85714285714286,
+      "spawnDelay": 238,
       "health": 220,
-      "armor": 11,
+      "armor": 6,
       "speed": 1.25,
       "damage": 22,
       "bounty": 12
@@ -164,11 +165,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "schnell",
       "count": 25,
-      "spawnDelay": 120,
-      "health": 221,
-      "armor": 4,
+      "spawnDelay": 200,
+      "health": 198,
+      "armor": 2,
       "speed": 1.86,
-      "damage": 22,
+      "damage": 20,
       "bounty": 13
     }
   },
@@ -177,11 +178,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "boss",
       "count": 1,
-      "spawnDelay": 1500,
-      "health": 3137,
-      "armor": 184,
+      "spawnDelay": 5000,
+      "health": 2799,
+      "armor": 420,
       "speed": 1.09,
-      "damage": 314,
+      "damage": 280,
       "bounty": 92
     }
   },
@@ -190,9 +191,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 25,
-      "spawnDelay": 120,
+      "spawnDelay": 200,
       "health": 277,
-      "armor": 14,
+      "armor": 7,
       "speed": 1.26,
       "damage": 28,
       "bounty": 12
@@ -203,11 +204,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "schnell",
       "count": 30,
-      "spawnDelay": 100,
-      "health": 278,
-      "armor": 6,
+      "spawnDelay": 200,
+      "health": 249,
+      "armor": 2,
       "speed": 1.88,
-      "damage": 28,
+      "damage": 25,
       "bounty": 14
     }
   },
@@ -216,9 +217,9 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 28,
-      "spawnDelay": 107.14285714285714,
+      "spawnDelay": 200,
       "health": 348,
-      "armor": 17,
+      "armor": 9,
       "speed": 1.28,
       "damage": 35,
       "bounty": 13
@@ -229,11 +230,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "heilend",
       "count": 26,
-      "spawnDelay": 115.38461538461539,
-      "health": 557,
-      "armor": 45,
+      "spawnDelay": 200,
+      "health": 498,
+      "armor": 25,
       "speed": 1.28,
-      "damage": 56,
+      "damage": 50,
       "bounty": 16
     }
   },
@@ -242,11 +243,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "gepanzert",
       "count": 24,
-      "spawnDelay": 125,
-      "health": 673,
-      "armor": 101,
+      "spawnDelay": 208,
+      "health": 601,
+      "armor": 60,
       "speed": 1.03,
-      "damage": 67,
+      "damage": 60,
       "bounty": 18
     }
   },
@@ -257,7 +258,7 @@ export let waves: Wave[] = [
       "count": 33,
       "spawnDelay": 200,
       "health": 490,
-      "armor": 25,
+      "armor": 12,
       "speed": 1.3,
       "damage": 49,
       "bounty": 14
@@ -270,7 +271,7 @@ export let waves: Wave[] = [
       "count": 34,
       "spawnDelay": 200,
       "health": 549,
-      "armor": 27,
+      "armor": 14,
       "speed": 1.31,
       "damage": 55,
       "bounty": 14
@@ -282,10 +283,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 40,
       "spawnDelay": 200,
-      "health": 491,
-      "armor": 10,
+      "health": 439,
+      "armor": 4,
       "speed": 1.95,
-      "damage": 49,
+      "damage": 44,
       "bounty": 16
     }
   },
@@ -295,10 +296,10 @@ export let waves: Wave[] = [
       "type": "gepanzert",
       "count": 30,
       "spawnDelay": 200,
-      "health": 1060,
-      "armor": 159,
+      "health": 947,
+      "armor": 95,
       "speed": 1.06,
-      "damage": 106,
+      "damage": 95,
       "bounty": 21
     }
   },
@@ -306,12 +307,12 @@ export let waves: Wave[] = [
     "waveNumber": 20,
     "enemies": {
       "type": "boss",
-      "count": 3,
-      "spawnDelay": 1000,
-      "health": 8940,
-      "armor": 2235,
+      "count": 2,
+      "spawnDelay": 2500,
+      "health": 7979,
+      "armor": 1197,
       "speed": 1.18,
-      "damage": 894,
+      "damage": 798,
       "bounty": 131
     }
   },
@@ -321,10 +322,10 @@ export let waves: Wave[] = [
       "type": "heilend",
       "count": 36,
       "spawnDelay": 200,
-      "health": 1158,
-      "armor": 93,
+      "health": 1034,
+      "armor": 52,
       "speed": 1.33,
-      "damage": 116,
+      "damage": 103,
       "bounty": 18
     }
   },
@@ -335,7 +336,7 @@ export let waves: Wave[] = [
       "count": 42,
       "spawnDelay": 200,
       "health": 1080,
-      "armor": 54,
+      "armor": 27,
       "speed": 1.33,
       "damage": 108,
       "bounty": 15
@@ -348,7 +349,7 @@ export let waves: Wave[] = [
       "count": 43,
       "spawnDelay": 200,
       "health": 1210,
-      "armor": 61,
+      "armor": 30,
       "speed": 1.34,
       "damage": 121,
       "bounty": 15
@@ -360,10 +361,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 49,
       "spawnDelay": 200,
-      "health": 1084,
-      "armor": 22,
+      "health": 967,
+      "armor": 10,
       "speed": 2.02,
-      "damage": 108,
+      "damage": 97,
       "bounty": 17
     }
   },
@@ -373,10 +374,10 @@ export let waves: Wave[] = [
       "type": "gepanzert",
       "count": 37,
       "spawnDelay": 200,
-      "health": 2277,
-      "armor": 342,
+      "health": 2024,
+      "armor": 202,
       "speed": 1.08,
-      "damage": 228,
+      "damage": 202,
       "bounty": 21
     }
   },
@@ -387,7 +388,7 @@ export let waves: Wave[] = [
       "count": 48,
       "spawnDelay": 200,
       "health": 1700,
-      "armor": 85,
+      "armor": 43,
       "speed": 1.36,
       "damage": 170,
       "bounty": 16
@@ -399,10 +400,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 54,
       "spawnDelay": 200,
-      "health": 1523,
-      "armor": 30,
+      "health": 1359,
+      "armor": 14,
       "speed": 2.05,
-      "damage": 152,
+      "damage": 136,
       "bounty": 18
     }
   },
@@ -412,10 +413,10 @@ export let waves: Wave[] = [
       "type": "heilend",
       "count": 45,
       "spawnDelay": 200,
-      "health": 2559,
-      "armor": 205,
+      "health": 2284,
+      "armor": 114,
       "speed": 1.37,
-      "damage": 256,
+      "damage": 228,
       "bounty": 20
     }
   },
@@ -426,7 +427,7 @@ export let waves: Wave[] = [
       "count": 52,
       "spawnDelay": 200,
       "health": 2388,
-      "armor": 119,
+      "armor": 60,
       "speed": 1.38,
       "damage": 239,
       "bounty": 17
@@ -436,12 +437,12 @@ export let waves: Wave[] = [
     "waveNumber": 30,
     "enemies": {
       "type": "boss",
-      "count": 4,
-      "spawnDelay": 750,
-      "health": 32100,
-      "armor": 8025,
+      "count": 3,
+      "spawnDelay": 1667,
+      "health": 28522,
+      "armor": 4278,
       "speed": 1.25,
-      "damage": 3210,
+      "damage": 2852,
       "bounty": 142
     }
   },
@@ -452,7 +453,7 @@ export let waves: Wave[] = [
       "count": 55,
       "spawnDelay": 200,
       "health": 2996,
-      "armor": 150,
+      "armor": 75,
       "speed": 1.39,
       "damage": 300,
       "bounty": 18
@@ -465,7 +466,7 @@ export let waves: Wave[] = [
       "count": 57,
       "spawnDelay": 200,
       "health": 3356,
-      "armor": 168,
+      "armor": 84,
       "speed": 1.4,
       "damage": 336,
       "bounty": 18
@@ -477,10 +478,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 64,
       "spawnDelay": 200,
-      "health": 3007,
-      "armor": 60,
+      "health": 2682,
+      "armor": 27,
       "speed": 2.11,
-      "damage": 301,
+      "damage": 268,
       "bounty": 21
     }
   },
@@ -491,7 +492,7 @@ export let waves: Wave[] = [
       "count": 60,
       "spawnDelay": 200,
       "health": 4209,
-      "armor": 210,
+      "armor": 105,
       "speed": 1.41,
       "damage": 421,
       "bounty": 19
@@ -503,10 +504,10 @@ export let waves: Wave[] = [
       "type": "heilend",
       "count": 55,
       "spawnDelay": 200,
-      "health": 5657,
-      "armor": 453,
+      "health": 5048,
+      "armor": 252,
       "speed": 1.42,
-      "damage": 566,
+      "damage": 505,
       "bounty": 24
     }
   },
@@ -516,10 +517,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 69,
       "spawnDelay": 200,
-      "health": 4224,
-      "armor": 84,
+      "health": 3768,
+      "armor": 38,
       "speed": 2.14,
-      "damage": 422,
+      "damage": 377,
       "bounty": 22
     }
   },
@@ -530,7 +531,7 @@ export let waves: Wave[] = [
       "count": 64,
       "spawnDelay": 200,
       "health": 5914,
-      "armor": 296,
+      "armor": 148,
       "speed": 1.44,
       "damage": 591,
       "bounty": 20
@@ -543,7 +544,7 @@ export let waves: Wave[] = [
       "count": 66,
       "spawnDelay": 200,
       "health": 6623,
-      "armor": 331,
+      "armor": 166,
       "speed": 1.44,
       "damage": 662,
       "bounty": 21
@@ -555,10 +556,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 74,
       "spawnDelay": 200,
-      "health": 5934,
-      "armor": 119,
+      "health": 5293,
+      "armor": 53,
       "speed": 2.18,
-      "damage": 593,
+      "damage": 529,
       "bounty": 23
     }
   },
@@ -566,12 +567,12 @@ export let waves: Wave[] = [
     "waveNumber": 40,
     "enemies": {
       "type": "boss",
-      "count": 5,
-      "spawnDelay": 600,
-      "health": 99697,
-      "armor": 24924,
+      "count": 4,
+      "spawnDelay": 1250,
+      "health": 88915,
+      "armor": 13337,
       "speed": 1.31,
-      "damage": 9970,
+      "damage": 8892,
       "bounty": 173
     }
   },
@@ -582,7 +583,7 @@ export let waves: Wave[] = [
       "count": 70,
       "spawnDelay": 200,
       "health": 9305,
-      "armor": 465,
+      "armor": 233,
       "speed": 1.46,
       "damage": 931,
       "bounty": 22
@@ -594,10 +595,10 @@ export let waves: Wave[] = [
       "type": "heilend",
       "count": 64,
       "spawnDelay": 200,
-      "health": 12506,
-      "armor": 1000,
+      "health": 11158,
+      "armor": 558,
       "speed": 1.47,
-      "damage": 1251,
+      "damage": 1116,
       "bounty": 27
     }
   },
@@ -608,7 +609,7 @@ export let waves: Wave[] = [
       "count": 73,
       "spawnDelay": 200,
       "health": 11672,
-      "armor": 584,
+      "armor": 292,
       "speed": 1.48,
       "damage": 1167,
       "bounty": 23
@@ -621,7 +622,7 @@ export let waves: Wave[] = [
       "count": 75,
       "spawnDelay": 200,
       "health": 13073,
-      "armor": 654,
+      "armor": 327,
       "speed": 1.49,
       "damage": 1307,
       "bounty": 23
@@ -633,10 +634,10 @@ export let waves: Wave[] = [
       "type": "gepanzert",
       "count": 61,
       "spawnDelay": 200,
-      "health": 21963,
-      "armor": 3294,
+      "health": 19597,
+      "armor": 1960,
       "speed": 1.2,
-      "damage": 2196,
+      "damage": 1960,
       "bounty": 31
     }
   },
@@ -647,7 +648,7 @@ export let waves: Wave[] = [
       "count": 78,
       "spawnDelay": 200,
       "health": 16399,
-      "armor": 820,
+      "armor": 410,
       "speed": 1.5,
       "damage": 1640,
       "bounty": 24
@@ -660,7 +661,7 @@ export let waves: Wave[] = [
       "count": 79,
       "spawnDelay": 200,
       "health": 18367,
-      "armor": 918,
+      "armor": 459,
       "speed": 1.51,
       "damage": 1837,
       "bounty": 25
@@ -672,10 +673,10 @@ export let waves: Wave[] = [
       "type": "schnell",
       "count": 89,
       "spawnDelay": 200,
-      "health": 16456,
-      "armor": 329,
+      "health": 14682,
+      "armor": 147,
       "speed": 2.28,
-      "damage": 1646,
+      "damage": 1468,
       "bounty": 28
     }
   },
@@ -685,10 +686,10 @@ export let waves: Wave[] = [
       "type": "heilend",
       "count": 74,
       "spawnDelay": 200,
-      "health": 27647,
-      "armor": 2212,
+      "health": 24669,
+      "armor": 1233,
       "speed": 1.52,
-      "damage": 2765,
+      "damage": 2467,
       "bounty": 31
     }
   },
@@ -697,11 +698,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "boss",
       "count": 6,
-      "spawnDelay": 500,
-      "health": 309645,
-      "armor": 77411,
+      "spawnDelay": 833,
+      "health": 276226,
+      "armor": 41434,
       "speed": 1.38,
-      "damage": 30965,
+      "damage": 27623,
       "bounty": 211
     }
   }
