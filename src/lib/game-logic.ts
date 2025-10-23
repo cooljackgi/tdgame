@@ -2,7 +2,8 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
-import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect } from './game-data/types';
+import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element } from './game-data/types';
+import { elementProjectileColors } from './game-data/constants';
 
 // This file is intended for reusable game logic that can be shared
 // between single-player and multiplayer contexts, especially for
@@ -170,14 +171,17 @@ export function processAttack(
             x: target.position.col,
             y: target.position.row,
             r: tower.effect.radius,
-            color: tower.effect.type === 'burn' ? '#ef4444' : '#ffffff'
+            element: tower.elements[0] || 'neutral',
+            color: elementProjectileColors[tower.elements[0] || 'neutral']
         } as SplashRing);
         
         output.updatedEnemies = output.updatedEnemies.map(enemy => {
             if (enemy.id === target.id) return enemy; // Already damaged
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
-                return applyDamage(enemy, splashDamage, false, tower.effect);
+                 // Set wasHit to true for splash targets to trigger flash animation
+                const updatedEnemy = applyDamage(enemy, splashDamage, false, tower.effect);
+                return { ...updatedEnemy, wasHit: true };
             }
             return enemy;
         });
@@ -206,7 +210,8 @@ export function processAttack(
                 const chainDamage = attackDamage * (tower.effect?.potency ?? 0.5);
                 const nextTargetIndex = output.updatedEnemies.findIndex(e => e.id === nextTarget!.id);
                 if (nextTargetIndex > -1) {
-                    output.updatedEnemies[nextTargetIndex] = applyDamage(output.updatedEnemies[nextTargetIndex], chainDamage);
+                    const updatedEnemy = applyDamage(output.updatedEnemies[nextTargetIndex], chainDamage);
+                    output.updatedEnemies[nextTargetIndex] = { ...updatedEnemy, wasHit: true };
                 }
 
                 output.newAttacks.push({

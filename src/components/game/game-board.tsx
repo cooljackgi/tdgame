@@ -243,7 +243,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
 
     } else { // BEAM
         const headX = fromPos.x + dx * t;
-        const headY = fromPos.y + dy * t;
+        const headY = fromPos.y + t;
         const tailT = Math.max(0, t - 0.15);
         const tailX = fromPos.x + dx * tailT;
         const tailY = fromPos.y + dy * tailT;
@@ -273,17 +273,40 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
 
 function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: number) {
   const pos = gridToPx({ row: s.y, col: s.x });
-  const radius = s.r * CELL_SIZE;
-  const easeT = t * (2-t);
-  const alpha = 1 - t;
+  const maxRadius = s.r * CELL_SIZE;
+
+  const tSquared = t * t;
+  const easeOutT = 1 - (1 - t) * (1 - t);
+
+  // Outer shockwave
+  const shockwaveRadius = maxRadius * easeOutT;
+  const shockwaveAlpha = 1 - tSquared;
+  const shockwaveWidth = (2 + (1 - t) * 4);
+
+  // Inner glow
+  const glowRadius = maxRadius * (t * 0.8);
+  const glowAlpha = Math.sin(t * Math.PI) * 0.5;
   
   ctx.save();
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = s.color;
+
+  // Draw outer shockwave
   ctx.beginPath();
-  ctx.arc(pos.x, pos.y, radius * easeT, 0, Math.PI * 2);
-  ctx.strokeStyle = s.color || '#ffffff';
-  ctx.lineWidth = 3 * (1-t);
-  ctx.globalAlpha = alpha;
+  ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = shockwaveWidth;
+  ctx.globalAlpha = shockwaveAlpha;
   ctx.stroke();
+
+  // Draw inner glow
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+  ctx.strokeStyle = s.color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = glowAlpha;
+  ctx.stroke();
+  
   ctx.restore();
 }
 
@@ -619,7 +642,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const q = incomingRingsRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 300 }); 
+                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 400 }); 
                 }
                 q.length = 0; 
             }

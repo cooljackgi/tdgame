@@ -1,5 +1,4 @@
 
-
 import type { LucideIcon } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 
@@ -114,6 +113,7 @@ export type SplashRing = {
     y: number;
     r: number;
     color: string;
+    element: Element;
     start: number;
     life: number;
     // VFX Pool properties
