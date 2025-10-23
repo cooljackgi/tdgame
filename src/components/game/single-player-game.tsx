@@ -150,7 +150,7 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (isCheating || gameStatusRef.current !== 'playing') {
+            if (gameStatusRef.current !== 'playing') {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -175,7 +175,7 @@ export default function SinglePlayerGame({
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
-    }, [isCheating]);
+    }, []);
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
@@ -212,16 +212,16 @@ export default function SinglePlayerGame({
             finalTowers: towersByCellRef.current 
         };
         
-        if (!isCheating) {
-            localStorage.removeItem(LOCAL_STORAGE_KEY);
-            if (user?.uid) {
-                 try {
-                    await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
-                } catch(e) { console.error("Failed to save score", e); }
-            }
+        // This is now handled by onGameEnd
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        if (user?.uid) {
+             try {
+                await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
+            } catch(e) { console.error("Failed to save score", e); }
         }
+
         setFinalGameResult({ ...result, date: new Date().toISOString() });
-    }, [isCheating, user]);
+    }, [user]);
 
     const handleStartNextWaveNow = useCallback(() => {
         const waveData = waves[currentWaveRef.current];
@@ -629,7 +629,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [handleStartNextWaveNow, handleGameEnd, user]);
+    }, [handleStartNextWaveNow, handleGameEnd, user, isCheating]);
 
     const toggleMute = () => {
       setIsMuted(current => {

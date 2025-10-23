@@ -1,4 +1,5 @@
 
+
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
@@ -28,9 +29,6 @@ export async function onGameEnd(
     finalTowers: Record<string, PlacedTower>
 ) {
     if (!user) return; // Only save scores for logged-in users
-
-    // Don't save scores for chaos mode
-    if (difficulty === 'Chaos') return;
 
     // For coop games, you might have different logic, but for now, we can have both players submit a score
     // or have only the host submit. We'll allow both for now.
