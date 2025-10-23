@@ -112,6 +112,8 @@ export type LifeGainVfx = {
   amount: number;
 };
 
+export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark';
+
 export type SplashRing = {
     id: string;
     x: number;
@@ -121,7 +123,7 @@ export type SplashRing = {
     element: Element;
     start: number;
     life: number;
-    vfxType?: 'magma';
+    vfxType?: SplashRingVfxType;
     // VFX Pool properties
     active?: boolean;
 };

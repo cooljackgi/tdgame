@@ -2,7 +2,7 @@
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
-import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx } from './game-data/types';
+import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx, SplashRingVfxType } from './game-data/types';
 import { elementProjectileColors } from './game-data/constants';
 
 // This file is intended for reusable game logic that can be shared
@@ -168,7 +168,17 @@ export function processAttack(
         const splashRadiusSq = tower.effect.radius * tower.effect.radius;
         const splashDamage = attackDamage * splashPotency;
 
-        const isMagma = tower.id.includes('combo-fire-earth');
+        // Determine the special VFX type based on tower ID
+        let vfxType: SplashRingVfxType | undefined = undefined;
+        const towerId = tower.specId;
+        if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
+        else if (towerId.includes('fire-2b')) vfxType = 'flame';
+        else if (towerId.includes('water-2b')) vfxType = 'ice';
+        else if (towerId.includes('earth-2b')) vfxType = 'rock';
+        else if (towerId.includes('nature-2b')) vfxType = 'thorn';
+        else if (towerId.includes('light-2b')) vfxType = 'light';
+        else if (towerId.includes('dark-2b')) vfxType = 'dark';
+
 
         output.splashRings.push({
             id: crypto.randomUUID(),
@@ -177,7 +187,7 @@ export function processAttack(
             r: tower.effect.radius,
             element: tower.elements[0] || 'neutral',
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
-            vfxType: isMagma ? 'magma' : undefined,
+            vfxType: vfxType,
         } as SplashRing);
         
         output.updatedEnemies = output.updatedEnemies.map(enemy => {

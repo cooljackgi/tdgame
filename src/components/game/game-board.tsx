@@ -277,82 +277,114 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
 function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: number) {
   const pos = gridToPx({ row: s.y, col: s.x });
   const maxRadius = s.r * CELL_SIZE;
-
-  const tSquared = t * t;
   const easeOutT = 1 - (1 - t) * (1 - t);
+  const tSquared = t * t;
+  const tRoot = Math.sqrt(t);
+  const baseAngle = s.id.charCodeAt(0) % 360; 
 
-  if (s.vfxType === 'magma') {
-      ctx.save();
-      const cracks = 5;
-      const baseAngle = s.id.charCodeAt(0) % 360; 
-      
-      for (let i = 0; i < cracks; i++) {
-          const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
-          const rad = angle * Math.PI / 180;
-          
-          const len = maxRadius * (0.6 + Math.random() * 0.4) * easeOutT;
-          const wobble = Math.sin(t * Math.PI * 4 + i) * 15;
-          
-          ctx.beginPath();
-          ctx.moveTo(pos.x, pos.y);
-          ctx.lineTo(
-              pos.x + Math.cos(rad) * len, 
-              pos.y + Math.sin(rad) * len + wobble * (1 - easeOutT)
-          );
-          
-          ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
-          ctx.lineWidth = 2 + (1 - t) * 3;
-          ctx.stroke();
-      }
-      
-      const particleCount = 8;
-      for (let i = 0; i < particleCount; i++) {
-        const angle = baseAngle + (i / particleCount * 360) + (Math.random() - 0.5) * 40;
-        const rad = angle * Math.PI / 180;
-        const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
-        const particleSize = 4 * (1 - t);
-        
-        ctx.beginPath();
-        ctx.arc(
-          pos.x + Math.cos(rad) * dist,
-          pos.y + Math.sin(rad) * dist,
-          particleSize, 0, Math.PI * 2
-        );
-        ctx.fillStyle = `hsla(40, 100%, ${70 - t * 30}%, ${1 - tSquared})`;
-        ctx.fill();
-      }
-      ctx.restore();
-      return;
-  }
-
-  // Default shockwave
-  const shockwaveRadius = maxRadius * easeOutT;
-  const shockwaveAlpha = 1 - tSquared;
-  const shockwaveWidth = (2 + (1 - t) * 4);
-
-  const glowRadius = maxRadius * (t * 0.8);
-  const glowAlpha = Math.sin(t * Math.PI) * 0.5;
-  
   ctx.save();
-  ctx.shadowBlur = 15;
-  ctx.shadowColor = s.color;
+  ctx.globalAlpha = 1 - tSquared;
 
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = shockwaveWidth;
-  ctx.globalAlpha = shockwaveAlpha;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = glowAlpha;
-  ctx.stroke();
-  
+  switch(s.vfxType) {
+      case 'magma':
+      case 'flame': {
+          const cracks = s.vfxType === 'magma' ? 5 : 7;
+          for (let i = 0; i < cracks; i++) {
+              const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
+              const rad = angle * Math.PI / 180;
+              const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
+              ctx.beginPath();
+              ctx.moveTo(pos.x, pos.y);
+              ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+              ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
+              ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
+              ctx.stroke();
+          }
+          break;
+      }
+      case 'ice': {
+          const shards = 8;
+          for (let i = 0; i < shards; i++) {
+              const angle = baseAngle + (i * (360 / shards));
+              const rad = angle * Math.PI / 180;
+              const len = maxRadius * (0.5 + tRoot * 0.5);
+              const shardSize = 15 * (1 - t);
+              ctx.beginPath();
+              ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
+              ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+              ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
+              ctx.lineWidth = 3 + (1 - t) * 3;
+              ctx.stroke();
+          }
+          break;
+      }
+       case 'rock': {
+            const fragments = 6;
+            for (let i = 0; i < fragments; i++) {
+                const angle = baseAngle + (i / fragments * 360) + (Math.random() - 0.5) * 60;
+                const rad = angle * Math.PI / 180;
+                const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
+                const particleSize = 6 * (1 - t);
+                ctx.beginPath();
+                ctx.rect(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, particleSize, particleSize);
+                ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
+                ctx.fill();
+            }
+            break;
+       }
+       case 'thorn': {
+            const spikes = 12;
+            for (let i = 0; i < spikes; i++) {
+                const angle = baseAngle + (i * (360 / spikes));
+                const rad = angle * Math.PI / 180;
+                const len = maxRadius * tRoot;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+                ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            break;
+       }
+        case 'light': {
+            const glowRadius = maxRadius * easeOutT;
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = s.color;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
+            ctx.fill();
+            break;
+        }
+        case 'dark': {
+            const pullRadius = maxRadius * (1 - easeOutT);
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = s.color;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            break;
+        }
+      default: { // Default shockwave
+        const shockwaveRadius = maxRadius * easeOutT;
+        const shockwaveAlpha = 1 - tSquared;
+        const shockwaveWidth = (2 + (1 - t) * 4);
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = s.color;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = shockwaveWidth;
+        ctx.globalAlpha = shockwaveAlpha;
+        ctx.stroke();
+      }
+  }
   ctx.restore();
 }
+
 
 const MemoizedTower = React.memo(function GameCell({
   tower, isFocused, isJustUpgraded, isJustBuilt, onTowerClick, cooldownProgress, variant, isFiring, isBuffed, isCoop,
@@ -720,7 +752,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         attacksPoolRef.current.forEachActive(attack => {
             const now = Date.now();
-            if (!attack._vfx) return attacksPoolRef.current.free(attack);
+            if (!attack._vfx) {
+                 attacksPoolRef.current.free(attack);
+                 return;
+            }
             
             const liveTarget = enemiesById.get(attack.targetId);
             if (liveTarget) {
@@ -736,8 +771,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             }
             
             const tower = towersMap.get(attack.towerId);
-            // This is the key fix: We only free the attack if the tower is gone.
-            // If the target is gone, we let it fly to the last known position.
             if (!tower) {
                 attacksPoolRef.current.free(attack);
                 return;
