@@ -153,7 +153,7 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (gameStatusRef.current === 'gameover') {
+            if (isCheating || gameStatusRef.current === 'gameover') {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -178,7 +178,7 @@ export default function SinglePlayerGame({
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
-    }, []);
+    }, [isCheating]);
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
@@ -468,7 +468,8 @@ export default function SinglePlayerGame({
                 return; // No game logic during intermission
             }
 
-            let currentEnemies = [...enemiesRef.current];
+            let currentEnemies = enemiesRef.current.map(e => ({ ...e, wasHit: false }));
+
 
             // --- Spawning Logic ---
             const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
