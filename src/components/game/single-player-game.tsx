@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -46,10 +46,11 @@ export default function SinglePlayerGame({
     const [currentWave, setCurrentWave] = useState(0);
     const [difficulty, setDifficulty] = useState(initialDifficulty);
     const [enemies, setEnemies] = useState<Enemy[]>([]);
-    const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('playing');
+    const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('waiting');
     const [currentPath, setCurrentPath] = useState<Node[]>([]);
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     const [isIntermission, setIsIntermission] = useState(true);
+    const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -88,6 +89,7 @@ export default function SinglePlayerGame({
     const localPlayerRef = useRef<Player | undefined>(undefined);
     const currentPathRef = useRef(currentPath);
     const isIntermissionRef = useRef(isIntermission);
+    const gravityWellsRef = useRef(gravityWells);
 
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
@@ -99,6 +101,7 @@ export default function SinglePlayerGame({
     useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
     useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
     useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
+    useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
 
 
     useEffect(() => {
@@ -140,7 +143,7 @@ export default function SinglePlayerGame({
             setEnemies([]);
             setCurrentWave(0);
             setDifficulty(initialDifficulty);
-            setGameStatus('playing');
+            setGameStatus('waiting');
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
             setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
@@ -150,7 +153,7 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (gameStatusRef.current !== 'playing') {
+            if (gameStatusRef.current === 'gameover') {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -212,9 +215,8 @@ export default function SinglePlayerGame({
             finalTowers: towersByCellRef.current 
         };
         
-        // This is now handled by onGameEnd
         localStorage.removeItem(LOCAL_STORAGE_KEY);
-        if (user?.uid) {
+        if (user?.uid && difficultyRef.current !== 'Chaos') {
              try {
                 await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
             } catch(e) { console.error("Failed to save score", e); }
@@ -223,7 +225,7 @@ export default function SinglePlayerGame({
         setFinalGameResult({ ...result, date: new Date().toISOString() });
     }, [user]);
 
-    const handleStartNextWaveNow = useCallback(() => {
+    const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];
         if (!waveData) return;
 
@@ -244,10 +246,12 @@ export default function SinglePlayerGame({
                 position: { row: 1, col: 1 },
                 isBlocked: false,
                 effects: [],
-                lastMove: 0, // Will be set on actual spawn
+                lastMove: 0,
                 wasHit: false,
                 targetNode: { row: GRID_ROWS, col: GRID_COLS },
                 movementPattern: waveData.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+                vx: 0,
+                vy: 0,
                 _spawnTime: i * waveData.enemies.spawnDelay,
             };
         });
@@ -258,6 +262,16 @@ export default function SinglePlayerGame({
         setWaveStartCountdown(0);
         audioManager.playWaveMusic();
     }, []);
+
+    const handleStartNextWaveNow = useCallback(() => {
+        if(gameStatusRef.current === 'waiting') {
+            setGameStatus('playing');
+            setIsIntermission(true);
+            setWaveStartCountdown(INTERMISSION_TIME);
+        } else if (isIntermissionRef.current) {
+            startWaveLogic();
+        }
+    }, [startWaveLogic]);
     
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild) return;
@@ -446,7 +460,7 @@ export default function SinglePlayerGame({
                 setWaveStartCountdown(prevTime => {
                     const newTime = prevTime - delta / 1000;
                     if (newTime <= 0) {
-                        handleStartNextWaveNow();
+                        startWaveLogic();
                         return 0;
                     }
                     return newTime;
@@ -477,6 +491,7 @@ export default function SinglePlayerGame({
             let resourcesGainedThisTick = 0;
             let livesGainedThisTick = 0;
             let killedThisTick = 0;
+            let newGravityWells: GravityWell[] = [];
 
             const towers = Object.values(towersByCellRef.current);
             const auraTowers = towers.filter(t => t.effect?.type === 'aura');
@@ -536,6 +551,17 @@ export default function SinglePlayerGame({
                             if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
                             if (result.killed > 0) killedThisTick += result.killed;
                             if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
+                            
+                            if (tower.effect?.type === 'pull' && tower.effect.radius && tower.effect.duration && tower.effect.potency) {
+                                newGravityWells.push({
+                                    id: `well-${now}`,
+                                    x: target.position.col,
+                                    y: target.position.row,
+                                    radius: tower.effect.radius,
+                                    potency: tower.effect.potency,
+                                    expires: now + tower.effect.duration
+                                });
+                            }
                         }
                         currentEnemies = enemiesForThisTick;
                     }
@@ -551,9 +577,10 @@ export default function SinglePlayerGame({
 
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
+            const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
 
             for (const enemy of currentEnemies) {
-                 let updatedEnemy = { ...enemy, wasHit: false, effects: enemy.effects.filter(e => e.expires > now) };
+                 let updatedEnemy = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
                 const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
                 if (stunEffect) {
@@ -568,6 +595,22 @@ export default function SinglePlayerGame({
                     burnEffect.lastTick = now;
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
                 }
+                
+                // Pull logic
+                for (const well of activeGravityWells) {
+                    const dx = well.x - updatedEnemy.position.col;
+                    const dy = well.y - updatedEnemy.position.row;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq <= well.radius * well.radius) {
+                        const dist = Math.sqrt(distSq);
+                        if (dist > 0.1) {
+                            const pullStrength = well.potency;
+                            updatedEnemy.vx += (dx / dist) * pullStrength * (delta / 1000);
+                            updatedEnemy.vy += (dy / dist) * pullStrength * (delta / 1000);
+                        }
+                    }
+                }
+
 
                 if (updatedEnemy.health <= 0) {
                     continue;
@@ -576,21 +619,28 @@ export default function SinglePlayerGame({
                 const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
                 const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
                 const stepMs = 1000 / Math.max(0.001, speed);
-
-                if (now - updatedEnemy.lastMove >= stepMs) {
+                
+                let timeToMove = now - updatedEnemy.lastMove;
+                while (timeToMove >= stepMs) {
                     if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                         updatedEnemy.pathIndex += 1;
                         updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                        updatedEnemy.lastMove = now;
+                        timeToMove -= stepMs;
+                        updatedEnemy.lastMove += stepMs;
                     } else {
                         livesLostThisTick++;
-                        continue; 
+                        updatedEnemy.health = -1; // Mark for removal
+                        break;
                     }
                 }
+                
+                if (updatedEnemy.health <= 0) continue;
+
                 nextEnemies.push(updatedEnemy);
             }
             
             setEnemies(nextEnemies);
+            setGravityWells(activeGravityWells);
 
             if (livesLostThisTick > 0) {
                 setTotalLeaked(prev => prev + livesLostThisTick);
@@ -629,7 +679,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [handleStartNextWaveNow, handleGameEnd, user, isCheating]);
+    }, [startWaveLogic, handleGameEnd, user, isCheating]);
 
     const toggleMute = () => {
       setIsMuted(current => {
@@ -705,9 +755,9 @@ export default function SinglePlayerGame({
             <AlertDialog open={gameStatus === 'gameover'}>
                 <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>{gameState.lives > 0 ? "Sieg!" : "Game Over"}</AlertDialogTitle>
+                    <AlertDialogTitle>{(finalGameResult)?.won ? "Sieg!" : "Game Over"}</AlertDialogTitle>
                     <AlertDialogDescription>
-                    {gameState.lives <= 0 ? "Du hast alle Leben verloren." : "Herzlichen Glückwunsch, du hast alle Wellen besiegt!"} Du hast Welle {currentWave + 1} erreicht.
+                    {(finalGameResult)?.won ? "Herzlichen Glückwunsch, du hast alle Wellen besiegt!" : "Du hast alle Leben verloren."} Du hast Welle {(finalGameResult)?.wave || currentWave + 1} erreicht.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 {(finalGameResult)?.finalTowers && (
