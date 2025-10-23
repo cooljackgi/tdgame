@@ -68,10 +68,19 @@ const EnemyComponent = React.memo(function EnemyComponent({
     boss: "text-violet-400",
   };
 
+  const typeAnimation: Record<EnemyType, string> = {
+    standard: "animate-wobble",
+    schnell: "animate-tension",
+    gepanzert: "animate-breathe",
+    heilend: "animate-aura-pulse",
+    boss: "animate-dark-pulse",
+  };
+
   const iconClass = cn(
     "transition-all duration-100",
     typeColors[type],
     wasHit && "animate-flash",
+    !wasHit && typeAnimation[type], // Only apply idle animation if not being hit
     isDamaged && "animate-wobble"
   );
   
