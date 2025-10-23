@@ -161,8 +161,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   return (
     <div className="grid grid-cols-[320px_1fr_320px] gap-6 max-w-screen-2xl mx-auto h-full">
       {/* Left Sidebar */}
-      <aside className="flex flex-col gap-4">
-        {interactionPromptComponent}
+      <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-r from-background/95 via-background/80 to-transparent backdrop-blur-md border-r border-border/50 overflow-y-auto">
+      {interactionPromptComponent}
         <div id="tutorial-player-stats">
             {players.map(player => player && (
               <PlayerStats
@@ -200,15 +200,16 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
         />
       </aside>
 
-      {/* Main Game Area */}
-      <div className="flex-grow flex items-center justify-center h-full">
+            {/* Main Game Area */}
+            <div className="flex-grow flex items-center justify-center h-full">
          <div
             id="tutorial-game-board"
             ref={wrapRef}
-            className="relative"
+            className="relative rounded-xl overflow-hidden shadow-2xl ring-1 ring-primary/20"
             style={{
                 width:  'min(calc(100vw - 640px - 3rem), 90svh)',
                 height: 'min(calc(100vw - 640px - 3rem), 90svh)',
+                background: 'linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%)',
             }}
         >
             <GameBoard
@@ -239,8 +240,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       </div>
 
       {/* Right Sidebar */}
-      <aside className="flex flex-col gap-4">
-        <div id="tutorial-build-menu">
+      <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-l from-background/95 via-background/80 to-transparent backdrop-blur-md border-l border-border/50 overflow-y-auto">
+      <div id="tutorial-build-menu">
             {!isSpectator && (
               <TowerSelection
                 allTowers={allTowers}
