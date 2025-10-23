@@ -571,7 +571,7 @@ export default function CoopGameLoader() {
           let allNewSplashRings: SplashRing[] = [];
           let allNewLifeGainVfx: LifeGainVfx[] = [];
           
-          let currentEnemies = [...enemies];
+          let currentEnemies = enemies.map(e => ({...e, wasHit: false})); // Reset wasHit
           
           // --- Spawning Logic ---
           const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
@@ -877,4 +877,5 @@ export default function CoopGameLoader() {
     
 
     
+
 

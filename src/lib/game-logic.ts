@@ -28,10 +28,7 @@ export async function onGameEnd(
     won: boolean,
     finalTowers: Record<string, PlacedTower>
 ) {
-    if (!user) return; // Only save scores for logged-in users
-
-    // For coop games, you might have different logic, but for now, we can have both players submit a score
-    // or have only the host submit. We'll allow both for now.
+    if (!user || difficulty === 'Chaos') return; 
     
     try {
         await addDoc(collection(db, "scores"), {
@@ -42,7 +39,7 @@ export async function onGameEnd(
             won: won,
             finalTowers: finalTowers,
             date: serverTimestamp(),
-            gameId: gameId, // Store gameId for reference
+            gameId: gameId, 
         });
     } catch (e) {
         console.error("Failed to save score to Firestore:", e);
