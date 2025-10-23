@@ -809,8 +809,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (playerRole === 'spectator' || !onPing) return;
     e.stopPropagation();
+    
+    console.log('[PING] Context menu triggered', { playerRole, hasOnPing: !!onPing });
+    
+    if (playerRole === 'spectator' || !onPing) {
+      console.log('[PING] Blocked: spectator or no onPing');
+      return;
+    }
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -821,8 +827,13 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const col = Math.floor(worldX / CELL_SIZE) + 1;
     const row = Math.floor(worldY / CELL_SIZE) + 1;
 
+    console.log('[PING] Calculated position:', { row, col });
+
     if (row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS) {
+      console.log('[PING] Opening context menu at', { x: e.clientX, y: e.clientY, row, col });
       setContextMenu({ x: e.clientX, y: e.clientY, row, col });
+    } else {
+      console.log('[PING] Position out of bounds');
     }
   };
   
