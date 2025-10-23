@@ -243,7 +243,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number)
 
     } else { // BEAM
         const headX = fromPos.x + dx * t;
-        const headY = fromPos.y + t;
+        const headY = fromPos.y + dy * t;
         const tailT = Math.max(0, t - 0.15);
         const tailX = fromPos.x + dx * tailT;
         const tailY = fromPos.y + dy * tailT;
@@ -660,31 +660,26 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         attacksPoolRef.current.forEachActive(attack => {
             if (!attack._vfx) return;
-
+            const now = Date.now();
             const liveTarget = enemiesById.get(attack.targetId);
             if (liveTarget) {
                 attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
             }
-
+            
             const life = Math.max(1, attack._vfx.life || 1);
             const t = clamp((now - attack._vfx.start) / life, 0, 1);
-            
-            const tower = towersMap.get(attack.towerId);
-            if (!liveTarget || !tower) {
-                attacksPoolRef.current.free(attack);
-                return;
-            }
-            
-            const distSq = (tower.position.col - liveTarget.position.col) ** 2 + (tower.position.row - liveTarget.position.row) ** 2;
-            if (distSq > tower.range ** 2) {
-                attacksPoolRef.current.free(attack);
-                return;
-            }
             
             if (t >= 1) { 
                 attacksPoolRef.current.free(attack); 
                 return; 
             }
+            
+            const tower = towersMap.get(attack.towerId);
+            if (!tower) {
+                attacksPoolRef.current.free(attack);
+                return;
+            }
+
             drawProjectile(ctx, attack, t);
         });
 
@@ -855,10 +850,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     e.preventDefault();
     e.stopPropagation();
     
-    console.log('[PING] Context menu triggered', { playerRole, hasOnPing: !!onPing });
-    
     if (playerRole === 'spectator' || !onPing) {
-      console.log('[PING] Blocked: spectator or no onPing');
       return;
     }
 
@@ -871,13 +863,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const col = Math.floor(worldX / CELL_SIZE) + 1;
     const row = Math.floor(worldY / CELL_SIZE) + 1;
 
-    console.log('[PING] Calculated position:', { row, col });
-
     if (row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS) {
-      console.log('[PING] Opening context menu at', { x: e.clientX, y: e.clientY, row, col });
       setContextMenu({ x: e.clientX, y: e.clientY, row, col });
-    } else {
-      console.log('[PING] Position out of bounds');
     }
   };
   
@@ -1412,3 +1399,4 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
