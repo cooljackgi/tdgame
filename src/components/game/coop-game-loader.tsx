@@ -606,37 +606,48 @@ export default function CoopGameLoader() {
 
           for (const tower of towers) {
               if (now - tower.lastAttack >= tower.attackSpeed) {
-                  let target: Enemy | null = null;
-                  let minDistanceSq = tower.range * tower.range;
-                  
-                  currentEnemies.forEach(enemy => {
-                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                      if (distSq <= minDistanceSq) {
-                          minDistanceSq = distSq;
-                          target = enemy;
-                      }
-                  });
+                  const isBuffed = currentBuffedTowerIds.has(tower.id);
+                  let attackResult: ReturnType<typeof processAttack> | null = null;
+                  let targets: Enemy[] = [];
 
-                  if (target) {
+                  if (tower.effect?.type === 'multishot' && tower.effect.targets) {
+                      const potentialTargets = currentEnemies.filter(enemy => {
+                          const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                          return distSq <= tower.range * tower.range;
+                      }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, tower.effect.targets);
+                      targets.push(...potentialTargets);
+                  } else {
+                      let target: Enemy | null = null;
+                      let minDistanceSq = tower.range * tower.range;
+                      currentEnemies.forEach(enemy => {
+                          const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                          if (distSq <= minDistanceSq) {
+                              minDistanceSq = distSq;
+                              target = enemy;
+                          }
+                      });
+                      if (target) targets.push(target);
+                  }
+                  
+                  if (targets.length > 0) {
                       tower.lastAttack = now;
                       firingIds.add(tower.id);
-                      
-                      const isBuffed = currentBuffedTowerIds.has(tower.id);
-                      const attackResult = processAttack(tower, target, currentEnemies, now, isBuffed);
 
-                      currentEnemies = attackResult.updatedEnemies;
-                      allNewAttacks.push(...attackResult.newAttacks);
-                      allNewDamageNumbers.push(...attackResult.damageNumbers);
-                      allNewSplashRings.push(...attackResult.splashRings);
-                      allNewLifeGainVfx.push(...attackResult.lifeGainVfx);
+                      let enemiesForThisTick = [...currentEnemies];
+                      for (const target of targets) {
+                          const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
+                          enemiesForThisTick = result.updatedEnemies;
+                          
+                          allNewAttacks.push(...result.newAttacks);
+                          allNewDamageNumbers.push(...result.damageNumbers);
+                          allNewSplashRings.push(...result.splashRings);
+                          allNewLifeGainVfx.push(...result.lifeGainVfx);
 
-                      if (attackResult.resourcesGained > 0) {
-                          resourcesGainedThisTick += attackResult.resourcesGained;
-                          killedThisTick += attackResult.killed;
+                          if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
+                          if (result.killed > 0) killedThisTick += result.killed;
+                          if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
                       }
-                      if (attackResult.livesGained > 0) {
-                          livesGainedThisTick += attackResult.livesGained;
-                      }
+                      currentEnemies = enemiesForThisTick;
                   }
               }
           }
@@ -866,3 +877,4 @@ export default function CoopGameLoader() {
     
 
     
+
