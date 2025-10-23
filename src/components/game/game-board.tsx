@@ -359,6 +359,13 @@ const MemoizedTower = React.memo(function GameCell({
   );
 });
 
+const pingTextMap: Record<PingKind, string> = {
+  attention: 'Achtung!',
+  defend: 'Verteidigen!',
+  attack: 'Angriff!',
+  build: 'Hier bauen!',
+  sell: 'Verkaufen?',
+};
 
 const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({ 
     placedTowers, 
@@ -694,13 +701,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           const age = now - p.createdAt;
           const ttl = p.ttl ?? 4000;
           const t = Math.max(0, 1 - age/ttl);
+          const pingColor = p.from === 'player1' ? primaryColor : destructiveColor;
+          
           ctx.save();
-          ctx.strokeStyle = p.from === 'player1' ? primaryColor : destructiveColor;
+          
+          // Draw Circle
+          ctx.strokeStyle = pingColor;
           ctx.globalAlpha = 0.25 + 0.5*t;
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
           ctx.stroke();
+
+          // Draw Text
+          const text = pingTextMap[p.kind] || p.kind;
+          ctx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillStyle = pingColor;
+          ctx.globalAlpha = 1 - (age / ttl);
+          ctx.shadowColor = "black";
+          ctx.shadowBlur = 4;
+          ctx.fillText(text, x, y - CELL_SIZE * 0.8);
+          
           ctx.restore();
         });
 
@@ -755,7 +777,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    closeContextMenu();
     if (e.button !== 0) return;
     isPanningRef.current = true;
     panStartRef.current = { x: e.clientX, y: e.clientY, panX: panRef.current.x, panY: panRef.current.y };
@@ -1019,7 +1040,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     }
   }, [onFocusTower, selectedTowerToBuild]);
 
-   const handlePingSelect = (kind: PingKind) => {
+  const handlePingSelect = (kind: PingKind) => {
     if (contextMenu && onPing) {
       onPing(kind, contextMenu.row, contextMenu.col);
     }
