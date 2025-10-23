@@ -45,6 +45,14 @@ export type GameResultWithId = GameResult & {
     id: string;
 };
 
+export type GravityWell = {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  potency: number;
+  expires: number;
+};
 
 export type TowerEffect = {
   type: 'slow' | 'stun' | 'burn' | 'pushback' | 'splash' | 'multishot' | 'chain' | 'pull' | 'vulnerability' | 'aura' | 'armor_shred' | 'lifesteal' | 'crit';
@@ -160,6 +168,9 @@ export type Enemy = {
   wasHit: boolean;
   targetNode: Node;
   movementPattern: MovementPattern;
+  // New properties for pull effect
+  vx: number; // velocity x
+  vy: number; // velocity y
 };
 
 
