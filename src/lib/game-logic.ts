@@ -168,13 +168,16 @@ export function processAttack(
         const splashRadiusSq = tower.effect.radius * tower.effect.radius;
         const splashDamage = attackDamage * splashPotency;
 
+        const isMagma = tower.id.includes('combo-fire-earth');
+
         output.splashRings.push({
             id: crypto.randomUUID(),
             x: target.position.col,
             y: target.position.row,
             r: tower.effect.radius,
             element: tower.elements[0] || 'neutral',
-            color: elementProjectileColors[tower.elements[0] || 'neutral']
+            color: elementProjectileColors[tower.elements[0] || 'neutral'],
+            vfxType: isMagma ? 'magma' : undefined,
         } as SplashRing);
         
         output.updatedEnemies = output.updatedEnemies.map(enemy => {

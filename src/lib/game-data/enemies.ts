@@ -1,10 +1,9 @@
-
 import type { Wave, WaveEnemyData, EnemyType } from './types';
 
 // Diese Formeln dienen jetzt als Basis für die *initiale* Generierung
 // und als Referenz im UI. Die Wellen selbst werden als komplette Objekte gespeichert.
 export const waveFormulaCoefficients = {
-  "hp_base": 110,
+  "hp_base": 100,
   "hp_exponent": 1.12,
   "speed_base": 1.2,
   "speed_exponent": 1.005,
@@ -31,9 +30,9 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     const baseParams = {
         standard:  { armorFactor: 0.05, speedFactor: 1.0, healthFactor: 1.0, bountyFactor: 1.0, countFactor: 1.0 },
         schnell:   { armorFactor: 0.02, speedFactor: 1.5, healthFactor: 0.8, bountyFactor: 1.1, countFactor: 1.1 },
-        gepanzert: { armorFactor: 0.15, speedFactor: 0.8, healthFactor: 1.6, bountyFactor: 1.3, countFactor: 0.8 },
-        heilend:   { armorFactor: 0.08, speedFactor: 1.0, healthFactor: 1.3, bountyFactor: 1.2, countFactor: 0.9 },
-        boss:      { armorFactor: 0.25, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 },
+        gepanzert: { armorFactor: 0.20, speedFactor: 0.8, healthFactor: 1.5, bountyFactor: 1.3, countFactor: 0.8 },
+        heilend:   { armorFactor: 0.10, speedFactor: 1.0, healthFactor: 1.2, bountyFactor: 1.2, countFactor: 0.9 },
+        boss:      { armorFactor: 0.30, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 },
     };
     
     const params = baseParams[type];
@@ -126,7 +125,7 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "schnell",
       "count": 19,
-      "spawnDelay": 157.89473684210525,
+      "spawnDelay": 157.89473684210526,
       "health": 165,
       "armor": 3,
       "speed": 1.84,
@@ -177,10 +176,10 @@ export let waves: Wave[] = [
     "waveNumber": 10,
     "enemies": {
       "type": "boss",
-      "count": 2,
+      "count": 1,
       "spawnDelay": 1500,
       "health": 3137,
-      "armor": 784,
+      "armor": 184,
       "speed": 1.09,
       "damage": 314,
       "bounty": 92

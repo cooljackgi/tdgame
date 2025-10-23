@@ -1,5 +1,6 @@
 
 
+
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
@@ -280,12 +281,55 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
   const tSquared = t * t;
   const easeOutT = 1 - (1 - t) * (1 - t);
 
-  // Outer shockwave
+  if (s.vfxType === 'magma') {
+      ctx.save();
+      const cracks = 5;
+      const baseAngle = s.id.charCodeAt(0) % 360; 
+      
+      for (let i = 0; i < cracks; i++) {
+          const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
+          const rad = angle * Math.PI / 180;
+          
+          const len = maxRadius * (0.6 + Math.random() * 0.4) * easeOutT;
+          const wobble = Math.sin(t * Math.PI * 4 + i) * 15;
+          
+          ctx.beginPath();
+          ctx.moveTo(pos.x, pos.y);
+          ctx.lineTo(
+              pos.x + Math.cos(rad) * len, 
+              pos.y + Math.sin(rad) * len + wobble * (1 - easeOutT)
+          );
+          
+          ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
+          ctx.lineWidth = 2 + (1 - t) * 3;
+          ctx.stroke();
+      }
+      
+      const particleCount = 8;
+      for (let i = 0; i < particleCount; i++) {
+        const angle = baseAngle + (i / particleCount * 360) + (Math.random() - 0.5) * 40;
+        const rad = angle * Math.PI / 180;
+        const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
+        const particleSize = 4 * (1 - t);
+        
+        ctx.beginPath();
+        ctx.arc(
+          pos.x + Math.cos(rad) * dist,
+          pos.y + Math.sin(rad) * dist,
+          particleSize, 0, Math.PI * 2
+        );
+        ctx.fillStyle = `hsla(40, 100%, ${70 - t * 30}%, ${1 - tSquared})`;
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+  }
+
+  // Default shockwave
   const shockwaveRadius = maxRadius * easeOutT;
   const shockwaveAlpha = 1 - tSquared;
   const shockwaveWidth = (2 + (1 - t) * 4);
 
-  // Inner glow
   const glowRadius = maxRadius * (t * 0.8);
   const glowAlpha = Math.sin(t * Math.PI) * 0.5;
   
@@ -293,7 +337,6 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
   ctx.shadowBlur = 15;
   ctx.shadowColor = s.color;
 
-  // Draw outer shockwave
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
   ctx.strokeStyle = s.color;
@@ -301,7 +344,6 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
   ctx.globalAlpha = shockwaveAlpha;
   ctx.stroke();
 
-  // Draw inner glow
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
   ctx.strokeStyle = s.color;
@@ -602,7 +644,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             if (q.length) {
                 for (const a of q) {
                     const enemyTarget = enemiesById.get(a.targetId);
-                    if (!enemyTarget) continue;
+                    // Don't discard if target is gone, fly to last known spot
+                    // if (!enemyTarget) continue;
 
                     let fromPx: {x:number, y:number} | null = null;
                     const tower = towersMap.get(a.towerId);
@@ -627,7 +670,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     }
                     if (!fromPx) continue;
                     
-                    const toPx = getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath);
+                    const toPx = enemyTarget 
+                        ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath)
+                        : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
+
                     if (!toPx) continue;
             
                     const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
@@ -647,7 +693,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const q = incomingRingsRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 400 }); 
+                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: q[i].vfxType === 'magma' ? 600 : 400 }); 
                 }
                 q.length = 0; 
             }
@@ -690,7 +736,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             }
             
             const tower = towersMap.get(attack.towerId);
-            if (!tower) { // Tower was sold while projectile was in-flight
+            // This is the key fix: We only free the attack if the tower is gone.
+            // If the target is gone, we let it fly to the last known position.
+            if (!tower) {
                 attacksPoolRef.current.free(attack);
                 return;
             }

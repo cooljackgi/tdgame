@@ -121,6 +121,7 @@ export type SplashRing = {
     element: Element;
     start: number;
     life: number;
+    vfxType?: 'magma';
     // VFX Pool properties
     active?: boolean;
 };
