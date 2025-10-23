@@ -4,7 +4,7 @@ import type { Wave, WaveEnemyData, EnemyType } from './types';
 // Diese Formeln dienen jetzt als Basis für die *initiale* Generierung
 // und als Referenz im UI. Die Wellen selbst werden als komplette Objekte gespeichert.
 export const waveFormulaCoefficients = {
-  "hp_base": 100,
+  "hp_base": 110,
   "hp_exponent": 1.12,
   "speed_base": 1.2,
   "speed_exponent": 1.005,
@@ -31,9 +31,9 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     const baseParams = {
         standard:  { armorFactor: 0.05, speedFactor: 1.0, healthFactor: 1.0, bountyFactor: 1.0, countFactor: 1.0 },
         schnell:   { armorFactor: 0.02, speedFactor: 1.5, healthFactor: 0.8, bountyFactor: 1.1, countFactor: 1.1 },
-        gepanzert: { armorFactor: 0.20, speedFactor: 0.8, healthFactor: 1.5, bountyFactor: 1.3, countFactor: 0.8 },
-        heilend:   { armorFactor: 0.10, speedFactor: 1.0, healthFactor: 1.2, bountyFactor: 1.2, countFactor: 0.9 },
-        boss:      { armorFactor: 0.30, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 },
+        gepanzert: { armorFactor: 0.15, speedFactor: 0.8, healthFactor: 1.6, bountyFactor: 1.3, countFactor: 0.8 },
+        heilend:   { armorFactor: 0.08, speedFactor: 1.0, healthFactor: 1.3, bountyFactor: 1.2, countFactor: 0.9 },
+        boss:      { armorFactor: 0.25, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 },
     };
     
     const params = baseParams[type];
@@ -61,11 +61,11 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 10,
-      "spawnDelay": 1200,
-      "health": 100,
-      "armor": 0,
-      "speed": 1,
-      "damage": 10,
+      "spawnDelay": 300,
+      "health": 110,
+      "armor": 6,
+      "speed": 1.2,
+      "damage": 11,
       "bounty": 10
     }
   },
@@ -74,246 +74,246 @@ export let waves: Wave[] = [
     "enemies": {
       "type": "standard",
       "count": 12,
-      "spawnDelay": 1100,
-      "health": 130,
-      "armor": 5,
-      "speed": 1.03,
-      "damage": 11,
-      "bounty": 11
+      "spawnDelay": 250,
+      "health": 123,
+      "armor": 6,
+      "speed": 1.21,
+      "damage": 12,
+      "bounty": 10
     }
   },
   {
     "waveNumber": 3,
     "enemies": {
-      "type": "standard",
-      "count": 15,
-      "spawnDelay": 900,
-      "health": 160,
-      "armor": 0,
-      "speed": 1.15,
+      "type": "schnell",
+      "count": 14,
+      "spawnDelay": 214.28571428571428,
+      "health": 123,
+      "armor": 2,
+      "speed": 1.82,
       "damage": 12,
-      "bounty": 12
+      "bounty": 11
     }
   },
   {
     "waveNumber": 4,
     "enemies": {
-      "type": "schnell",
-      "count": 13,
-      "spawnDelay": 800,
-      "health": 180,
-      "armor": 10,
-      "speed": 1.6,
-      "damage": 13,
-      "bounty": 14
+      "type": "standard",
+      "count": 15,
+      "spawnDelay": 200,
+      "health": 155,
+      "armor": 8,
+      "speed": 1.22,
+      "damage": 16,
+      "bounty": 11
     }
   },
   {
     "waveNumber": 5,
     "enemies": {
       "type": "gepanzert",
-      "count": 8,
-      "spawnDelay": 1500,
-      "health": 370,
-      "armor": 65,
-      "speed": 0.9,
-      "damage": 20,
-      "bounty": 21
+      "count": 13,
+      "spawnDelay": 230.76923076923077,
+      "health": 298,
+      "armor": 45,
+      "speed": 0.98,
+      "damage": 30,
+      "bounty": 14
     }
   },
   {
     "waveNumber": 6,
     "enemies": {
       "type": "schnell",
-      "count": 18,
-      "spawnDelay": 600,
-      "health": 230,
-      "armor": 10,
-      "speed": 1.7,
-      "damage": 15,
-      "bounty": 14
+      "count": 19,
+      "spawnDelay": 157.89473684210525,
+      "health": 165,
+      "armor": 3,
+      "speed": 1.84,
+      "damage": 17,
+      "bounty": 12
     }
   },
   {
     "waveNumber": 7,
     "enemies": {
       "type": "heilend",
-      "count": 10,
-      "spawnDelay": 1800,
-      "health": 450,
-      "armor": 30,
-      "speed": 1.16,
-      "damage": 25,
-      "bounty": 25
+      "count": 17,
+      "spawnDelay": 176.47058823529412,
+      "health": 299,
+      "armor": 24,
+      "speed": 1.24,
+      "damage": 30,
+      "bounty": 14
     }
   },
   {
     "waveNumber": 8,
     "enemies": {
       "type": "standard",
-      "count": 20,
-      "spawnDelay": 500,
-      "health": 480,
-      "armor": 25,
+      "count": 21,
+      "spawnDelay": 142.85714285714286,
+      "health": 220,
+      "armor": 11,
       "speed": 1.25,
       "damage": 22,
-      "bounty": 16
+      "bounty": 12
     }
   },
   {
     "waveNumber": 9,
     "enemies": {
       "type": "schnell",
-      "count": 22,
-      "spawnDelay": 400,
-      "health": 350,
-      "armor": 15,
-      "speed": 1.8,
-      "damage": 18,
-      "bounty": 18
+      "count": 25,
+      "spawnDelay": 120,
+      "health": 221,
+      "armor": 4,
+      "speed": 1.86,
+      "damage": 22,
+      "bounty": 13
     }
   },
   {
     "waveNumber": 10,
     "enemies": {
       "type": "boss",
-      "count": 1,
-      "spawnDelay": 1000,
-      "health": 6500,
-      "armor": 100,
-      "speed": 0.9,
-      "damage": 180,
-      "bounty": 250
+      "count": 2,
+      "spawnDelay": 1500,
+      "health": 3137,
+      "armor": 784,
+      "speed": 1.09,
+      "damage": 314,
+      "bounty": 92
     }
   },
   {
     "waveNumber": 11,
     "enemies": {
-      "type": "gepanzert",
-      "count": 12,
-      "spawnDelay": 1200,
-      "health": 850,
-      "armor": 160,
-      "speed": 0.92,
-      "damage": 40,
-      "bounty": 30
+      "type": "standard",
+      "count": 25,
+      "spawnDelay": 120,
+      "health": 277,
+      "armor": 14,
+      "speed": 1.26,
+      "damage": 28,
+      "bounty": 12
     }
   },
   {
     "waveNumber": 12,
     "enemies": {
-      "type": "standard",
-      "count": 25,
-      "spawnDelay": 400,
-      "health": 750,
-      "armor": 40,
-      "speed": 1.3,
-      "damage": 30,
-      "bounty": 22
+      "type": "schnell",
+      "count": 30,
+      "spawnDelay": 100,
+      "health": 278,
+      "armor": 6,
+      "speed": 1.88,
+      "damage": 28,
+      "bounty": 14
     }
   },
   {
     "waveNumber": 13,
     "enemies": {
-      "type": "schnell",
+      "type": "standard",
       "count": 28,
-      "spawnDelay": 350,
-      "health": 500,
-      "armor": 20,
-      "speed": 1.95,
-      "damage": 25,
-      "bounty": 24
+      "spawnDelay": 107.14285714285714,
+      "health": 348,
+      "armor": 17,
+      "speed": 1.28,
+      "damage": 35,
+      "bounty": 13
     }
   },
   {
     "waveNumber": 14,
     "enemies": {
       "type": "heilend",
-      "count": 15,
-      "spawnDelay": 1500,
-      "health": 1000,
-      "armor": 50,
-      "speed": 1.3,
-      "damage": 40,
-      "bounty": 40
+      "count": 26,
+      "spawnDelay": 115.38461538461539,
+      "health": 557,
+      "armor": 45,
+      "speed": 1.28,
+      "damage": 56,
+      "bounty": 16
     }
   },
   {
     "waveNumber": 15,
     "enemies": {
       "type": "gepanzert",
-      "count": 18,
-      "spawnDelay": 1000,
-      "health": 1200,
-      "armor": 200,
-      "speed": 0.95,
-      "damage": 50,
-      "bounty": 45
+      "count": 24,
+      "spawnDelay": 125,
+      "health": 673,
+      "armor": 101,
+      "speed": 1.03,
+      "damage": 67,
+      "bounty": 18
     }
   },
   {
     "waveNumber": 16,
     "enemies": {
       "type": "standard",
-      "count": 28,
-      "spawnDelay": 300,
-      "health": 1100,
-      "armor": 60,
-      "speed": 1.4,
-      "damage": 45,
-      "bounty": 28
+      "count": 33,
+      "spawnDelay": 200,
+      "health": 490,
+      "armor": 25,
+      "speed": 1.3,
+      "damage": 49,
+      "bounty": 14
     }
   },
   {
     "waveNumber": 17,
     "enemies": {
-      "type": "schnell",
-      "count": 35,
-      "spawnDelay": 300,
-      "health": 700,
-      "armor": 30,
-      "speed": 2,
-      "damage": 35,
-      "bounty": 30
+      "type": "standard",
+      "count": 34,
+      "spawnDelay": 200,
+      "health": 549,
+      "armor": 27,
+      "speed": 1.31,
+      "damage": 55,
+      "bounty": 14
     }
   },
   {
     "waveNumber": 18,
     "enemies": {
-      "type": "gepanzert",
-      "count": 20,
-      "spawnDelay": 900,
-      "health": 1600,
-      "armor": 250,
-      "speed": 1,
-      "damage": 60,
-      "bounty": 55
+      "type": "schnell",
+      "count": 40,
+      "spawnDelay": 200,
+      "health": 491,
+      "armor": 10,
+      "speed": 1.95,
+      "damage": 49,
+      "bounty": 16
     }
   },
   {
     "waveNumber": 19,
     "enemies": {
-      "type": "heilend",
-      "count": 20,
-      "spawnDelay": 1200,
-      "health": 1500,
-      "armor": 80,
-      "speed": 1.4,
-      "damage": 50,
-      "bounty": 50
+      "type": "gepanzert",
+      "count": 30,
+      "spawnDelay": 200,
+      "health": 1060,
+      "armor": 159,
+      "speed": 1.06,
+      "damage": 106,
+      "bounty": 21
     }
   },
   {
     "waveNumber": 20,
     "enemies": {
       "type": "boss",
-      "count": 1,
-      "spawnDelay": 3000,
-      "health": 18000,
-      "armor": 450,
-      "speed": 1,
-      "damage": 300,
-      "bounty": 500
+      "count": 3,
+      "spawnDelay": 1000,
+      "health": 8940,
+      "armor": 2235,
+      "speed": 1.18,
+      "damage": 894,
+      "bounty": 131
     }
   },
   {
@@ -323,7 +323,7 @@ export let waves: Wave[] = [
       "count": 36,
       "spawnDelay": 200,
       "health": 1158,
-      "armor": 116,
+      "armor": 93,
       "speed": 1.33,
       "damage": 116,
       "bounty": 18
@@ -375,7 +375,7 @@ export let waves: Wave[] = [
       "count": 37,
       "spawnDelay": 200,
       "health": 2277,
-      "armor": 455,
+      "armor": 342,
       "speed": 1.08,
       "damage": 228,
       "bounty": 21
@@ -414,7 +414,7 @@ export let waves: Wave[] = [
       "count": 45,
       "spawnDelay": 200,
       "health": 2559,
-      "armor": 256,
+      "armor": 205,
       "speed": 1.37,
       "damage": 256,
       "bounty": 20
@@ -440,7 +440,7 @@ export let waves: Wave[] = [
       "count": 4,
       "spawnDelay": 750,
       "health": 32100,
-      "armor": 9630,
+      "armor": 8025,
       "speed": 1.25,
       "damage": 3210,
       "bounty": 142
@@ -505,7 +505,7 @@ export let waves: Wave[] = [
       "count": 55,
       "spawnDelay": 200,
       "health": 5657,
-      "armor": 566,
+      "armor": 453,
       "speed": 1.42,
       "damage": 566,
       "bounty": 24
@@ -570,7 +570,7 @@ export let waves: Wave[] = [
       "count": 5,
       "spawnDelay": 600,
       "health": 99697,
-      "armor": 29909,
+      "armor": 24924,
       "speed": 1.31,
       "damage": 9970,
       "bounty": 173
@@ -596,7 +596,7 @@ export let waves: Wave[] = [
       "count": 64,
       "spawnDelay": 200,
       "health": 12506,
-      "armor": 1251,
+      "armor": 1000,
       "speed": 1.47,
       "damage": 1251,
       "bounty": 27
@@ -635,7 +635,7 @@ export let waves: Wave[] = [
       "count": 61,
       "spawnDelay": 200,
       "health": 21963,
-      "armor": 4393,
+      "armor": 3294,
       "speed": 1.2,
       "damage": 2196,
       "bounty": 31
@@ -687,7 +687,7 @@ export let waves: Wave[] = [
       "count": 74,
       "spawnDelay": 200,
       "health": 27647,
-      "armor": 2765,
+      "armor": 2212,
       "speed": 1.52,
       "damage": 2765,
       "bounty": 31
@@ -700,7 +700,7 @@ export let waves: Wave[] = [
       "count": 6,
       "spawnDelay": 500,
       "health": 309645,
-      "armor": 92894,
+      "armor": 77411,
       "speed": 1.38,
       "damage": 30965,
       "bounty": 211
