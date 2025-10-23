@@ -1,6 +1,5 @@
 
 
-
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
@@ -300,6 +299,19 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
               ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
               ctx.stroke();
           }
+           if (s.vfxType === 'magma') {
+                const particles = 8;
+                for (let i = 0; i < particles; i++) {
+                    const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
+                    const rad = angle * Math.PI / 180;
+                    const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
+                    const size = 3 * (1 - t);
+                    ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
           break;
       }
       case 'ice': {
@@ -319,16 +331,25 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
           break;
       }
        case 'rock': {
-            const fragments = 6;
+            const fragments = 8;
             for (let i = 0; i < fragments; i++) {
-                const angle = baseAngle + (i / fragments * 360) + (Math.random() - 0.5) * 60;
+                const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
                 const rad = angle * Math.PI / 180;
                 const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
                 const particleSize = 6 * (1 - t);
-                ctx.beginPath();
-                ctx.rect(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, particleSize, particleSize);
+                
+                ctx.save();
+                ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
+                ctx.rotate(angle * Math.PI / 180);
+                
                 ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
+                ctx.beginPath();
+                ctx.moveTo(0, -particleSize);
+                ctx.lineTo(particleSize, particleSize);
+                ctx.lineTo(-particleSize, particleSize);
+                ctx.closePath();
                 ctx.fill();
+                ctx.restore();
             }
             break;
        }
@@ -348,6 +369,14 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
             break;
        }
         case 'light': {
+            ctx.globalCompositeOperation = 'lighter';
+            const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
+            const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
+            coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
+            coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
+            ctx.fillStyle = coreGradient;
+            ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
+
             const glowRadius = maxRadius * easeOutT;
             ctx.shadowBlur = 30;
             ctx.shadowColor = s.color;
@@ -359,6 +388,18 @@ function drawSplashRing(ctx: CanvasRenderingContext2D, s: LiveSplashRing, t: num
         }
         case 'dark': {
             const pullRadius = maxRadius * (1 - easeOutT);
+            const implosionRadius = maxRadius * (1 - t);
+            
+            const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
+            gradient.addColorStop(0, 'rgba(128, 0, 128, 0)');
+            gradient.addColorStop(0.8, 'rgba(128, 0, 128, 0.4)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
+            ctx.fill();
+
             ctx.shadowBlur = 15;
             ctx.shadowColor = s.color;
             ctx.beginPath();
