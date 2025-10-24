@@ -66,9 +66,13 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
   // If the enemy is dying, lock its position to where it was last seen.
   if (enemy.deathTimestamp) {
     const lastKnownPos = interpolatedEnemyPositions.get(enemy.id);
-    if (lastKnownPos) return lastKnownPos;
-    // Fallback to its logical position if not in map for some reason
-    return gridToPx(enemy.position); 
+    if (lastKnownPos) {
+        return lastKnownPos;
+    }
+    // Fallback: If not in map, calculate its logical position, STORE IT, and return.
+    const finalPos = gridToPx(enemy.position);
+    interpolatedEnemyPositions.set(enemy.id, { x: finalPos.x, y: finalPos.y, lastUpdate: now });
+    return finalPos;
   }
   
   let targetPos: { x: number, y: number };
