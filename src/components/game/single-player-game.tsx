@@ -71,7 +71,7 @@ export default function SinglePlayerGame({
 
     // --- Game Loop Refs ---
     const gameLoopRef = useRef<number>();
-    const lastTickRef = useRef(performance.now());
+    const lastTickRef = useRef(Date.now());
     const enemyIdCounter = useRef(0);
     const gameBoardRef = useRef<GameBoardHandle>(null);
     const spawnQueueRef = useRef<any[]>([]);
@@ -106,7 +106,7 @@ export default function SinglePlayerGame({
 
     useEffect(() => {
         if (initialSavedGame) {
-            const now = performance.now();
+            const now = Date.now();
             const loadedTowers = initialSavedGame.towersByCell;
             for (const key in loadedTowers) {
                 loadedTowers[key].lastAttack = now - (loadedTowers[key].attackSpeed + Math.random() * 500); 
@@ -303,7 +303,7 @@ export default function SinglePlayerGame({
             id: `tower-${row}-${col}-${Date.now()}`,
             specId: towerSpec.id,
             position: { row, col },
-            lastAttack: performance.now() - 99999,
+            lastAttack: Date.now() - 99999,
             health: towerSpec.maxHealth,
             ownerId: player.id,
         };
@@ -518,6 +518,7 @@ export default function SinglePlayerGame({
 
                     if (tower.effect?.type === 'multishot' && tower.effect.targets) {
                         const potentialTargets = currentEnemies.filter(enemy => {
+                            if (enemy.deathTimestamp) return false;
                             const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                             return distSq <= tower.range * tower.range;
                         }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, tower.effect.targets);
@@ -581,7 +582,7 @@ export default function SinglePlayerGame({
             const nextEnemies: Enemy[] = [];
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
 
-            for (const enemy of currentEnemies) {
+            for (let enemy of currentEnemies) {
                  if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                     continue; // Remove after death animation
                 }
@@ -592,19 +593,25 @@ export default function SinglePlayerGame({
 
                 let updatedEnemy = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-                const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                if (stunEffect) {
-                    nextEnemies.push(updatedEnemy);
-                    continue;
-                };
-                
                 const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
                 if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
                     const damage = burnEffect.potency ?? 0;
                     updatedEnemy.health -= damage;
                     burnEffect.lastTick = now;
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
+                    if (updatedEnemy.health <= 0) {
+                      if (!updatedEnemy.deathTimestamp) {
+                        updatedEnemy.deathTimestamp = now;
+                        updatedEnemy.health = 1;
+                      }
+                    }
                 }
+                
+                const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
+                if (stunEffect) {
+                    nextEnemies.push(updatedEnemy);
+                    continue;
+                };
                 
                 // Pull logic
                 for (const well of activeGravityWells) {
@@ -621,18 +628,12 @@ export default function SinglePlayerGame({
                     }
                 }
 
-
-                if (updatedEnemy.health <= 0) {
-                    updatedEnemy.deathTimestamp = now;
-                    nextEnemies.push(updatedEnemy);
-                    continue;
-                }
-
                 const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
                 const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
                 const stepMs = 1000 / Math.max(0.001, speed);
                 
                 let timeToMove = now - updatedEnemy.lastMove;
+                let enemyReference: Enemy | null = updatedEnemy;
                 while (timeToMove >= stepMs) {
                     if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                         updatedEnemy.pathIndex += 1;
@@ -641,15 +642,20 @@ export default function SinglePlayerGame({
                         updatedEnemy.lastMove += stepMs;
                     } else {
                         livesLostThisTick++;
-                        updatedEnemy.health = -1; // Mark for removal
+                        enemyReference = null;
                         break;
                     }
                 }
                 
-                if (updatedEnemy.health <= 0) {
-                     updatedEnemy.deathTimestamp = now;
+                if (enemyReference) {
+                  if (enemyReference.health <= 0) {
+                    if (!enemyReference.deathTimestamp) {
+                      enemyReference.deathTimestamp = now;
+                      enemyReference.health = 1;
+                    }
+                  }
+                  nextEnemies.push(enemyReference);
                 }
-                nextEnemies.push(updatedEnemy);
             }
             
             setEnemies(nextEnemies);

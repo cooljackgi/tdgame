@@ -607,7 +607,6 @@ export default function CoopGameLoader() {
           for (const tower of towers) {
               if (now - tower.lastAttack >= tower.attackSpeed) {
                   const isBuffed = currentBuffedTowerIds.has(tower.id);
-                  let attackResult: ReturnType<typeof processAttack> | null = null;
                   let targets: Enemy[] = [];
 
                   if (tower.effect?.type === 'multishot' && tower.effect.targets) {
@@ -620,6 +619,7 @@ export default function CoopGameLoader() {
                       let target: Enemy | null = null;
                       let minDistanceSq = tower.range * tower.range;
                       currentEnemies.forEach(enemy => {
+                          if (enemy.deathTimestamp) return;
                           const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                           if (distSq <= minDistanceSq) {
                               minDistanceSq = distSq;
@@ -686,30 +686,27 @@ export default function CoopGameLoader() {
                 continue;
               }
 
-              let updatedEnemy = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
+              let updatedEnemy: Enemy | null = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
+
+              const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
+              if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
+                  const burnDamage = burnEffect.potency ?? 0;
+                  updatedEnemy.health -= burnDamage;
+                  burnEffect.lastTick = now;
+                  gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
+                  sendGameDataRef.current('VFX_DAMAGE_NUMBER', [{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
+                  if (updatedEnemy.health <= 0) {
+                    if (!updatedEnemy.deathTimestamp) {
+                      updatedEnemy.deathTimestamp = now;
+                      updatedEnemy.health = 1;
+                    }
+                  }
+              }
 
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
                   stillAlive.push(updatedEnemy);
                   continue;
-              }
-
-              const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
-              if (burnEffect) {
-                  if (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000) {
-                      const burnDamage = burnEffect.potency ?? 0;
-                      updatedEnemy.health -= burnDamage;
-                      burnEffect.lastTick = now;
-                      const dmgNum = { id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' };
-                      gameBoardRef.current?.queueDamageNumbers([dmgNum]);
-                      sendGameDataRef.current('VFX_DAMAGE_NUMBER', [dmgNum]);
-                  }
-              }
-
-              if (updatedEnemy.health <= 0) {
-                 updatedEnemy.deathTimestamp = now;
-                 stillAlive.push(updatedEnemy);
-                 continue;
               }
               
               const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
@@ -717,17 +714,30 @@ export default function CoopGameLoader() {
               const speed = updatedEnemy.speed * speedMultiplier;
               
               const stepMs = 1000 / Math.max(0.01, speed);
-              if (now - updatedEnemy.lastMove > stepMs) {
+              let timeToMove = now - updatedEnemy.lastMove;
+              
+              while (timeToMove >= stepMs) {
                   if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                       updatedEnemy.pathIndex += 1;
                       updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                      updatedEnemy.lastMove = now;
+                      timeToMove -= stepMs;
+                      updatedEnemy.lastMove += stepMs;
                   } else {
                       livesLostThisTick++;
-                      continue;
+                      updatedEnemy = null;
+                      break;
                   }
               }
-              stillAlive.push(updatedEnemy);
+              
+              if(updatedEnemy) {
+                if (updatedEnemy.health <= 0) {
+                  if (!updatedEnemy.deathTimestamp) {
+                    updatedEnemy.deathTimestamp = now;
+                    updatedEnemy.health = 1;
+                  }
+                }
+                stillAlive.push(updatedEnemy);
+              }
           }
           
           
@@ -887,4 +897,5 @@ export default function CoopGameLoader() {
     
 
     
+
 
