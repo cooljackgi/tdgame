@@ -591,7 +591,7 @@ export default function SinglePlayerGame({
                     continue;
                 }
 
-                let updatedEnemy = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+                let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
                 const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
                 if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
@@ -633,7 +633,7 @@ export default function SinglePlayerGame({
                 const stepMs = 1000 / Math.max(0.001, speed);
                 
                 let timeToMove = now - updatedEnemy.lastMove;
-                let enemyReference: Enemy | null = updatedEnemy;
+                
                 while (timeToMove >= stepMs) {
                     if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
                         updatedEnemy.pathIndex += 1;
@@ -642,19 +642,19 @@ export default function SinglePlayerGame({
                         updatedEnemy.lastMove += stepMs;
                     } else {
                         livesLostThisTick++;
-                        enemyReference = null;
+                        updatedEnemy = null;
                         break;
                     }
                 }
                 
-                if (enemyReference) {
-                  if (enemyReference.health <= 0) {
-                    if (!enemyReference.deathTimestamp) {
-                      enemyReference.deathTimestamp = now;
-                      enemyReference.health = 1;
+                if (updatedEnemy) {
+                  if (updatedEnemy.health <= 0) {
+                    if (!updatedEnemy.deathTimestamp) {
+                      updatedEnemy.deathTimestamp = now;
+                      updatedEnemy.health = 1;
                     }
                   }
-                  nextEnemies.push(enemyReference);
+                  nextEnemies.push(updatedEnemy);
                 }
             }
             

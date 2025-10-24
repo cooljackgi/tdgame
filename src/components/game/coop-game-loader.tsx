@@ -611,6 +611,7 @@ export default function CoopGameLoader() {
 
                   if (tower.effect?.type === 'multishot' && tower.effect.targets) {
                       const potentialTargets = currentEnemies.filter(enemy => {
+                          if (enemy.deathTimestamp) return false;
                           const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                           return distSq <= tower.range * tower.range;
                       }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, tower.effect.targets);
@@ -619,7 +620,7 @@ export default function CoopGameLoader() {
                       let target: Enemy | null = null;
                       let minDistanceSq = tower.range * tower.range;
                       currentEnemies.forEach(enemy => {
-                          if (enemy.deathTimestamp) return;
+                          if (enemy.deathTimestamp) return; // Ignore dying enemies
                           const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                           if (distSq <= minDistanceSq) {
                               minDistanceSq = distSq;
@@ -897,5 +898,6 @@ export default function CoopGameLoader() {
     
 
     
+
 
 

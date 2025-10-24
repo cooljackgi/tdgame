@@ -1025,7 +1025,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     lastTouchRef.current = null;
     
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: performance.now() };
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
 
     if (e.touches.length === 1) {
         isPanningRef.current = true;
@@ -1095,7 +1095,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
     const dist = Math.hypot(dx, dy);
-    const duration = performance.now() - start.time;
+    const duration = Date.now() - start.time;
 
     if (dist < 10 && duration < 200) { // It's a tap
         e.stopPropagation();
@@ -1310,8 +1310,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         
                         const isStunned = enemy.effects.some(e => e.type === 'stun' && e.expires > Date.now());
                         
-                        const isGhost = !enemies.find(e => e.id === enemy.id);
-
                         return (
                             <div
                             key={enemy.id}
@@ -1334,7 +1332,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                                 health={enemy.health}
                                 maxHealth={enemy.maxHealth}
                                 effects={enemy.effects}
-                                isGhost={isGhost}
+                                isDying={!!enemy.deathTimestamp}
                             />
                             </div>
                         );
