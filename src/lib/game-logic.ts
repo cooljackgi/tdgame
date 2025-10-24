@@ -69,7 +69,7 @@ export function processAttack(
     lifeGainVfx: LifeGainVfx[];
 } {
     const output = {
-        updatedEnemies: [...allEnemies], // Correctly initialize with a copy of all enemies
+        updatedEnemies: [...allEnemies],
         resourcesGained: 0,
         killed: 0,
         livesGained: 0,
@@ -96,6 +96,10 @@ export function processAttack(
         isCrit: boolean = false,
         sourceEffect?: TowerEffect
     ): Enemy => {
+        // Find if this enemy is already dead, to prevent multi-kill rewards
+        const originalEnemyState = allEnemies.find(e => e.id === enemyToDamage.id);
+        const wasAlreadyDead = originalEnemyState ? originalEnemyState.health <= 0 : false;
+
         const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
         const vulnerability = enemyToDamage.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
 
@@ -108,7 +112,6 @@ export function processAttack(
             critMultiplier = sourceEffect?.type === 'crit' ? (sourceEffect.potency ?? 2) : 2;
             finalDamage *= critMultiplier;
         }
-
 
         output.damageNumbers.push({
             id: crypto.randomUUID(),
@@ -134,6 +137,16 @@ export function processAttack(
                 } else {
                     newEffects.push({ type, expires: now + duration, potency, duration });
                 }
+            }
+        }
+        
+        // Check if the enemy was just defeated by this damage instance
+        if (newHealth <= 0 && !wasAlreadyDead) {
+            output.resourcesGained += enemyToDamage.bounty;
+            output.killed++;
+            if (sourceEffect?.type === 'lifesteal' && Math.random() < (sourceEffect.chance ?? 0)) {
+                output.livesGained++;
+                output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
             }
         }
 
@@ -163,7 +176,6 @@ export function processAttack(
         const splashRadiusSq = tower.effect.radius * tower.effect.radius;
         const splashDamage = attackDamage * splashPotency;
 
-        // Determine the special VFX type based on tower ID
         let vfxType: SplashRingVfxType | undefined = undefined;
         const towerId = tower.specId;
         if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
@@ -186,10 +198,9 @@ export function processAttack(
         } as SplashRing);
         
         output.updatedEnemies = output.updatedEnemies.map(enemy => {
-            if (enemy.id === target.id) return enemy; // Already damaged
+            if (enemy.id === target.id) return enemy; 
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
-                 // Set wasHit to true for splash targets to trigger flash animation
                 const updatedEnemy = applyDamage(enemy, splashDamage, false, tower.effect);
                 return { ...updatedEnemy, wasHit: true };
             }
@@ -238,30 +249,12 @@ export function processAttack(
                 hitTargets.add(nextTarget.id);
                 lastHitEnemy = nextTarget;
             } else {
-                break; // No more targets in range
+                break;
             }
         }
     }
     
-    // --- Final check for defeated enemies and Lifesteal ---
-    const stillAlive: Enemy[] = [];
-    for (const enemy of output.updatedEnemies) {
-        if (enemy.health > 0) {
-            stillAlive.push(enemy);
-        } else {
-            const originalEnemy = allEnemies.find(e => e.id === enemy.id);
-            if (originalEnemy && originalEnemy.health > 0) {
-                 output.resourcesGained += enemy.bounty;
-                 output.killed++;
-                 
-                 if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 0)) {
-                     output.livesGained++;
-                     output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
-                 }
-            }
-        }
-    }
-    output.updatedEnemies = stillAlive;
-
+    // Function does not remove enemies, just updates their health.
+    // The main game loop is responsible for handling death logic.
     return output;
 }

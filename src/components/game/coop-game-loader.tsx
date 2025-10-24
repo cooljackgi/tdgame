@@ -141,6 +141,8 @@ export default function CoopGameLoader() {
                 wasHit: false,
                 targetNode: { row: GRID_ROWS, col: GRID_COLS },
                 movementPattern: spec.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+                vx: 0,
+                vy: 0,
                 _spawnTime: i * spec.enemies.spawnDelay,
             };
         });
@@ -731,11 +733,9 @@ export default function CoopGameLoader() {
               }
               
               if(updatedEnemy) {
-                if (updatedEnemy.health <= 0) {
-                  if (!updatedEnemy.deathTimestamp) {
+                if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                     updatedEnemy.deathTimestamp = now;
                     updatedEnemy.health = 1;
-                  }
                 }
                 stillAlive.push(updatedEnemy);
               }
@@ -898,6 +898,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 

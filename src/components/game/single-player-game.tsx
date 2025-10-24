@@ -648,11 +648,9 @@ export default function SinglePlayerGame({
                 }
                 
                  if (updatedEnemy) {
-                   if (updatedEnemy.health <= 0) {
-                     if (!updatedEnemy.deathTimestamp) {
-                       updatedEnemy.deathTimestamp = now;
-                       updatedEnemy.health = 1;
-                     }
+                   if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
+                        updatedEnemy.deathTimestamp = now;
+                        updatedEnemy.health = 1;
                    }
                    nextEnemies.push(updatedEnemy);
                  }
