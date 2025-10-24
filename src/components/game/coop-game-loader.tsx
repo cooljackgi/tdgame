@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -51,6 +51,7 @@ export default function CoopGameLoader() {
   const [gameDataLoaded, setGameDataLoaded] = useState(false);
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
+  const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
 
   
   // UI State
@@ -233,33 +234,37 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { playerId, element } = payload;
-                const originalPlayerState = players.find(p => p.id === playerId);
-                if (!originalPlayerState) return;
-
-                const updatedPlayers = players.map(p => 
-                    p.id === playerId 
+                const waveForPick = currentWave;
+                const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
+            
+                if (!needsToPick) {
+                    console.warn(`[HOST] Element pick rejected: not an element wave.`);
+                    return;
+                }
+            
+                const updatedPlayers = players.map(p =>
+                    p.id === playerId
                         ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
                         : p
                 );
                 setPlayers(updatedPlayers);
+            
+                // Check if all players have made their choice for this round.
+                // The number of element picks so far is Math.floor(wave / 5).
+                // After this pick, they should have 1 (neutral) + number of picks.
+                const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
                 
-                const waveForPick = currentWave;
-                const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
-
-                if (needsToPick) {
-                    const expectedElementsAfterPick = 1 + (waveForPick / 5);
-                    const allPlayersHavePicked = updatedPlayers.every(p => {
-                        if (!p) return true;
-                        if (p.unlockedElements.length >= 8) return true;
-                        return p.unlockedElements.length >= expectedElementsAfterPick;
-                    });
-                    
-                    if (allPlayersHavePicked) {
-                        setCurrentWave(prev => prev + 1);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                        setGameStatus("playing");
-                    }
+                const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator');
+                const allPlayersHavePicked = activePlayers.every(p => {
+                    if (p.unlockedElements.length >= 8) return true; // Maxed out
+                    return p.unlockedElements.length >= expectedElementsAfterPick;
+                });
+            
+                if (allPlayersHavePicked && activePlayers.length > 1) {
+                    setCurrentWave(prev => prev + 1);
+                    setIsIntermission(true);
+                    setWaveStartCountdown(INTERMISSION_TIME);
+                    setGameStatus("playing");
                 }
                 break;
             }
@@ -296,6 +301,7 @@ export default function CoopGameLoader() {
         setGameStatus(payload.gameStatus);
         setTotalKilled(payload.totalKilled);
         setTotalLeaked(payload.totalLeaked);
+        setGravityWells(payload.gravityWells || []);
         break;
       case 'VFX_ATTACK':
         gameBoardRef.current?.queueAttacks(payload);
@@ -447,9 +453,10 @@ export default function CoopGameLoader() {
             players, enemies, towersByCell, gameState,
             currentWave, isIntermission, waveStartCountdown, gameStatus,
             totalKilled, totalLeaked,
+            gravityWells,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked]);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells]);
     
     useEffect(() => {
         if (!isGameHost || hostRevision === 0) return;
@@ -572,6 +579,7 @@ export default function CoopGameLoader() {
           let allNewDamageNumbers: DamageNumber[] = [];
           let allNewSplashRings: SplashRing[] = [];
           let allNewLifeGainVfx: LifeGainVfx[] = [];
+          let newGravityWells: GravityWell[] = [];
           
           let currentEnemies = enemies.map(e => ({...e, wasHit: false})); // Reset wasHit
           
@@ -638,17 +646,28 @@ export default function CoopGameLoader() {
 
                       let enemiesForThisTick = [...currentEnemies];
                       for (const target of targets) {
-                          const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
-                          enemiesForThisTick = result.updatedEnemies;
-                          
-                          allNewAttacks.push(...result.newAttacks);
-                          allNewDamageNumbers.push(...result.damageNumbers);
-                          allNewSplashRings.push(...result.splashRings);
-                          allNewLifeGainVfx.push(...result.lifeGainVfx);
-
-                          if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
-                          if (result.killed > 0) killedThisTick += result.killed;
-                          if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
+                           const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
+                           enemiesForThisTick = result.updatedEnemies;
+                           
+                           allNewAttacks.push(...result.newAttacks);
+                           allNewDamageNumbers.push(...result.damageNumbers);
+                           allNewSplashRings.push(...result.splashRings);
+                           allNewLifeGainVfx.push(...result.lifeGainVfx);
+ 
+                           if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
+                           if (result.killed > 0) killedThisTick += result.killed;
+                           if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
+                           
+                           if (tower.effect?.type === 'pull' && tower.effect.radius && tower.effect.duration && tower.effect.potency) {
+                                newGravityWells.push({
+                                    id: `well-${now}`,
+                                    x: target.position.col,
+                                    y: target.position.row,
+                                    radius: tower.effect.radius,
+                                    potency: tower.effect.potency,
+                                    expires: now + tower.effect.duration
+                                });
+                            }
                       }
                       currentEnemies = enemiesForThisTick;
                   }
@@ -680,6 +699,8 @@ export default function CoopGameLoader() {
 
           // 3. Enemy movement and effects logic
           const stillAlive: Enemy[] = [];
+          const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
+
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                 continue; // Remove after death animation
@@ -701,7 +722,6 @@ export default function CoopGameLoader() {
                   if (updatedEnemy.health <= 0) {
                     if (!updatedEnemy.deathTimestamp) {
                       updatedEnemy.deathTimestamp = now;
-                      updatedEnemy.health = 1;
                     }
                   }
               }
@@ -712,6 +732,23 @@ export default function CoopGameLoader() {
                   continue;
               }
               
+              let vx = 0, vy = 0;
+              for (const well of activeGravityWells) {
+                  const dx = well.x - updatedEnemy.position.col;
+                  const dy = well.y - updatedEnemy.position.row;
+                  const distSq = dx * dx + dy * dy;
+                  if (distSq <= well.radius * well.radius) {
+                      const dist = Math.sqrt(distSq);
+                      if (dist > 0.1) {
+                          const pullStrength = well.potency;
+                          vx += (dx / dist) * pullStrength;
+                          vy += (dy / dist) * pullStrength;
+                      }
+                  }
+              }
+              updatedEnemy.vx = vx;
+              updatedEnemy.vy = vy;
+
               const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
               const speedMultiplier = slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1;
               const speed = updatedEnemy.speed * speedMultiplier;
@@ -735,7 +772,6 @@ export default function CoopGameLoader() {
               if(updatedEnemy) {
                 if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                     updatedEnemy.deathTimestamp = now;
-                    updatedEnemy.health = 1;
                 }
                 stillAlive.push(updatedEnemy);
               }
@@ -744,6 +780,8 @@ export default function CoopGameLoader() {
           
           // 4. Update state based on tick results
           setEnemies(stillAlive);
+          setGravityWells(activeGravityWells);
+
 
           if (livesLostThisTick > 0) {
               setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLostThisTick) }));
@@ -787,7 +825,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, currentPathRef, players]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, currentPathRef, players, gravityWells]);
 
 
   const toggleMute = () => {
@@ -898,6 +936,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 
