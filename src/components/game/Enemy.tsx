@@ -72,10 +72,10 @@ const EnemyComponent = React.memo(function EnemyComponent({
 
   const typeAnimation: Record<EnemyType, string> = {
     standard: "animate-wobble",
-    schnell: "animate-tension",
-    gepanzert: "animate-breathe",
+    schnell: "animate-aura-pulse",
+    gepanzert: "animate-aura-pulse",
     heilend: "animate-aura-pulse",
-    boss: "animate-dark-pulse",
+    boss: "animate-aura-pulse",
   };
 
   const iconClass = cn(
@@ -99,8 +99,8 @@ const EnemyComponent = React.memo(function EnemyComponent({
 
   if (isDying) {
     return (
-      <div className={cn("relative w-12 h-12 flex items-center justify-center animate-grave-fade", className)}>
-        <svg viewBox="0 0 24 24" className="h-full w-full text-slate-500" fill="none" stroke="currentColor" strokeWidth="2">
+      <div className={cn("relative w-16 h-16 flex items-center justify-center animate-grave-fade", className)}>
+        <svg viewBox="0 0 24 24" className="h-full w-full text-slate-500" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d={enemyTombstonePath} />
         </svg>
       </div>
