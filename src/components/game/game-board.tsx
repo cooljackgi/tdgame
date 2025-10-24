@@ -63,6 +63,14 @@ function cssVar(name: string): string {
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
 
 function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
+  // If the enemy is dying, lock its position to where it was last seen.
+  if (enemy.deathTimestamp) {
+    const lastKnownPos = interpolatedEnemyPositions.get(enemy.id);
+    if (lastKnownPos) return lastKnownPos;
+    // Fallback to its logical position if not in map for some reason
+    return gridToPx(enemy.position); 
+  }
+  
   let targetPos: { x: number, y: number };
 
   if (!enemy.path || enemy.path.length === 0) {

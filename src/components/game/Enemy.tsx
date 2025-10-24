@@ -1,3 +1,4 @@
+
 // src/components/game/Enemy.tsx
 "use client";
 
@@ -100,18 +101,9 @@ const EnemyComponent = React.memo(function EnemyComponent({
   return (
     <div
       className={cn("relative w-8 h-8 flex items-center justify-center", className)}
+      style={{ opacity: isDying ? 0 : 1 }} // Hide the component if it's dying, animation is handled by GameBoard
     >
-      {isDying ? (
-        <svg
-          viewBox="0 0 24 24"
-          className="h-full w-full text-slate-600 animate-grave-fade"
-          fill="currentColor"
-          stroke="black"
-          strokeWidth="1"
-        >
-          <path d={enemyTombstonePath} />
-        </svg>
-      ) : (
+      {isDying ? null : (
         <>
           <div className="absolute bottom-full mb-1 w-10">
             <Progress value={healthPercentage} className="h-1.5 bg-black/30" />
