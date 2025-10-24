@@ -592,7 +592,7 @@ export default function SinglePlayerGame({
                 }
 
                 let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
-
+                
                 const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
                 if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
                     const damage = burnEffect.potency ?? 0;
@@ -647,15 +647,15 @@ export default function SinglePlayerGame({
                     }
                 }
                 
-                if (updatedEnemy) {
-                  if (updatedEnemy.health <= 0) {
-                    if (!updatedEnemy.deathTimestamp) {
-                      updatedEnemy.deathTimestamp = now;
-                      updatedEnemy.health = 1;
-                    }
-                  }
-                  nextEnemies.push(updatedEnemy);
-                }
+                 if (updatedEnemy) {
+                   if (updatedEnemy.health <= 0) {
+                     if (!updatedEnemy.deathTimestamp) {
+                       updatedEnemy.deathTimestamp = now;
+                       updatedEnemy.health = 1;
+                     }
+                   }
+                   nextEnemies.push(updatedEnemy);
+                 }
             }
             
             setEnemies(nextEnemies);
