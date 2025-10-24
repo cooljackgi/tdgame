@@ -236,9 +236,9 @@ export default function CoopGameLoader() {
                 const { playerId, element } = payload;
                 const waveForPick = currentWave;
                 const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
-            
+
                 if (!needsToPick) {
-                    console.warn(`[HOST] Element pick rejected: not an element wave.`);
+                    console.warn(`[HOST] Element pick rejected: not an element wave. Wave is ${waveForPick}`);
                     return;
                 }
             
@@ -249,18 +249,15 @@ export default function CoopGameLoader() {
                 );
                 setPlayers(updatedPlayers);
             
-                // Check if all players have made their choice for this round.
-                // The number of element picks so far is Math.floor(wave / 5).
-                // After this pick, they should have 1 (neutral) + number of picks.
                 const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
                 
-                const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator');
+                const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && players.find(origP => origP.id === p.id));
                 const allPlayersHavePicked = activePlayers.every(p => {
                     if (p.unlockedElements.length >= 8) return true; // Maxed out
                     return p.unlockedElements.length >= expectedElementsAfterPick;
                 });
-            
-                if (allPlayersHavePicked && activePlayers.length > 1) {
+
+                if (allPlayersHavePicked) {
                     setCurrentWave(prev => prev + 1);
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
@@ -270,9 +267,14 @@ export default function CoopGameLoader() {
             }
             case 'start_wave_now':
                 if (gameStatus === 'waiting') {
-                    setGameStatus('playing');
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
+                    // Check if player 2 is present before starting
+                    if (players.some(p => p.id === 'player2')) {
+                        setGameStatus('playing');
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                    } else {
+                        toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
+                    }
                 } else if (isIntermission) {
                     if (countdownRef.current) window.clearInterval(countdownRef.current);
                     countdownRef.current = null;
@@ -281,7 +283,7 @@ export default function CoopGameLoader() {
                 break;
         }
         setHostRevision(r => r + 1);
-    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus]);
+    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast]);
     
   // --- WebRTC Logic ---
   
@@ -802,10 +804,10 @@ export default function CoopGameLoader() {
           if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
               const nextWaveIndex = currentWave + 1;
               if (waves.length > nextWaveIndex) {
+                  setCurrentWave(nextWaveIndex); // Update wave number BEFORE checking for element pick
                   if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
                       setGameStatus('picking-element');
                   } else {
-                      setCurrentWave(nextWaveIndex);
                       setIsIntermission(true);
                       setWaveStartCountdown(INTERMISSION_TIME);
                   }
@@ -936,6 +938,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 
