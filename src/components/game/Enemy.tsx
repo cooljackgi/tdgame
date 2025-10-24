@@ -99,7 +99,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
 
   if (isDying) {
     return (
-      <div className={cn("relative w-10 h-10 flex items-center justify-center animate-grave-fade", className)}>
+      <div className={cn("relative w-12 h-12 flex items-center justify-center animate-grave-fade", className)}>
         <svg viewBox="0 0 24 24" className="h-full w-full text-slate-500" fill="none" stroke="currentColor" strokeWidth="2">
           <path d={enemyTombstonePath} />
         </svg>
