@@ -526,6 +526,7 @@ export default function SinglePlayerGame({
                         let target: Enemy | null = null;
                         let minDistanceSq = tower.range * tower.range;
                         currentEnemies.forEach(enemy => {
+                            if (enemy.deathTimestamp) return; // Ignore dying enemies
                             const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                             if (distSq <= minDistanceSq) {
                                 minDistanceSq = distSq;
@@ -581,7 +582,15 @@ export default function SinglePlayerGame({
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
 
             for (const enemy of currentEnemies) {
-                 let updatedEnemy = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+                 if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                    continue; // Remove after death animation
+                }
+                if (enemy.deathTimestamp) {
+                    nextEnemies.push(enemy);
+                    continue;
+                }
+
+                let updatedEnemy = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
                 const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
                 if (stunEffect) {
@@ -614,6 +623,8 @@ export default function SinglePlayerGame({
 
 
                 if (updatedEnemy.health <= 0) {
+                    updatedEnemy.deathTimestamp = now;
+                    nextEnemies.push(updatedEnemy);
                     continue;
                 }
 
@@ -635,8 +646,9 @@ export default function SinglePlayerGame({
                     }
                 }
                 
-                if (updatedEnemy.health <= 0) continue;
-
+                if (updatedEnemy.health <= 0) {
+                     updatedEnemy.deathTimestamp = now;
+                }
                 nextEnemies.push(updatedEnemy);
             }
             
@@ -659,7 +671,7 @@ export default function SinglePlayerGame({
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);
             }
             
-            if (nextEnemies.length === 0 && spawnQueueRef.current.length === 0 && !isIntermissionRef.current) {
+            if (nextEnemies.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermissionRef.current) {
                 const nextWave = currentWaveRef.current + 1;
                 
                 if (waves[nextWave]) {
