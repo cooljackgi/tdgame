@@ -151,3 +151,5 @@ const EnemyComponent = React.memo(function EnemyComponent({
 
 EnemyComponent.displayName = "EnemyComponent";
 export default EnemyComponent;
+
+    
