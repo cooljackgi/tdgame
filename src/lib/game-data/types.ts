@@ -15,6 +15,7 @@ export type Player = {
   avatarUrl?: string | null;
   resources: number;
   unlockedElements: Element[];
+  incomePerSecond: number;
 };
 
 export type GameState = {

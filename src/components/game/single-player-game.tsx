@@ -135,6 +135,7 @@ export default function SinglePlayerGame({
                 avatarUrl: user?.photoURL || null,
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
+                incomePerSecond: 5,
             };
 
             setPlayers([player1]);
@@ -456,6 +457,11 @@ export default function SinglePlayerGame({
 
             if (gameStatusRef.current !== 'playing') return;
 
+            setPlayers(prev => prev.map(p => ({
+                ...p,
+                resources: p.resources + (p.incomePerSecond * (delta / 1000)),
+            })));
+
             if (isIntermissionRef.current) {
                 setWaveStartCountdown(prevTime => {
                     const newTime = prevTime - delta / 1000;
@@ -599,11 +605,8 @@ export default function SinglePlayerGame({
                     updatedEnemy.health -= damage;
                     burnEffect.lastTick = now;
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
-                    if (updatedEnemy.health <= 0) {
-                      if (!updatedEnemy.deathTimestamp) {
-                        updatedEnemy.deathTimestamp = now;
-                        updatedEnemy.health = 1;
-                      }
+                    if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
+                      updatedEnemy.deathTimestamp = now;
                     }
                 }
                 
@@ -650,7 +653,6 @@ export default function SinglePlayerGame({
                  if (updatedEnemy) {
                    if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                         updatedEnemy.deathTimestamp = now;
-                        updatedEnemy.health = 1;
                    }
                    nextEnemies.push(updatedEnemy);
                  }

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Coins, Heart, User, RadioTower, Eye } from "lucide-react";
+import { Coins, Heart, User, RadioTower, Eye, TrendingUp } from "lucide-react";
 import { cn } from '@/lib/utils';
 import type { Player } from '@/lib/game-data';
 import { Progress } from '../ui/progress';
@@ -39,7 +39,7 @@ const PlayerStats = React.memo(function PlayerStats({ player, lives, maxLives, i
                 <Coins className="h-4 w-4" />
                 <span className="font-medium">Ress.</span>
             </div>
-            <span className="font-bold">{isSpectator ? '---' : player.resources}</span>
+            <span className="font-bold">{isSpectator ? '---' : Math.floor(player.resources)}</span>
         </div>
          <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-red-500">
@@ -47,6 +47,13 @@ const PlayerStats = React.memo(function PlayerStats({ player, lives, maxLives, i
                 <span className="font-medium">Leben</span>
             </div>
             <span className="font-bold">{lives}</span>
+        </div>
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-emerald-400">
+                <TrendingUp className="h-4 w-4" />
+                <span className="font-medium">Eink.</span>
+            </div>
+            <span className="font-bold">+{player.incomePerSecond}/s</span>
         </div>
       </div>
     )
@@ -75,7 +82,14 @@ const PlayerStats = React.memo(function PlayerStats({ player, lives, maxLives, i
             <Coins className="h-4 w-4" />
             <span className="font-medium">Ressourcen</span>
           </div>
-          <span className="font-bold">{isSpectator ? '---' : player.resources}</span>
+          <span className="font-bold">{isSpectator ? '---' : Math.floor(player.resources)}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-1.5 text-emerald-400">
+            <TrendingUp className="h-4 w-4" />
+            <span className="font-medium">Einkommen</span>
+          </div>
+          <span className="font-bold">+{player.incomePerSecond}/s</span>
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-base">

@@ -1,4 +1,3 @@
-
 import type { Player } from "@/lib/game-data/types";
 
 type AnyPlayers = Record<string, any> | any[] | null | undefined;
@@ -13,6 +12,7 @@ export function normalizePlayers(raw: AnyPlayers): Player[] {
         avatarUrl: p.avatarUrl || null,
         resources: p.resources || 0,
         unlockedElements: p.unlockedElements || ['neutral'],
+        incomePerSecond: p.incomePerSecond || 5,
     })) as Player[];
   }
 
@@ -28,6 +28,7 @@ export function normalizePlayers(raw: AnyPlayers): Player[] {
       avatarUrl: p1.avatarUrl ?? null,
       resources: p1.resources ?? 0,
       unlockedElements: p1.unlockedElements ?? ["neutral"],
+      incomePerSecond: p1.incomePerSecond ?? 5,
     });
   }
 
@@ -39,6 +40,7 @@ export function normalizePlayers(raw: AnyPlayers): Player[] {
       avatarUrl: p2.avatarUrl ?? null,
       resources: p2.resources ?? 0,
       unlockedElements: p2.unlockedElements ?? ["neutral"],
+      incomePerSecond: p2.incomePerSecond ?? 5,
     });
   }
 
