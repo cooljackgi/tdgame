@@ -102,9 +102,12 @@ export function processAttack(
 
         const armorShred = enemyToDamage.effects.find(ef => ef.type === 'armor_shred')?.potency ?? 0;
         const vulnerability = enemyToDamage.effects.find(ef => ef.type === 'vulnerability')?.potency ?? 0;
-
         const effectiveArmor = Math.max(0, enemyToDamage.armor * (1 - armorShred));
-        let finalDamage = Math.max(1, damageAmount - effectiveArmor);
+        
+        // New percentage-based damage calculation
+        const damageMultiplier = 1 - (effectiveArmor / (effectiveArmor + 100));
+        let finalDamage = damageAmount * damageMultiplier;
+
         finalDamage *= (1 + vulnerability);
         
         let critMultiplier = 1;
