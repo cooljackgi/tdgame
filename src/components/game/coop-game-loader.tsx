@@ -216,6 +216,9 @@ export default function CoopGameLoader() {
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
                 
+                // Keep the tower focused after upgrade
+                setFocusedTower(upgradedTower);
+
                 setLastUpgradedTowerId(upgradedTower.id);
                 setTimeout(()=>setLastUpgradedTowerId(null), 500);
                  if (sendGameDataRef.current) sendGameDataRef.current('TOWER_UPGRADE_VFX', { towerId: upgradedTower.id });
@@ -231,6 +234,7 @@ export default function CoopGameLoader() {
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
+                 setFocusedTower(null); // Unfocus after selling
                  break;
             }
             case 'pick_element': {
@@ -300,7 +304,22 @@ export default function CoopGameLoader() {
       case 'GAME_STATE_SNAPSHOT':
         setPlayers(payload.players);
         setEnemies(payload.enemies);
+        
+        // Update focused tower if it was changed by the snapshot
+        if (focusedTower) {
+            const updatedFocusedTower = payload.towersByCell[`${focusedTower.position.row}_${focusedTower.position.col}`];
+            if (updatedFocusedTower) {
+                // If specId changed (upgrade), update the focused tower state
+                if (updatedFocusedTower.specId !== focusedTower.specId) {
+                    setFocusedTower(updatedFocusedTower);
+                }
+            } else {
+                // Tower was sold
+                setFocusedTower(null);
+            }
+        }
         setTowersByCell(payload.towersByCell);
+        
         setGameState(payload.gameState);
         setCurrentWave(payload.currentWave);
         setIsIntermission(payload.isIntermission);
@@ -345,7 +364,7 @@ export default function CoopGameLoader() {
         gameBoardRef.current?.resolveRequest(payload);
         return;
     }
-  }, [isGameHost]);
+  }, [isGameHost, focusedTower]);
 
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -965,6 +984,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 
