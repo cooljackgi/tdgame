@@ -26,6 +26,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [loadSavedGame, setLoadSavedGame] = useState(false);
+  const [startTutorial, setStartTutorial] = useState(false);
   
   const { toast } = useToast();
 
@@ -49,15 +50,11 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false) => {
+  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false, isTutorial: boolean = false) => {
     setLoadSavedGame(shouldLoadSaved);
+    setStartTutorial(isTutorial);
+    if (isTutorial) setDifficulty('Einfach');
     setActiveGame(mode);
-  }, []);
-  
-  const startTutorial = useCallback(() => {
-    // We can just set a normal difficulty for the tutorial
-    setDifficulty('Einfach');
-    setActiveGame('singleplayer');
   }, []);
 
   const handleNewCoopGame = useCallback(async () => {
@@ -83,7 +80,7 @@ export default function Home() {
                 avatarUrl: user.photoURL || null,
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
-                incomePerSecond: 1,
+                incomePerSecond: 5,
             },
             player2: null
         },
@@ -141,7 +138,7 @@ export default function Home() {
             onExit={() => setActiveGame(null)}
             initialSavedGame={loadSavedGame ? savedGame : null}
             isCheating={difficulty === 'Chaos'}
-            startWithTutorial={false}
+            startWithTutorial={startTutorial}
             user={user}
           />
         </Suspense>
@@ -260,7 +257,7 @@ export default function Home() {
                          <Link href="/scoreboard" className="w-full block">
                             <Button variant="outline" className="w-full"><Trophy className="mr-2"/> Scoreboard</Button>
                         </Link>
-                        <Button onClick={startTutorial} variant="outline" className="w-full">
+                        <Button onClick={() => startGame('singleplayer', false, true)} variant="outline" className="w-full">
                            <BookOpen className="mr-2"/> Tutorial starten
                         </Button>
                     </CardContent>

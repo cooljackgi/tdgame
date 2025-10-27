@@ -19,6 +19,7 @@ import { onGameEnd, processAttack } from '@/lib/game-logic';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
+import TutorialOverlay from './tutorial-overlay';
 
 
 export default function SinglePlayerGame({
@@ -46,7 +47,7 @@ export default function SinglePlayerGame({
     const [currentWave, setCurrentWave] = useState(0);
     const [difficulty, setDifficulty] = useState(initialDifficulty);
     const [enemies, setEnemies] = useState<Enemy[]>([]);
-    const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element">('waiting');
+    const [gameStatus, setGameStatus] = useState<"waiting" | "playing" | "paused" | "gameover" | "picking-element" | "tutorial">('waiting');
     const [currentPath, setCurrentPath] = useState<Node[]>([]);
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     const [isIntermission, setIsIntermission] = useState(true);
@@ -135,7 +136,7 @@ export default function SinglePlayerGame({
                 avatarUrl: user?.photoURL || null,
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
-                incomePerSecond: 1,
+                incomePerSecond: 5,
             };
 
             setPlayers([player1]);
@@ -144,17 +145,17 @@ export default function SinglePlayerGame({
             setEnemies([]);
             setCurrentWave(0);
             setDifficulty(initialDifficulty);
-            setGameStatus('waiting');
+            setGameStatus(startWithTutorial ? 'tutorial' : 'waiting');
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
             setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
         }
-    }, [initialSavedGame, initialDifficulty, user]);
+    }, [initialSavedGame, initialDifficulty, user, startWithTutorial]);
     
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (isCheating || gameStatusRef.current === 'gameover') {
+            if (isCheating || gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial') {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -265,7 +266,7 @@ export default function SinglePlayerGame({
     }, []);
 
     const handleStartNextWaveNow = useCallback(() => {
-        if(gameStatusRef.current === 'waiting') {
+        if(gameStatusRef.current === 'waiting' || gameStatusRef.current === 'tutorial') {
             setGameStatus('playing');
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
@@ -715,6 +716,7 @@ export default function SinglePlayerGame({
 
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
+             {gameStatus === 'tutorial' && <TutorialOverlay onFinish={() => setGameStatus('waiting')} />}
              <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} />
              <div className="flex-grow p-2">
                 <LayoutComponent
