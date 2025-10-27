@@ -1,14 +1,15 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Home, Zap, Flame, Droplets, Mountain, Wind, Leaf, Sun, Moon, BookOpen } from 'lucide-react';
+import { Home, Zap, Flame, Bug, Dna, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
   { href: '/explainer/intro', icon: BookOpen, label: 'Einführung' },
   { href: '/explainer/elements', icon: Flame, label: 'Elemente' },
-  { href: '/explainer/towers', icon: Zap, label: 'Türme & Upgrades' },
-  { href: '/explainer/synergies', icon: Zap, label: 'Synergien' },
+  { href: '/explainer/towers', icon: Zap, label: 'Türme' },
+  { href: '/explainer/enemies', icon: Bug, label: 'Gegner' },
+  { href: '/explainer/synergies', icon: Dna, label: 'Synergien' },
 ];
 
 
