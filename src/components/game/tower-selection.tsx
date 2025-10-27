@@ -6,7 +6,7 @@ import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
 import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,7 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 
 const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower: Tower, onSelect: (tower: Tower) => void, disabled: boolean, isSelected: boolean }) => {
   const bgColorClass = elementBackgroundColors[tower.elements[0]] || 'bg-transparent hover:bg-accent/20';
+  const attackSpeedPerSecond = tower.attackSpeed > 0 ? (1000 / tower.attackSpeed).toFixed(2) : '0';
   
   return (
     <li className="w-full">
@@ -55,7 +56,7 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
         onClick={() => onSelect(tower)}
         disabled={disabled}
         className={cn(
-          "flex items-start gap-4 group w-full p-2 rounded-md transition-colors text-left",
+          "flex items-start gap-3 group w-full p-2 rounded-md transition-colors text-left",
           isSelected ? "bg-primary/20" : bgColorClass,
           "disabled:opacity-50 disabled:cursor-not-allowed"
         )}
@@ -76,19 +77,29 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
           <h4 className="font-semibold">{tower.name}</h4>
           <p className="text-xs text-muted-foreground">{tower.description}</p>
         </div>
-        <div className="flex-shrink-0 flex flex-col items-end gap-1">
-           <div className="flex flex-col items-end text-sm font-medium">
-              <div className="flex items-center gap-1.5 text-yellow-400">
-                  <Coins className="h-4 w-4" />
-                  <span>{tower.cost}</span>
-              </div>
-              {tower.damage > 0 && (
+        <div className="flex-shrink-0 flex flex-col items-end gap-1.5 text-xs font-medium">
+            <div className="flex items-center gap-1.5 text-yellow-400">
+                <Coins className="h-3.5 w-3.5" />
+                <span>{tower.cost}</span>
+            </div>
+            {tower.damage > 0 && (
+              <>
                 <div className="flex items-center gap-1.5 text-red-400">
-                    <Bomb className="h-4 w-4" />
+                    <Bomb className="h-3.5 w-3.5" />
                     <span>{tower.damage}</span>
                 </div>
-              )}
-          </div>
+                <div className="flex items-center gap-1.5 text-sky-400">
+                    <ChevronsUp className="h-3.5 w-3.5" />
+                    <span>{attackSpeedPerSecond}/s</span>
+                </div>
+              </>
+            )}
+            {tower.range > 0 && (
+                <div className="flex items-center gap-1.5 text-green-400">
+                    <Gauge className="h-3.5 w-3.5" />
+                    <span>{tower.range}</span>
+                </div>
+            )}
         </div>
       </button>
     </li>
@@ -137,15 +148,18 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             <Separator />
           <p className="text-sm text-muted-foreground px-2">Upgrades:</p>
           <ul className="space-y-2">
-            {availableUpgrades.length > 0 ? availableUpgrades.map((tower) => (
+            {availableUpgrades.length > 0 ? availableUpgrades.map((tower) => {
+              const upgradeCost = tower.cost - Math.floor(focusedTower.cost * 0.75);
+              return (
                 <TowerCard 
                   key={tower.id}
-                  tower={tower} 
+                  tower={{...tower, cost: upgradeCost}}
                   onSelect={() => onUpgradeTower(tower.id)} 
-                  disabled={localPlayer.resources < tower.cost - Math.round(focusedTower.cost * 0.75)}
+                  disabled={localPlayer.resources < upgradeCost}
                   isSelected={false}
                 />
-            )) : <p className="text-sm text-muted-foreground p-2">Keine weiteren Upgrades für diesen Turm verfügbar oder Element fehlt.</p>}
+              )
+            }) : <p className="text-sm text-muted-foreground p-2">Keine weiteren Upgrades für diesen Turm verfügbar oder Element fehlt.</p>}
           </ul>
         </div>
       ) : (
