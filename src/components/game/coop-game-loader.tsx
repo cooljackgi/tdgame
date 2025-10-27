@@ -103,6 +103,7 @@ export default function CoopGameLoader() {
   const onSelectTowerToBuild = (tower: Tower | null) => {
     cancelInteractions();
     setSelectedTowerToBuild(tower);
+    audioManager.playSfx('ui_click', 0.7);
   };
 
   // --- Refs to hold stable function references ---
@@ -120,6 +121,8 @@ export default function CoopGameLoader() {
     const startWave = useCallback((waveIndex: number) => {
         if (!isGameHost) return;
 
+        audioManager.playSfx('wave_start', 0.6);
+        audioManager.playWaveMusic();
         const spec = waves[waveIndex];
         if (!spec) return;
 
@@ -188,6 +191,7 @@ export default function CoopGameLoader() {
                     ownerId: playerId,
                 };
                 
+                audioManager.playSfx('build_tower', 0.6);
                 setTowersByCell(prev => ({ ...prev, [key]: newTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? {...p, resources: p.resources - towerSpec.cost} : p));
 
@@ -211,6 +215,7 @@ export default function CoopGameLoader() {
                 const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
                 if (upgrader.resources < cost) return;
 
+                audioManager.playSfx('upgrade_tower', 0.6);
                 const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
 
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
@@ -231,6 +236,7 @@ export default function CoopGameLoader() {
                  const towerToSell = towersByCell[key];
                  if (!towerToSell || towerToSell.ownerId !== playerId) return;
 
+                 audioManager.playSfx('sell_tower', 0.5);
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
@@ -239,6 +245,7 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { playerId, element } = payload;
+                audioManager.playSfx('upgrade_tower', 0.8);
                 // Correctly checks if the current wave number is an element-picking wave.
                 const waveForPick = currentWave;
                 const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
@@ -331,6 +338,7 @@ export default function CoopGameLoader() {
         if (payload.fps !== undefined) setFps(payload.fps);
         break;
       case 'VFX_ATTACK':
+        audioManager.playSfx('shoot_laser', 0.2);
         gameBoardRef.current?.queueAttacks(payload);
         break;
       case 'VFX_DAMAGE_NUMBER':
@@ -347,10 +355,12 @@ export default function CoopGameLoader() {
         setTimeout(() => setFiringTowerIds(new Set()), 150);
         break;
       case 'TOWER_UPGRADE_VFX':
+        audioManager.playSfx('upgrade_tower', 0.6);
         setLastUpgradedTowerId(payload.towerId);
         setTimeout(() => setLastUpgradedTowerId(null), 500);
         break;
       case 'TOWER_PLACE_VFX':
+        audioManager.playSfx('build_tower', 0.6);
         setJustPlacedTowerId(payload.towerId);
         setTimeout(() => setJustPlacedTowerId(null), 400);
         break;
@@ -688,6 +698,7 @@ export default function CoopGameLoader() {
                   if (targets.length > 0) {
                       tower.lastAttack = now;
                       firingIds.add(tower.id);
+                      audioManager.playSfx('shoot_laser', 0.2);
 
                       let enemiesForThisTick = [...currentEnemies];
                       for (const target of targets) {
@@ -748,12 +759,14 @@ export default function CoopGameLoader() {
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                if(!wasAlreadyDead) audioManager.playSfx('enemy_die', 0.4);
                 continue; // Remove after death animation
               }
               if (enemy.deathTimestamp) {
                 stillAlive.push(enemy);
                 continue;
               }
+              const wasAlreadyDead = enemy.health <= 0;
 
               let updatedEnemy: Enemy | null = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
@@ -809,6 +822,7 @@ export default function CoopGameLoader() {
                       updatedEnemy.lastMove += stepMs;
                   } else {
                       livesLostThisTick++;
+                      audioManager.playSfx('enemy_leak', 0.5);
                       updatedEnemy = null;
                       break;
                   }
@@ -984,6 +998,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 

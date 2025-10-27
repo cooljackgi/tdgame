@@ -233,7 +233,9 @@ export default function SinglePlayerGame({
     const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];
         if (!waveData) return;
-
+        
+        audioManager.playSfx('wave_start', 0.6);
+        audioManager.playWaveMusic();
         const difficultyMod = difficultyModifiers[difficultyRef.current];
         const enemiesToSpawn = Array.from({ length: waveData.enemies.count }).map((_, i) => {
             const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
@@ -265,7 +267,6 @@ export default function SinglePlayerGame({
         waveStartTimeRef.current = Date.now();
         setIsIntermission(false);
         setWaveStartCountdown(0);
-        audioManager.playWaveMusic();
     }, []);
 
     const handleStartNextWaveNow = useCallback(() => {
@@ -303,6 +304,7 @@ export default function SinglePlayerGame({
             return;
         }
         
+        audioManager.playSfx('build_tower', 0.6);
         const newTower: PlacedTower = {
             ...towerSpec,
             id: `tower-${row}-${col}-${Date.now()}`,
@@ -338,6 +340,7 @@ export default function SinglePlayerGame({
             return;
         }
 
+        audioManager.playSfx('upgrade_tower', 0.6);
         const newPlacedTower: PlacedTower = { 
             ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth, id: focusedTower.id 
         };
@@ -353,6 +356,7 @@ export default function SinglePlayerGame({
         const player = localPlayerRef.current;
         if (!player || !focusedTower) return;
         
+        audioManager.playSfx('sell_tower', 0.5);
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const refund = Math.round(focusedTower.cost * refundPercentage);
@@ -363,6 +367,7 @@ export default function SinglePlayerGame({
     }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
+        audioManager.playSfx('upgrade_tower', 0.8);
         setPlayers(prev => [{ ...prev[0], unlockedElements: Array.from(new Set([...prev[0].unlockedElements, element])) }]);
         setCurrentWave(prev => prev + 1);
         setIsIntermission(true);
@@ -383,6 +388,7 @@ export default function SinglePlayerGame({
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
         setSelectedTowerToBuild(tower);
+        audioManager.playSfx('ui_click', 0.7);
     }, []);
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
@@ -558,6 +564,7 @@ export default function SinglePlayerGame({
                     if (targets.length > 0) {
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
+                        audioManager.playSfx('shoot_laser', 0.2);
                         
                         let enemiesForThisTick = [...currentEnemies];
                         for (const target of targets) {
@@ -602,6 +609,7 @@ export default function SinglePlayerGame({
 
             for (let enemy of currentEnemies) {
                  if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                    audioManager.playSfx('enemy_die', 0.4);
                     continue; // Remove after death animation
                 }
                 if (enemy.deathTimestamp) {
@@ -657,6 +665,7 @@ export default function SinglePlayerGame({
                         updatedEnemy.lastMove += stepMs;
                     } else {
                         livesLostThisTick++;
+                        audioManager.playSfx('enemy_leak', 0.5);
                         updatedEnemy = null;
                         break;
                     }

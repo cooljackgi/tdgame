@@ -47,8 +47,14 @@ const WAVE_MUSIC_TRACKS = [
 // 3. Add your sound effect files to the `public/audio/sfx/` directory.
 // 4. Map a short name (key) to your sound effect filename.
 const SFX_FILES: Record<string, string> = {
-    'build_tower': 'build_tower.mp3',
-    'shoot': 'laser.wav',
+    'build_tower': 'build.wav',
+    'upgrade_tower': 'upgrade.wav',
+    'sell_tower': 'sell.wav',
+    'shoot_laser': 'laser.wav',
+    'enemy_die': 'hit.wav',
+    'enemy_leak': 'leak.wav',
+    'ui_click': 'click.wav',
+    'wave_start': 'wave_start.wav',
 };
 // =================================================================
 
