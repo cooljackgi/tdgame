@@ -81,7 +81,7 @@ export function processAttack(
     };
 
     // Play the dynamically generated sound for the primary attack
-    audioManager.playAttackSound(tower.elements[0] || 'neutral', Math.random());
+    audioManager.playAttackSound(tower.elements[0] || 'neutral', { x: tower.position.col, y: tower.position.row });
 
     const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
     output.newAttacks.push({
