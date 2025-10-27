@@ -83,7 +83,7 @@ export default function Home() {
                 avatarUrl: user.photoURL || null,
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
-                incomePerSecond: 5,
+                incomePerSecond: 1,
             },
             player2: null
         },

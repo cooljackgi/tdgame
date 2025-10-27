@@ -84,10 +84,26 @@
   100% { transform: translateY(0) scale(1); }
 }
 
+/* Updated enemy flash animation for better visibility */
 @keyframes enemy-flash {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.75); }
+  0% {
+    filter: drop-shadow(0 0 0px hsl(var(--destructive)/0));
+    transform: translateX(0);
+  }
+  25% {
+    filter: drop-shadow(0 0 8px hsl(var(--destructive)/0.8));
+    transform: translateX(-2px);
+  }
+  50% {
+    filter: drop-shadow(0 0 4px hsl(var(--destructive)/0.4));
+    transform: translateX(2px);
+  }
+  100% {
+    filter: drop-shadow(0 0 0px hsl(var(--destructive)/0));
+    transform: translateX(0);
+  }
 }
+
 
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -166,8 +182,9 @@
 }
 
 .animate-flash {
-  animation: enemy-flash 0.12s ease-in-out;
+  animation: enemy-flash 0.15s ease-in-out 3;
 }
+
 
 .stun-star {
   position: absolute;
@@ -324,5 +341,3 @@
   50% { filter: brightness(1.5); opacity: 0.5; }
 }
 .animate-dmg-flash { animation: dmgFlash .15s ease-out; }
-
-    

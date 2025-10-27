@@ -82,8 +82,7 @@ const EnemyComponent = React.memo(function EnemyComponent({
     "transition-all duration-100",
     typeColors[type],
     wasHit && "animate-flash",
-    !wasHit && typeAnimation[type], // Only apply idle animation if not being hit
-    isDamaged && "animate-wobble"
+    !wasHit && typeAnimation[type] // Only apply idle animation if not being hit
   );
   
   const activeEffects = effects.filter(e => e.expires > Date.now());
@@ -151,5 +150,3 @@ const EnemyComponent = React.memo(function EnemyComponent({
 
 EnemyComponent.displayName = "EnemyComponent";
 export default EnemyComponent;
-
-    
