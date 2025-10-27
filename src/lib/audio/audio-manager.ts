@@ -88,45 +88,8 @@ class AudioManager {
     }
     
     public playWaveMusic() {
-        if (!this.isInitialized || this.isMuted || WAVE_MUSIC_TRACKS.length === 0) return;
-
-        this.stopMusic({ fadeOutMs: 500 });
-
-        let trackPool = WAVE_MUSIC_TRACKS;
-        if(this.lastPlayedTrack && WAVE_MUSIC_TRACKS.length > 1) {
-            trackPool = WAVE_MUSIC_TRACKS.filter(t => t !== this.lastPlayedTrack);
-        }
-        
-        const trackName = trackPool[Math.floor(Math.random() * trackPool.length)];
-        this.lastPlayedTrack = trackName;
-        const filePath = `/audio/music/${trackName}`;
-        
-        loadAudioFile(filePath).then(buffer => {
-            if (this.isMuted || this.musicSource) return; // Don't start if muted or another track is starting
-            
-            const ctx = getAudioContext();
-            this.musicSource = ctx.createBufferSource();
-            this.musicSource.buffer = buffer;
-            this.musicSource.loop = false; // Play song only once
-
-            this.musicGainNode = ctx.createGain();
-            this.musicGainNode.connect(ctx.destination);
-            this.musicSource.connect(this.musicGainNode);
-
-            const now = ctx.currentTime;
-            this.musicGainNode.gain.setValueAtTime(0, now);
-            this.musicGainNode.gain.linearRampToValueAtTime(0.7, now + 1.5);
-
-            this.musicSource.start();
-
-            // When the song ends, just clean up. The game session will decide when to play the next one.
-            this.musicSource.onended = () => {
-                this.musicSource = null;
-                this.musicGainNode = null;
-            };
-        }).catch(err => {
-            console.warn(`Could not load or play music file: ${filePath}`, err);
-        });
+        // Temporarily disabled by user request.
+        return;
     }
 
     public stopMusic({ fadeOutMs = 1000 } = {}) {
