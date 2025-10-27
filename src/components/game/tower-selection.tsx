@@ -6,7 +6,7 @@ import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
 import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -76,30 +76,18 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
         <div className="flex-grow min-w-0">
           <h4 className="font-semibold">{tower.name}</h4>
           <p className="text-xs text-muted-foreground">{tower.description}</p>
+          {/* Display stats for upgrade options */}
+          <div className="flex gap-3 mt-1.5 text-xs">
+            {tower.damage > 0 && <span className="flex items-center gap-1 text-red-400"><Bomb className="h-3 w-3"/> {tower.damage}</span>}
+            {tower.attackSpeed > 0 && <span className="flex items-center gap-1 text-sky-400"><ChevronsUp className="h-3 w-3"/> {attackSpeedPerSecond}/s</span>}
+            {tower.range > 0 && <span className="flex items-center gap-1 text-green-400"><Target className="h-3 w-3"/> {tower.range}</span>}
+          </div>
         </div>
         <div className="flex-shrink-0 flex flex-col items-end gap-1.5 text-xs font-medium">
             <div className="flex items-center gap-1.5 text-yellow-400">
                 <Coins className="h-3.5 w-3.5" />
                 <span>{tower.cost}</span>
             </div>
-            {tower.damage > 0 && (
-              <>
-                <div className="flex items-center gap-1.5 text-red-400">
-                    <Bomb className="h-3.5 w-3.5" />
-                    <span>{tower.damage}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-sky-400">
-                    <ChevronsUp className="h-3.5 w-3.5" />
-                    <span>{attackSpeedPerSecond}/s</span>
-                </div>
-              </>
-            )}
-            {tower.range > 0 && (
-                <div className="flex items-center gap-1.5 text-green-400">
-                    <Gauge className="h-3.5 w-3.5" />
-                    <span>{tower.range}</span>
-                </div>
-            )}
         </div>
       </button>
     </li>
@@ -132,7 +120,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   const content = (
       <>
       {focusedTower ? (
-         <div className="space-y-4">
+         <div className="space-y-3">
             <div className="flex items-center justify-between p-2 bg-card rounded-lg">
                 <div className="flex flex-col">
                     <span className="font-bold text-lg">{focusedTower.name}</span>
@@ -145,6 +133,14 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
                     </Button>
                  )}
             </div>
+
+            {/* Current Stats Display */}
+            <div className="grid grid-cols-3 gap-2 px-2 text-xs">
+                <div className="flex items-center gap-1.5"><Bomb className="h-4 w-4 text-red-400"/> Schaden: <span className="font-bold">{focusedTower.damage}</span></div>
+                <div className="flex items-center gap-1.5"><ChevronsUp className="h-4 w-4 text-sky-400"/> Rate: <span className="font-bold">{(1000 / focusedTower.attackSpeed).toFixed(2)}/s</span></div>
+                <div className="flex items-center gap-1.5"><Target className="h-4 w-4 text-green-400"/> Reichw.: <span className="font-bold">{focusedTower.range}</span></div>
+            </div>
+            
             <Separator />
           <p className="text-sm text-muted-foreground px-2">Upgrades:</p>
           <ul className="space-y-2">
