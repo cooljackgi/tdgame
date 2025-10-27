@@ -256,7 +256,7 @@ export default function SinglePlayerGame({
                 lastMove: 0,
                 wasHit: false,
                 targetNode: { row: GRID_ROWS, col: GRID_COLS },
-                movementPattern: waveData.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+                movementPattern: 'wobble',
                 vx: 0,
                 vy: 0,
                 _spawnTime: i * waveData.enemies.spawnDelay,

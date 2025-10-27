@@ -96,23 +96,31 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
       const ax = gridToPx(a).x, ay = gridToPx(a).y;
       const bx = gridToPx(b).x, by = gridToPx(b).y;
       
-      let xOffset = 0;
-      let yOffset = 0;
-      const timeFactor = now / 1000;
-      const idFactor = (enemy.id.charCodeAt(enemy.id.length - 1) % 10) / 10;
-      
-      switch(enemy.movementPattern) {
-          case 'wobble':
-              yOffset = Math.sin(timeFactor * (2.5 + idFactor * 2) + idFactor * Math.PI * 2) * (0.5 + idFactor * 0.5);
-              break;
-          case 'zigzag':
-              yOffset = (Math.abs((timeFactor * (4 + idFactor * 2) + idFactor * 2) % 2 - 1) * 2 - 1) * (4 + idFactor * 3);
-              break;
-          default:
-              break;
-      }
+      let logicalX = ax + (bx - ax) * t;
+      let logicalY = ay + (by - ay) * t;
 
-      targetPos = { x: ax + (bx - ax) * t + xOffset, y: ay + (by - ay) * t + yOffset };
+      // New offset logic to prevent stacking
+      const idHash = (enemy.id.charCodeAt(enemy.id.length - 1) % 10) / 10 - 0.5; // -0.5 to 0.4
+      const maxOffset = CELL_SIZE * 0.25;
+      const persistentOffset = idHash * maxOffset;
+
+      const dx = bx - ax;
+      const dy = by - ay;
+
+      // Get perpendicular vector
+      const len = Math.hypot(dx, dy);
+      let pDx = -dy;
+      let pDy = dx;
+      
+      if (len > 0) {
+        pDx /= len;
+        pDy /= len;
+      }
+      
+      logicalX += pDx * persistentOffset;
+      logicalY += pDy * persistentOffset;
+      
+      targetPos = { x: logicalX, y: logicalY };
     }
   }
 
