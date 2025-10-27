@@ -136,9 +136,9 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 
             {/* Current Stats Display */}
             <div className="grid grid-cols-3 gap-2 px-2 text-xs">
-                <div className="flex items-center gap-1.5"><Bomb className="h-4 w-4 text-red-400"/> Schaden: <span className="font-bold">{focusedTower.damage}</span></div>
-                <div className="flex items-center gap-1.5"><ChevronsUp className="h-4 w-4 text-sky-400"/> Rate: <span className="font-bold">{(1000 / focusedTower.attackSpeed).toFixed(2)}/s</span></div>
-                <div className="flex items-center gap-1.5"><Target className="h-4 w-4 text-green-400"/> Reichw.: <span className="font-bold">{focusedTower.range}</span></div>
+                <div className="flex items-center gap-1.5"><Bomb className="h-4 w-4 text-red-400"/> <span className="font-bold">{focusedTower.damage}</span></div>
+                <div className="flex items-center gap-1.5"><ChevronsUp className="h-4 w-4 text-sky-400"/> <span className="font-bold">{(1000 / focusedTower.attackSpeed).toFixed(2)}/s</span></div>
+                <div className="flex items-center gap-1.5"><Target className="h-4 w-4 text-green-400"/> <span className="font-bold">{focusedTower.range}</span></div>
             </div>
             
             <Separator />
