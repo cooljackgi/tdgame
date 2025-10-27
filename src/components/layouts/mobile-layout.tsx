@@ -116,7 +116,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     const reset = () => gameBoardRef.current?.resetView();
     // Reset view initially and also after a tiny delay to ensure container has its final dimensions
     reset();
-    const id = setTimeout(reset, 0);
+    const id = setTimeout(reset, 50);
 
     window.addEventListener('orientationchange', reset);
     window.addEventListener('resize', reset);

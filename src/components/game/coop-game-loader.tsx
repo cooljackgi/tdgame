@@ -338,7 +338,6 @@ export default function CoopGameLoader() {
         if (payload.fps !== undefined) setFps(payload.fps);
         break;
       case 'VFX_ATTACK':
-        audioManager.playSfx('shoot_laser', 0.2);
         gameBoardRef.current?.queueAttacks(payload);
         break;
       case 'VFX_DAMAGE_NUMBER':
@@ -997,6 +996,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 

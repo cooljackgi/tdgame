@@ -244,4 +244,3 @@ export type RequestPayload = {
 };
 
 export type RequestResolve = { id: string; result: 'accepted' | 'declined'; by: 'player1'|'player2'; at: number };
-    
