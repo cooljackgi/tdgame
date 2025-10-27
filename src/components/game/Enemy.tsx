@@ -81,7 +81,6 @@ const EnemyComponent = React.memo(function EnemyComponent({
   const iconClass = cn(
     "transition-all duration-100",
     typeColors[type],
-    wasHit && "animate-flash",
     !wasHit && typeAnimation[type] // Only apply idle animation if not being hit
   );
   
@@ -144,6 +143,8 @@ const EnemyComponent = React.memo(function EnemyComponent({
           }
           return null;
       })}
+
+      {wasHit && <div className="absolute inset-0 bg-white animate-dmg-flash rounded-full pointer-events-none" />}
     </div>
   );
 });
