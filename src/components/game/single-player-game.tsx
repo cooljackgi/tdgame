@@ -564,7 +564,6 @@ export default function SinglePlayerGame({
                     if (targets.length > 0) {
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
-                        audioManager.playSfx('shoot_laser', 0.2);
                         
                         let enemiesForThisTick = [...currentEnemies];
                         for (const target of targets) {

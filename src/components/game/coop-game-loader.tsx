@@ -698,7 +698,6 @@ export default function CoopGameLoader() {
                   if (targets.length > 0) {
                       tower.lastAttack = now;
                       firingIds.add(tower.id);
-                      audioManager.playSfx('shoot_laser', 0.2);
 
                       let enemiesForThisTick = [...currentEnemies];
                       for (const target of targets) {
@@ -887,7 +886,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, gameState.lives, onGameEnd, currentWave, currentPathRef, players, gravityWells]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells]);
 
 
   const toggleMute = () => {
@@ -998,6 +997,7 @@ export default function CoopGameLoader() {
     
 
     
+
 
 
 
