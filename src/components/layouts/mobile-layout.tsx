@@ -142,6 +142,25 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
+  
+  const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effect?.type === 'aura'), [placedTowers]);
+  const buffedTowerIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    if (auraTowers.length === 0) return ids;
+    
+    placedTowers.forEach(tower => {
+      if (tower.effect?.type === 'aura') return;
+      for (const auraTower of auraTowers) {
+        const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
+        if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+          ids.add(tower.id);
+          break;
+        }
+      }
+    });
+    return ids;
+  }, [placedTowers, auraTowers]);
+
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
@@ -289,6 +308,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                       onBack={cancelInteractions}
                       localPlayer={localPlayer}
                       isMobile
+                      buffedTowerIds={buffedTowerIds}
                     />
                   )}
                 </div>

@@ -6,7 +6,7 @@ import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
 import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ type TowerSelectionProps = {
   onBack: () => void;
   localPlayer: Player;
   isMobile?: boolean;
+  buffedTowerIds: Set<string>;
 }
 
 const TowerCardIcon = React.memo(function TowerCardIcon({ tower }: { tower: Tower }) {
@@ -94,7 +95,19 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
   );
 });
 
-const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false }: TowerSelectionProps) {
+const StatDisplay = ({ icon: Icon, value, buff, label }: { icon: React.FC<any>, value: number | string, buff?: number, label: string }) => (
+    <div className="flex items-center gap-1.5">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-baseline gap-1">
+            <span className="font-bold">{value}</span>
+            {buff ? <span className="text-sm font-bold text-green-400">(+{buff.toFixed(1)})</span> : null}
+            <span className="text-xs text-muted-foreground">{label}</span>
+        </div>
+    </div>
+);
+
+
+const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds }: TowerSelectionProps) {
   
   const unlockedElementsSet = React.useMemo(() => new Set(localPlayer.unlockedElements), [localPlayer.unlockedElements]);
   
@@ -117,9 +130,38 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   
   }, [focusedTower, allTowers, unlockedElementsSet]);
 
+  const focusedTowerStats = React.useMemo(() => {
+    if (!focusedTower) return null;
+
+    const isBuffed = buffedTowerIds.has(focusedTower.id);
+    const buffPotency = 0.15; // Assuming a standard 15% buff for now
+
+    const baseDamage = focusedTower.damage;
+    const baseAttackSpeed = focusedTower.attackSpeed;
+    const baseDps = baseDamage * (1000 / baseAttackSpeed);
+
+    if (!isBuffed) {
+      return { damage: baseDamage, attackSpeed: baseAttackSpeed, dps: baseDps, damageBuff: 0, dpsBuff: 0 };
+    }
+
+    const buffedDamage = baseDamage * (1 + buffPotency);
+    const damageBuff = buffedDamage - baseDamage;
+    const buffedDps = buffedDamage * (1000 / baseAttackSpeed);
+    const dpsBuff = buffedDps - baseDps;
+
+    return {
+      damage: baseDamage,
+      attackSpeed: baseAttackSpeed,
+      dps: baseDps,
+      damageBuff: damageBuff,
+      dpsBuff: dpsBuff
+    };
+  }, [focusedTower, buffedTowerIds]);
+
+
   const content = (
       <>
-      {focusedTower ? (
+      {focusedTower && focusedTowerStats ? (
          <div className="space-y-3">
             <div className="flex items-center justify-between p-2 bg-card rounded-lg">
                 <div className="flex flex-col">
@@ -135,10 +177,11 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             </div>
 
             {/* Current Stats Display */}
-            <div className="grid grid-cols-3 gap-2 px-2 text-xs">
-                <div className="flex items-center gap-1.5"><Bomb className="h-4 w-4 text-red-400"/> <span className="font-bold">{focusedTower.damage}</span></div>
-                <div className="flex items-center gap-1.5"><ChevronsUp className="h-4 w-4 text-sky-400"/> <span className="font-bold">{(1000 / focusedTower.attackSpeed).toFixed(2)}/s</span></div>
-                <div className="flex items-center gap-1.5"><Target className="h-4 w-4 text-green-400"/> <span className="font-bold">{focusedTower.range}</span></div>
+            <div className="grid grid-cols-1 gap-2 px-2 text-sm">
+                <StatDisplay icon={Dna} value={focusedTowerStats.dps.toFixed(1)} buff={focusedTowerStats.dpsBuff} label="DPS"/>
+                <StatDisplay icon={Bomb} value={focusedTowerStats.damage} buff={focusedTowerStats.damageBuff} label="Schaden"/>
+                <StatDisplay icon={ChevronsUp} value={`${(1000 / focusedTowerStats.attackSpeed).toFixed(2)}/s`} label="Rate"/>
+                <StatDisplay icon={Target} value={focusedTower.range} label="Reichw."/>
             </div>
             
             <Separator />
