@@ -7,9 +7,10 @@ type HeaderProps = {
   onExit: () => void;
   isMuted: boolean;
   toggleMute: () => void;
+  fps?: number;
 };
 
-export default function Header({ onExit, isMuted, toggleMute }: HeaderProps) {
+export default function Header({ onExit, isMuted, toggleMute, fps }: HeaderProps) {
   return (
     <header className="p-2 border-b bg-card/50 flex-shrink-0">
       <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
@@ -20,6 +21,11 @@ export default function Header({ onExit, isMuted, toggleMute }: HeaderProps) {
           </h1>
         </Button>
         <div className="flex items-center gap-2 text-muted-foreground">
+          {fps !== undefined && (
+            <div className="font-mono text-xs text-primary font-semibold hidden sm:block">
+              {fps} FPS
+            </div>
+          )}
           <Button variant="ghost" size="icon" onClick={toggleMute} className="h-8 w-8">
             {isMuted ? <VolumeX className="h-5 w-5" /> : <Music className="h-5 w-5" />}
           </Button>

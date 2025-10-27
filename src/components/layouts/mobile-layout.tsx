@@ -167,7 +167,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     <div className="w-full min-h-dvh flex flex-col">
       {/* HEADER */}
       <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
-        <div className="mx-auto w-full max-w-md p-2">
+      <div
+  className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
+>
+
            <div className="grid grid-cols-2 gap-2">
             {players.map((p) => p && (
               <div key={p.id} className="min-w-0">
@@ -230,7 +233,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
         className="flex-shrink-0 border-t bg-card/80 backdrop-blur-sm"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0)' }}
       >
-        <div className="mx-auto w-full max-w-md p-2 space-y-2">
+<div
+  className="w-full p-2 space-y-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
+>
           {/* PROMPT - Moved here */}
           {interactionPrompt && (
             <div className="bg-card/90 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-md">
@@ -258,8 +263,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 </Button>
               </SheetTrigger>
 
-              <SheetContent side="bottom" className="rounded-t-2xl h-[80svh] max-h-[80svh] p-0">
-                <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b px-4 py-3 rounded-t-2xl">
+              <SheetContent side="bottom" className="rounded-t-2xl h-[75svh] max-h-[75svh] p-0">
+  <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b px-4 pt-2 pb-3 rounded-t-2xl">
+    <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-muted" />
+
                   <SheetHeader className="items-center flex-row justify-between">
                     <SheetTitle>{sheetTitle}</SheetTitle>
                     {!isSpectator && localPlayer && (
@@ -301,7 +308,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
               }
             >
               {gameStatus === 'playing' ? <Pause /> : <Play />}
-              <span className="text-[11px] mt-1">
+              <span className="text-[12px] leading-4 mt-1">
+
                 {gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' && !isHost ? 'Wartet...' : 'Weiter')}
               </span>
             </Button>

@@ -36,6 +36,7 @@ export type UseWebRTCReturn = {
     averagePacketSize: number;
     sentPacketsPerSecond: number;
     sentBytesPerSecond: number;
+    fps: number; // Added for host FPS
 };
 
 const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
@@ -62,6 +63,7 @@ export function useWebRTC(
     const [averagePacketSize, setAveragePacketSize] = useState(0);
     const [sentPacketsPerSecond, setSentPacketsPerSecond] = useState(0);
     const [sentBytesPerSecond, setSentBytesPerSecond] = useState(0);
+    const [fps, setFps] = useState(0); // For host FPS
 
     const signalingSocketRef = useRef<WebSocket | null>(null);
     const selfIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
@@ -421,5 +423,5 @@ export function useWebRTC(
         };
     }, [gameId, isHost, user, isMonitor, createPeerConnection, setupDataChannelEvents]);
 
-    return { sendAction, sendGameData, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond };
+    return { sendAction, sendGameData, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond, fps };
 }

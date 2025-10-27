@@ -61,6 +61,7 @@ export default function SinglePlayerGame({
     const [hasInteracted, setHasInteracted] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [finalGameResult, setFinalGameResult] = useState<any | null>(null);
+    const [fps, setFps] = useState(0);
 
 
     // --- VFX State ---
@@ -77,6 +78,8 @@ export default function SinglePlayerGame({
     const gameBoardRef = useRef<GameBoardHandle>(null);
     const spawnQueueRef = useRef<any[]>([]);
     const waveStartTimeRef = useRef<number>(0);
+    const frameCountRef = useRef(0);
+    const lastFpsUpdateRef = useRef(Date.now());
 
 
     // --- Refs for stable access in game loop ---
@@ -456,6 +459,14 @@ export default function SinglePlayerGame({
             if (delta < 16) return;
             lastTickRef.current = now;
 
+            // FPS Calculation
+            frameCountRef.current++;
+            if (now - lastFpsUpdateRef.current >= 1000) {
+                setFps(frameCountRef.current);
+                frameCountRef.current = 0;
+                lastFpsUpdateRef.current = now;
+            }
+
             if (gameStatusRef.current !== 'playing') return;
 
             setPlayers(prev => prev.map(p => ({
@@ -717,7 +728,7 @@ export default function SinglePlayerGame({
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
              {gameStatus === 'tutorial' && <TutorialOverlay onFinish={() => setGameStatus('waiting')} />}
-             <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} />
+             <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={fps} />
              <div className="flex-grow p-2">
                 <LayoutComponent
                     players={players} 
