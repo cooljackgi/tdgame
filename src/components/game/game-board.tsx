@@ -108,10 +108,10 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
       const dy = by - ay;
 
       // Get perpendicular vector
-      const len = Math.hypot(dx, dy);
       let pDx = -dy;
       let pDy = dx;
       
+      const len = Math.hypot(dx, dy);
       if (len > 0) {
         pDx /= len;
         pDy /= len;
@@ -1569,3 +1569,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
