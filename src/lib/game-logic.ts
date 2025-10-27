@@ -5,6 +5,7 @@ import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
 import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx, SplashRingVfxType } from './game-data/types';
 import { elementProjectileColors } from './game-data/constants';
+import { audioManager } from './audio/audio-manager';
 
 // This file is intended for reusable game logic that can be shared
 // between single-player and multiplayer contexts, especially for
@@ -78,6 +79,9 @@ export function processAttack(
         splashRings: [] as SplashRing[],
         lifeGainVfx: [] as LifeGainVfx[],
     };
+
+    // Play the dynamically generated sound for the primary attack
+    audioManager.playAttackSound(tower.elements[0] || 'neutral', Math.random());
 
     const projectileType = tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam';
     output.newAttacks.push({
