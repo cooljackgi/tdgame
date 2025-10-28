@@ -757,14 +757,13 @@ export default function CoopGameLoader() {
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
-                if(!wasAlreadyDead) audioManager.playSfx('enemy_die', 0.4);
+                audioManager.playSfx('enemy_die', 0.4);
                 continue; // Remove after death animation
               }
               if (enemy.deathTimestamp) {
                 stillAlive.push(enemy);
                 continue;
               }
-              const wasAlreadyDead = enemy.health <= 0;
 
               let updatedEnemy: Enemy | null = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
 
@@ -775,10 +774,8 @@ export default function CoopGameLoader() {
                   burnEffect.lastTick = now;
                   gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
                   sendGameDataRef.current('VFX_DAMAGE_NUMBER', [{ id: crypto.randomUUID(), amount: burnDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
-                  if (updatedEnemy.health <= 0) {
-                    if (!updatedEnemy.deathTimestamp) {
-                      updatedEnemy.deathTimestamp = now;
-                    }
+                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
+                    updatedEnemy.deathTimestamp = now;
                   }
               }
 
@@ -997,13 +994,4 @@ export default function CoopGameLoader() {
 
     
 
-
-
-
-
-
-
-
-
-
-
+    
