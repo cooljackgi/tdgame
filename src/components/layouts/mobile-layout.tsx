@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, memo, useMemo, useRef, useEffect } from 'react';
+import React, { useState, memo, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot } from 'lucide-react';
@@ -19,7 +19,7 @@ import { Separator } from '../ui/separator';
 
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
-  Attack, DamageNumber, SplashRing, Difficulty, PingKind
+  Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -87,6 +87,10 @@ interface MobileLayoutProps {
   averagePacketSize?: number;
 }
 
+const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
+    return requiredElements.every(element => unlockedElements.has(element));
+};
+
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
@@ -137,10 +141,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   
   // Bug fix: When a tower is focused, open the build/upgrade sheet automatically
   useEffect(() => {
-    if(focusedTower) {
+    if (focusedTower && !selectedTowerToBuild) {
       setIsBuildSheetOpen(true);
     }
-  }, [focusedTower]);
+  }, [focusedTower, selectedTowerToBuild]);
 
 
   const isSpectator = playerRole === 'spectator';
@@ -184,25 +188,49 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     setIsBuildSheetOpen(false);
   };
   
+  // --- New upgrade logic as requested ---
   const handleUpgrade = (upgradeId: string) => {
     handleUpgradeTower(upgradeId);
-
-    // Check if the new tower will have upgrades. If not, close the sheet.
-    const newTowerSpec = allTowers.find(t => t.id === upgradeId);
-    const hasFurtherUpgrades = newTowerSpec?.upgradesTo?.some(id => allTowers.find(t => t.id === id));
-
-    if (!hasFurtherUpgrades) {
-        setIsBuildSheetOpen(false);
-    }
+    // The decision to close the sheet is now handled by the useEffect below.
   };
 
-  const handleFocusTower = (tower: PlacedTower) => {
-    onFocusTower(tower);
-    // Don't open the sheet if we're in build mode, just cancel build mode.
-    if (!selectedTowerToBuild) {
-      setIsBuildSheetOpen(true);
+  const getAvailableUpgrades = useCallback((tower: PlacedTower) => {
+    if (!tower.upgradesTo?.length || !localPlayer) return [];
+    
+    const unlockedElements = new Set(localPlayer.unlockedElements);
+    const resources = Math.floor(localPlayer.resources);
+    const refund = Math.floor(tower.cost * 0.75);
+
+    return tower.upgradesTo
+      .map(id => allTowers.find(t => t.id === id))
+      .filter((t): t is Tower => !!t)
+      .filter(t => 
+        hasAllElements(unlockedElements, t.elements) && 
+        (t.cost - refund) <= resources
+      );
+  }, [localPlayer, allTowers]);
+
+  useEffect(() => {
+    if (!lastUpgradedTowerId || !focusedTower) return;
+    
+    // We must check upgrades for the *newly focused* tower
+    if (focusedTower.id === lastUpgradedTowerId) {
+        const availableNext = getAvailableUpgrades(focusedTower);
+        if (availableNext.length === 0) {
+            setIsBuildSheetOpen(false);
+        }
     }
-  }
+  }, [lastUpgradedTowerId, focusedTower, getAvailableUpgrades]);
+  // --- End of new upgrade logic ---
+
+
+  const handleFocusTower = (tower: PlacedTower) => {
+    if (selectedTowerToBuild) {
+      cancelInteractions();
+    }
+    onFocusTower(tower);
+    setIsBuildSheetOpen(true);
+  };
 
   return (
     <div className="w-full min-h-dvh flex flex-col">
@@ -425,10 +453,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                         isCoop={isCoop}
                         isWsConnected={isWsConnected}
                         hostPacketsPerSecond={hostPacketsPerSecond}
-                        hostBytesSentPerSecond={hostBytesSentPerSecond}
                         clientPacketsPerSecond={clientPacketsPerSecond}
-                        clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
                         averagePacketSize={averagePacketSize}
+                        hostBytesSentPerSecond={hostBytesSentPerSecond}
+                        clientBytesReceivedPerSecond={clientBytesReceivedPerSecond}
                       />
                     </ScrollArea>
                   </TabsContent>}
