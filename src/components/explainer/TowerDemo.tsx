@@ -29,6 +29,8 @@ type EnemyState = {
   wasHit: boolean;
 };
 
+const CELL_SIZE = 64; // Definition hinzugefügt
+
 function cooldownMsFrom(v: number): number {
   if (v <= 0) return 1000;
   if (v < 20) return v * 1000;
