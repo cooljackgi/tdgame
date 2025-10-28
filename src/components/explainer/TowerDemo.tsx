@@ -349,68 +349,69 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     // Draw and manage attacks
     const remainingAttacks: (DemoAttack | Attack)[] = [];
     attacks.current.forEach((attack) => {
-      const demoAttack = attack as DemoAttack; // Assume it's a DemoAttack for simplicity here
+      const demoAttack = attack as DemoAttack;
       const aElapsed = now - demoAttack.start;
-      if (aElapsed > demoAttack.duration) {
-         // Projectile hit logic
-         setEnemies(prevEnemies => {
-            return prevEnemies.map(enemy => {
-                if (enemy.id !== 'e1' || enemy.isDying) return enemy;
-                
-                const newHealth = enemy.health - (tower.damage / 4); // Deal 1/4th damage per hit for demo
-                if (newHealth <= 0) {
-                  setTimeout(() => setEnemies(es => es.map(e => ({ ...e, health: e.maxHealth, isDying: false, wasHit: false }))), 2000);
-                  return { ...enemy, health: 0, isDying: true, wasHit: true };
-                }
-                
-                if (hitTimeoutRefs.current[enemy.id]) clearTimeout(hitTimeoutRefs.current[enemy.id]);
-                hitTimeoutRefs.current[enemy.id] = setTimeout(() => setEnemies(p => p.map(e => e.id === enemy.id ? {...e, wasHit: false} : e)), 150);
 
-                return { ...enemy, health: newHealth, wasHit: true };
-            });
-         });
-         // Handle splash/chain on hit
-         if (tower.effect?.type === 'splash' && tower.effect.radius) {
-              let vfxType: SplashRingVfxType | undefined = undefined;
-              const towerId = tower.id;
-              if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
-              else if (towerId.includes('fire-2b')) vfxType = 'flame';
-              else if (towerId.includes('water-2b')) vfxType = 'ice';
-              else if (towerId.includes('earth-2b')) vfxType = 'rock';
-              else if (towerId.includes('nature-2b')) vfxType = 'thorn';
-              else if (towerId.includes('light-2b')) vfxType = 'light';
-              else if (towerId.includes('dark-2b')) vfxType = 'dark';
+      if (aElapsed < demoAttack.duration) {
+        remainingAttacks.push(attack);
+        const t = aElapsed / demoAttack.duration;
+        drawProjectile(ctx, demoAttack, t);
+      } else {
+        // Projectile hit logic
+        setEnemies(prevEnemies => {
+          return prevEnemies.map(enemy => {
+            if (enemy.id !== 'e1' || enemy.isDying) return enemy;
             
-              splashRings.current.push({
-                  id: crypto.randomUUID(),
-                  x: toPos.x / CELL_SIZE, // needs grid coords
-                  y: toPos.y / CELL_SIZE,
-                  r: tower.effect.radius,
-                  element: tower.elements[0] || 'neutral',
-                  color: elementProjectileColors[tower.elements[0] || 'neutral'],
-                  vfxType,
-                  start: now,
-                  life: 600,
-              } as LiveSplashRing);
-         }
-         if (tower.effect?.type === 'chain' && tower.effect.bounces) {
-            attacks.current.push({
-                id: crypto.randomUUID(),
-                start: now,
-                duration: 250,
-                from: toPos,
-                to: toPos2,
-                color: elementProjectileColors[tower.elements[0] || 'neutral'],
-                projectile: 'chain',
-                elements: tower.elements,
-            } as DemoAttack);
-         }
-         return; // Don't draw or keep it
+            const newHealth = enemy.health - (tower.damage / 4);
+            if (newHealth <= 0) {
+              setTimeout(() => setEnemies(es => es.map(e => ({ ...e, health: e.maxHealth, isDying: false, wasHit: false }))), 2000);
+              return { ...enemy, health: 0, isDying: true, wasHit: true };
+            }
+            
+            if (hitTimeoutRefs.current[enemy.id]) clearTimeout(hitTimeoutRefs.current[enemy.id]);
+            hitTimeoutRefs.current[enemy.id] = setTimeout(() => setEnemies(p => p.map(e => e.id === enemy.id ? {...e, wasHit: false} : e)), 150);
+
+            return { ...enemy, health: newHealth, wasHit: true };
+          });
+        });
+
+        if (tower.effect?.type === 'splash' && tower.effect.radius) {
+          let vfxType: SplashRingVfxType | undefined = undefined;
+          const towerId = tower.id;
+          if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
+          else if (towerId.includes('fire-2b')) vfxType = 'flame';
+          else if (towerId.includes('water-2b')) vfxType = 'ice';
+          else if (towerId.includes('earth-2b')) vfxType = 'rock';
+          else if (towerId.includes('nature-2b')) vfxType = 'thorn';
+          else if (towerId.includes('light-2b')) vfxType = 'light';
+          else if (towerId.includes('dark-2b')) vfxType = 'dark';
+        
+          splashRings.current.push({
+              id: crypto.randomUUID(),
+              x: toPos.x / CELL_SIZE,
+              y: toPos.y / CELL_SIZE,
+              r: tower.effect.radius,
+              element: tower.elements[0] || 'neutral',
+              color: elementProjectileColors[tower.elements[0] || 'neutral'],
+              vfxType,
+              start: now,
+              life: 600,
+          } as LiveSplashRing);
+        }
+
+        if (tower.effect?.type === 'chain' && tower.effect.bounces) {
+          attacks.current.push({
+              id: crypto.randomUUID(),
+              start: now,
+              duration: 250,
+              from: toPos,
+              to: toPos2,
+              color: elementProjectileColors[tower.elements[0] || 'neutral'],
+              projectile: 'chain',
+              elements: tower.elements,
+          } as DemoAttack);
+        }
       }
-      
-      remainingAttacks.push(attack);
-      const t = aElapsed / demoAttack.duration;
-      drawProjectile(ctx, demoAttack, t);
     });
     attacks.current = remainingAttacks;
 
