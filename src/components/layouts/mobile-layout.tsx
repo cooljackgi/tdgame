@@ -134,6 +134,14 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       return () => clearTimeout(id);
     }
   }, [isBuildSheetOpen, gameBoardRef]);
+  
+  // Bug fix: When a tower is focused, open the build/upgrade sheet automatically
+  useEffect(() => {
+    if(focusedTower) {
+      setIsBuildSheetOpen(true);
+    }
+  }, [focusedTower]);
+
 
   const isSpectator = playerRole === 'spectator';
   const isHost = playerRole === 'player1';
@@ -161,7 +169,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     return ids;
   }, [placedTowers, auraTowers]);
 
-
   const sheetTitle = isSpectator
     ? 'Zuschauer'
     : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Turm bauen');
@@ -172,14 +179,29 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     setIsBuildSheetOpen(false);
   };
   
-  const handleSellAndClose = () => {
+  const handleSell = () => {
     handleSellTower();
     setIsBuildSheetOpen(false);
   };
   
-  const handleUpgradeAndClose = (upgradeId: string) => {
+  const handleUpgrade = (upgradeId: string) => {
     handleUpgradeTower(upgradeId);
-    setIsBuildSheetOpen(false);
+
+    // Check if the new tower will have upgrades. If not, close the sheet.
+    const newTowerSpec = allTowers.find(t => t.id === upgradeId);
+    const hasFurtherUpgrades = newTowerSpec?.upgradesTo?.some(id => allTowers.find(t => t.id === id));
+
+    if (!hasFurtherUpgrades) {
+        setIsBuildSheetOpen(false);
+    }
+  };
+
+  const handleFocusTower = (tower: PlacedTower) => {
+    onFocusTower(tower);
+    // Don't open the sheet if we're in build mode, just cancel build mode.
+    if (!selectedTowerToBuild) {
+      setIsBuildSheetOpen(true);
+    }
   }
 
   return (
@@ -221,7 +243,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           splashRings={splashRings}
           currentPath={currentPath}
           handlePlaceTower={handlePlaceTower}
-          onFocusTower={onFocusTower}
+          onFocusTower={handleFocusTower} // Use the new handler
           cancelInteractions={cancelInteractions}
           selectedTowerToBuild={selectedTowerToBuild}
           focusedTower={focusedTower}
@@ -293,7 +315,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                     {!isSpectator && localPlayer && (
                         <div className="flex items-center gap-2 text-yellow-400 font-semibold text-lg bg-background/50 border rounded-md px-3 py-1">
                             <Coins className="h-5 w-5" />
-                            <span>{localPlayer.resources}</span>
+                            <span>{Math.floor(localPlayer.resources)}</span>
                         </div>
                     )}
                   </SheetHeader>
@@ -305,8 +327,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                       onSelectTower={handleSelectAndClose}
                       focusedTower={focusedTower}
                       selectedTowerToBuild={selectedTowerToBuild}
-                      onUpgradeTower={handleUpgradeAndClose}
-                      onSellTower={handleSellAndClose}
+                      onUpgradeTower={handleUpgrade}
+                      onSellTower={handleSell}
                       onBack={cancelInteractions}
                       localPlayer={localPlayer}
                       isMobile
