@@ -2,11 +2,11 @@
 'use client';
 import * as React from 'react';
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { Tower, SplashRing } from '@/lib/game-data/types';
+import type { Tower, SplashRing, Attack } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import TowerComponent, { TOWER_MUZZLE_POINTS } from '@/components/game/Tower';
 import EnemyComponent from '@/components/game/Enemy';
-import { drawProjectile, drawSplashRing } from '@/components/game/vfx-renderer';
+import { drawProjectile, drawSplashRing } from './vfx-renderer';
 
 type DemoAttack = {
   id: string;
@@ -29,7 +29,7 @@ type EnemyState = {
   wasHit: boolean;
 };
 
-const CELL_SIZE = 64; // Definition hinzugefügt
+const CELL_SIZE = 64;
 
 function cooldownMsFrom(v: number): number {
   if (v <= 0) return 1000;
@@ -43,7 +43,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
   const enemy1Ref = useRef<HTMLDivElement>(null);
   const enemy2Ref = useRef<HTMLDivElement>(null); // For chain effect
   const animationRef = useRef<number>();
-  const attacks = useRef<DemoAttack[]>([]);
+  const attacks = useRef<(DemoAttack | Attack)[]>([]);
   const splashRings = useRef<LiveSplashRing[]>([]);
   const lastAttackTime = useRef(0);
   const lastFrameTime = useRef(performance.now());
@@ -110,14 +110,15 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
         color: elementProjectileColors[tower.elements[0] || 'neutral'],
         projectile: projectileType,
         elements: tower.elements,
-      });
+      } as DemoAttack);
     }
 
     // Draw and manage attacks
-    const remainingAttacks: DemoAttack[] = [];
+    const remainingAttacks: (DemoAttack | Attack)[] = [];
     attacks.current.forEach((attack) => {
-      const aElapsed = now - attack.start;
-      if (aElapsed > attack.duration) {
+      const demoAttack = attack as DemoAttack; // Assume it's a DemoAttack for simplicity here
+      const aElapsed = now - demoAttack.start;
+      if (aElapsed > demoAttack.duration) {
          // Projectile hit logic
          setEnemies(prevEnemies => {
             return prevEnemies.map(enemy => {
@@ -159,14 +160,14 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                 color: elementProjectileColors[tower.elements[0] || 'neutral'],
                 projectile: 'chain',
                 elements: tower.elements,
-            });
+            } as DemoAttack);
          }
          return; // Don't draw or keep it
       }
       
       remainingAttacks.push(attack);
-      const t = aElapsed / attack.duration;
-      drawProjectile(ctx, { ...attack, _vfx: { start: attack.start, life: attack.duration, fromPx: attack.from, toPx: attack.to } }, t);
+      const t = aElapsed / demoAttack.duration;
+      drawProjectile(ctx, { ...demoAttack, _vfx: { start: demoAttack.start, life: demoAttack.duration, fromPx: demoAttack.from, toPx: demoAttack.to } }, t);
     });
     attacks.current = remainingAttacks;
 

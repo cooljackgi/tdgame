@@ -14,7 +14,6 @@ import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import TowerContextMenu from './TowerContextMenu';
-import { drawProjectile, drawSplashRing } from './vfx-renderer';
 
 const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
@@ -549,7 +548,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const q = incomingRingsRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: q[i].life || 600 }); 
+                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
                 }
                 q.length = 0; 
             }
@@ -576,37 +575,64 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         attacksPoolRef.current.forEachActive(attack => {
             const now = Date.now();
-            if (!attack._vfx) {
-                 attacksPoolRef.current.free(attack);
-                 return;
-            }
+            const {fromPx, toPx, start, life} = attack._vfx;
             
             const liveTarget = enemiesById.get(attack.targetId);
-            if (liveTarget) {
-                attack._vfx.toPx = getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath);
-            }
-            
-            const life = Math.max(1, attack._vfx.life || 1);
-            const t = clamp((now - attack._vfx.start) / life, 0, 1);
-            
+            const currentToPx = liveTarget ? getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath) : toPx;
+
+            const t = clamp((now - start) / life, 0, 1);
             if (t >= 1) { 
                 attacksPoolRef.current.free(attack); 
                 return; 
             }
-            
-            const tower = towersMap.get(attack.towerId);
-            if (!tower) {
-                attacksPoolRef.current.free(attack);
-                return;
-            }
 
-            drawProjectile(ctx, attack, t);
+            const easeT = t * (2 - t);
+            const dx = currentToPx.x - fromPx.x;
+            const dy = currentToPx.y - fromPx.y;
+            
+            const headX = fromPx.x + dx * easeT;
+            const headY = fromPx.y + dy * easeT;
+            const tailT = clamp(easeT - 0.15, 0, 1);
+            const tailX = fromPx.x + dx * tailT;
+            const tailY = fromPx.y + dy * tailT;
+            
+            const baseColor = elementProjectileColors[attack.elements[0] || 'neutral'];
+            ctx.shadowColor = baseColor;
+            ctx.shadowBlur = 10;
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 1 - t * t;
+            ctx.beginPath();
+            ctx.moveTo(headX, headY);
+            ctx.lineTo(tailX, tailY);
+            ctx.stroke();
+
+            if (attack.projectile === "beam") {
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#ffffff';
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
         });
 
         splashRingsPoolRef.current.forEachActive(r => {
             const t = clamp((now - r.start) / r.life, 0, 1);
             if (t >= 1) { splashRingsPoolRef.current.free(r); return; }
-            drawSplashRing(ctx, { ...r, x: r.x * CELL_SIZE + CELL_SIZE/2, y: r.y * CELL_SIZE + CELL_SIZE/2 }, t);
+            
+            const pos = gridToPx({ row: r.y, col: r.x });
+            const radius = r.r * CELL_SIZE * (t * (2 - t));
+            const opacity = (1 - t) * (1 - t);
+            
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = r.color;
+            ctx.strokeStyle = r.color;
+            ctx.lineWidth = 2 + 3 * (1 - t);
+            ctx.globalAlpha = opacity;
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            ctx.stroke();
         });
 
         ctx.globalAlpha = 1;
