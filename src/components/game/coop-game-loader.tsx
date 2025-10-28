@@ -503,6 +503,23 @@ export default function CoopGameLoader() {
     const didSetLoadedRef = useRef(false);
 
     useEffect(() => {
+        const onFirstPointer = async () => {
+            try {
+                await audioManager.init(); // AudioContext unlock
+                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
+            } catch {}
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+        window.addEventListener('pointerdown', onFirstPointer, { once: true });
+        window.addEventListener('touchstart', onFirstPointer, { once: true });
+        return () => {
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+    }, []);
+
+    useEffect(() => {
       if (!gameId) return;
 
       const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {

@@ -6,6 +6,8 @@ import { GRID_COLS } from '@/lib/game-data/constants';
 
 const audioBufferCache = new Map<string, AudioBuffer>();
 let audioContext: AudioContext | null = null;
+let hapticsPrimed = false;
+let lastVibeAt = 0;
 
 function getAudioContext(): AudioContext {
     if (!audioContext || audioContext.state === 'closed') {
@@ -13,6 +15,11 @@ function getAudioContext(): AudioContext {
     }
     return audioContext;
 }
+
+function canVibrate(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+}
+
 
 async function loadAudioFile(url: string): Promise<AudioBuffer> {
     if (audioBufferCache.has(url)) {
@@ -92,6 +99,11 @@ class AudioManager {
         this.isInitialized = true;
         console.log("Audio Manager Initialized.");
     }
+    
+    public primeHaptics() {
+      // aus einer echten User-Geste (Tap/Click) aufrufen!
+      hapticsPrimed = true;
+    }
 
     public mute() { this.isMuted = true; this.stopMusic(); }
     public unmute() { this.isMuted = false; }
@@ -106,14 +118,18 @@ class AudioManager {
     }
 
     public playVibration(patternName: keyof typeof VIBRATION_PATTERNS) {
-        if (this.isMuted || typeof navigator.vibrate !== 'function') {
-            return;
-        }
-        const pattern = VIBRATION_PATTERNS[patternName];
-        if (pattern) {
-            navigator.vibrate(pattern);
-        }
+      if (this.isMuted || !canVibrate() || !hapticsPrimed) return;
+
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (now - lastVibeAt < 60) return; // kleines Rate-Limit, damit Chrome nicht „stumm“ schaltet
+
+      const pattern = VIBRATION_PATTERNS[patternName];
+      if (pattern) {
+        lastVibeAt = now;
+        navigator.vibrate(pattern);
+      }
     }
+
 
     public playAttackSound(element: Element, position: Node) {
         if (!this.isInitialized || this.isMuted) return;

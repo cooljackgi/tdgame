@@ -111,6 +111,23 @@ export default function SinglePlayerGame({
 
 
     useEffect(() => {
+        const onFirstPointer = async () => {
+            try {
+                await audioManager.init(); // AudioContext unlock
+                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
+            } catch {}
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+        window.addEventListener('pointerdown', onFirstPointer, { once: true });
+        window.addEventListener('touchstart', onFirstPointer, { once: true });
+        return () => {
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+    }, []);
+
+    useEffect(() => {
         if (initialSavedGame) {
             const now = Date.now();
             const loadedTowers = initialSavedGame.towersByCell;
@@ -164,6 +181,11 @@ export default function SinglePlayerGame({
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
+            if (isCheating) { 
+                localStorage.removeItem(LOCAL_STORAGE_KEY); 
+                return; 
+            }
+
             
             const player1 = playersRef.current[0];
             if (!player1) return;
@@ -185,7 +207,7 @@ export default function SinglePlayerGame({
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
-    }, []);
+    }, [isCheating]);
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
@@ -606,81 +628,81 @@ export default function SinglePlayerGame({
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
-
+            
             for (let enemy of currentEnemies) {
-                // First, check for death and apply DoT, regardless of stun status
-                if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
-                    audioManager.playVibration('kill');
-                    audioManager.playSfx('enemy_die', 0.4);
-                    continue; // Remove after death animation
-                }
+              // First, check for death and apply DoT, regardless of stun status
+              if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                audioManager.playVibration('kill');
+                audioManager.playSfx('enemy_die', 0.4);
+                continue; // Remove after death animation
+              }
 
-                if (enemy.deathTimestamp) {
-                    nextEnemies.push(enemy);
-                    continue;
-                }
+              if (enemy.deathTimestamp) {
+                nextEnemies.push(enemy);
+                continue;
+              }
+              
+              let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+
+              const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
+              if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
+                  const damage = burnEffect.potency ?? 0;
+                  updatedEnemy.health -= damage;
+                  burnEffect.lastTick = now;
+                  gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
+                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
+                    updatedEnemy.deathTimestamp = now;
+                  }
+              }
+
+              // Now, check for stun. If stunned, skip movement but don't skip the entire loop.
+              const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
+              if (stunEffect) {
+                  nextEnemies.push(updatedEnemy);
+                  continue; // Skip movement for this tick
+              }
                 
-                let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+              // Pull logic
+              for (const well of activeGravityWells) {
+                  const dx = well.x - updatedEnemy.position.col;
+                  const dy = well.y - updatedEnemy.position.row;
+                  const distSq = dx * dx + dy * dy;
+                  if (distSq <= well.radius * well.radius) {
+                      const dist = Math.sqrt(distSq);
+                      if (dist > 0.1) {
+                          const pullStrength = well.potency;
+                          updatedEnemy.vx += (dx / dist) * pullStrength * (delta / 1000);
+                          updatedEnemy.vy += (dy / dist) * pullStrength * (delta / 1000);
+                      }
+                  }
+              }
 
-                const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
-                if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
-                    const damage = burnEffect.potency ?? 0;
-                    updatedEnemy.health -= damage;
-                    burnEffect.lastTick = now;
-                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
-                    if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
+              const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
+              const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+              const stepMs = 1000 / Math.max(0.001, speed);
+              
+              let timeToMove = now - updatedEnemy.lastMove;
+              
+              while (timeToMove >= stepMs) {
+                  if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
+                      updatedEnemy.pathIndex += 1;
+                      updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
+                      timeToMove -= stepMs;
+                      updatedEnemy.lastMove += stepMs;
+                  } else {
+                      livesLostThisTick++;
+                      audioManager.playSfx('enemy_leak', 0.5);
+                      updatedEnemy = null;
+                      break;
+                  }
+              }
+              
+               if (updatedEnemy) {
+                 if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                       updatedEnemy.deathTimestamp = now;
-                    }
-                }
-                
-                // Now, check for stun. If stunned, skip movement but don't skip the entire loop.
-                const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                if (stunEffect) {
-                    nextEnemies.push(updatedEnemy);
-                    continue; // Skip movement for this tick
-                }
-                
-                // Pull logic
-                for (const well of activeGravityWells) {
-                    const dx = well.x - updatedEnemy.position.col;
-                    const dy = well.y - updatedEnemy.position.row;
-                    const distSq = dx * dx + dy * dy;
-                    if (distSq <= well.radius * well.radius) {
-                        const dist = Math.sqrt(distSq);
-                        if (dist > 0.1) {
-                            const pullStrength = well.potency;
-                            updatedEnemy.vx += (dx / dist) * pullStrength * (delta / 1000);
-                            updatedEnemy.vy += (dy / dist) * pullStrength * (delta / 1000);
-                        }
-                    }
-                }
-
-                const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
-                const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
-                const stepMs = 1000 / Math.max(0.001, speed);
-                
-                let timeToMove = now - updatedEnemy.lastMove;
-                
-                while (timeToMove >= stepMs) {
-                    if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
-                        updatedEnemy.pathIndex += 1;
-                        updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                        timeToMove -= stepMs;
-                        updatedEnemy.lastMove += stepMs;
-                    } else {
-                        livesLostThisTick++;
-                        audioManager.playSfx('enemy_leak', 0.5);
-                        updatedEnemy = null;
-                        break;
-                    }
-                }
-                
-                 if (updatedEnemy) {
-                   if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
-                        updatedEnemy.deathTimestamp = now;
-                   }
-                   nextEnemies.push(updatedEnemy);
                  }
+                 nextEnemies.push(updatedEnemy);
+               }
             }
             
             setEnemies(nextEnemies);
