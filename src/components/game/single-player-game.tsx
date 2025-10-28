@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
@@ -601,7 +600,6 @@ export default function SinglePlayerGame({
             if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
             if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
 
-
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
@@ -609,15 +607,16 @@ export default function SinglePlayerGame({
             for (let enemy of currentEnemies) {
                  if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                     audioManager.playSfx('enemy_die', 0.4);
-                    continue; // Remove after death animation
+                    continue;
                 }
+
                 if (enemy.deathTimestamp) {
                     nextEnemies.push(enemy);
                     continue;
                 }
-
-                let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
                 
+                let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+
                 const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
                 if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
                     const damage = burnEffect.potency ?? 0;
@@ -633,7 +632,7 @@ export default function SinglePlayerGame({
                 if (stunEffect) {
                     nextEnemies.push(updatedEnemy);
                     continue;
-                };
+                }
                 
                 // Pull logic
                 for (const well of activeGravityWells) {

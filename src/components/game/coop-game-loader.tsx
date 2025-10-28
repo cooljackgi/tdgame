@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -982,16 +981,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-    
-
-    
-
-
-
-
-    
-
-    
-
-    
