@@ -1,3 +1,4 @@
+
 // src/components/explainer/TowerDemo.tsx
 'use client';
 import * as React from 'react';
@@ -5,7 +6,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Tower } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import TowerComponent from '@/components/game/Tower';
-import { Bug } from 'lucide-react';
+import EnemyComponent from '@/components/game/Enemy'; // Updated import
 
 type DemoAttack = {
   start: number;
@@ -13,6 +14,7 @@ type DemoAttack = {
   from: { x: number; y: number };
   to: { x: number; y: number };
   color: string;
+  projectile: 'beam' | 'arrow' | 'chain'; // Updated to support different projectiles
 };
 
 function cooldownMsFrom(v: number): number {
@@ -59,12 +61,14 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     
     if (tower.damage > 0 && elapsed >= cdMs) {
       lastAttackTime.current = now;
+      const projectileType = tower.specId?.includes('-1a') || tower.specId?.includes('-2a') ? 'arrow' : 'beam';
       attacks.current.push({
         start: now,
         duration: 400,
         from: fromPos,
         to: toPos,
         color: elementProjectileColors[tower.elements[0] || 'neutral'],
+        projectile: projectileType,
       });
     }
 
@@ -80,8 +84,8 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
       const dx = attack.to.x - attack.from.x;
       const dy = attack.to.y - attack.from.y;
       
-      const currentX = attack.from.x + dx * easeT;
-      const currentY = attack.from.y + dy * easeT;
+      const headX = attack.from.x + dx * easeT;
+      const headY = attack.from.y + dy * easeT;
       const angle = Math.atan2(dy, dx);
       const length = 14;
 
@@ -91,15 +95,33 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
       ctx.shadowColor = attack.color as string;
       ctx.shadowBlur = 4;
       
-      ctx.beginPath();
-      ctx.moveTo(currentX, currentY);
-      ctx.lineTo(currentX - length * Math.cos(angle), currentY - length * Math.sin(angle));
-      ctx.stroke();
+      if (attack.projectile === 'arrow') {
+          ctx.beginPath();
+          ctx.moveTo(headX, headY);
+          ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
+          ctx.stroke();
+      } else { // BEAM
+          const tailT = Math.max(0, easeT - 0.15);
+          const tailX = attack.from.x + dx * tailT;
+          const tailY = attack.from.y + dy * tailT;
+          
+          ctx.beginPath();
+          ctx.moveTo(headX, headY);
+          ctx.lineTo(tailX, tailY);
+          ctx.stroke();
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.arc(headX, headY, 2.0, 0, Math.PI * 2);
+          ctx.fill();
+      }
 
       ctx.restore();
       return true;
     });
-  }, [cssSize, tower.attackSpeed, tower.elements, tower.damage]);
+  }, [cssSize, tower.attackSpeed, tower.elements, tower.damage, tower.specId]);
 
   // Stable resize handler
   const handleResize = useCallback(() => {
@@ -173,7 +195,13 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
         ref={enemyRef}
         className="absolute left-[80%] top-1/2 -translate-x-1/2 -translate-y-1/2"
       >
-        <Bug className="h-6 w-6 text-red-500 [filter:drop-shadow(0_0_3px_hsl(var(--destructive)))]" />
+        <EnemyComponent 
+          type="standard" 
+          health={100} 
+          maxHealth={100} 
+          effects={[]} 
+          className="w-8 h-8"
+        />
       </div>
 
       <canvas ref={canvasRef} className="h-full w-full" />
