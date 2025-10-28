@@ -186,10 +186,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     <div className="w-full min-h-dvh flex flex-col">
       {/* HEADER */}
       <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
-      <div
-  className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
->
-
+        <div
+            id="tutorial-player-stats"
+            className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
+        >
            <div className="grid grid-cols-2 gap-2">
             {players.map((p) => p && (
               <div key={p.id} className="min-w-0">
@@ -209,6 +209,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       
       {/* GAME AREA */}
       <div
+        id="tutorial-game-board"
         className="relative w-full flex-1 min-h-0 overflow-hidden"
       >
         <GameBoard
@@ -238,7 +239,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           {/* TOP OVERLAYS */}
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">
             {showNextWaveButton && (
-              <div className="pointer-events-auto">
+              <div id="tutorial-start-wave-button" className="pointer-events-auto">
                 <WaveStartTimer countdown={waveStartCountdown} totalTime={intermissionTime} onStartWave={handleStartNextWaveNow} canStartWave={canStartWave}/>
               </div>
             )}
@@ -273,6 +274,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             <Sheet open={isBuildSheetOpen} onOpenChange={setIsBuildSheetOpen}>
               <SheetTrigger asChild>
                 <Button
+                  id="tutorial-build-menu"
                   variant="outline"
                   className="h-14 flex flex-col justify-center"
                   disabled={gameStatus === 'picking-element' || isSpectator}
@@ -337,7 +339,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             {/* Extra / Debug Sheet */}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline" className="h-14 flex flex-col justify-center">
+                <Button variant="outline" className="h-14 flex flex-col justify-center" id="tutorial-wave-tracker">
                   <ChevronsUpDown />
                   <span className="text-[11px] mt-1">Menü</span>
                 </Button>
