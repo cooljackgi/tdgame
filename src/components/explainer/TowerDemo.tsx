@@ -6,24 +6,30 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Tower } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 import TowerComponent from '@/components/game/Tower';
-import EnemyComponent from '@/components/game/Enemy'; // Updated import
+import EnemyComponent from '@/components/game/Enemy';
 
 type DemoAttack = {
+  id: string;
   start: number;
   duration: number;
   from: { x: number; y: number };
   to: { x: number; y: number };
   color: string;
-  projectile: 'beam' | 'arrow' | 'chain'; // Updated to support different projectiles
+  projectile: 'beam' | 'arrow' | 'chain';
+};
+
+type EnemyState = {
+  health: number;
+  maxHealth: number;
+  isDying: boolean;
+  wasHit: boolean;
 };
 
 function cooldownMsFrom(v: number): number {
-  if (v <= 0) return 1000; // Failsafe
-  // Assuming values < 20 are seconds (e.g., 0.8s) and > 20 are ms.
-  if (v < 20) return v * 1000; 
-  return v; 
+  if (v <= 0) return 1000;
+  if (v < 20) return v * 1000;
+  return v;
 }
-
 
 export default function TowerDemo({ tower }: { tower: Tower }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,6 +41,8 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
   const lastFrameTime = useRef(performance.now());
   const [cssSize, setCssSize] = useState({ w: 100, h: 100 });
   const [cooldownProgress, setCooldownProgress] = useState(1);
+  const [enemyState, setEnemyState] = useState<EnemyState>({ health: 100, maxHealth: 100, isDying: false, wasHit: false });
+  const hitTimeoutRef = useRef<NodeJS.Timeout>();
 
   const towerSize = 50;
 
@@ -59,10 +67,11 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     const progress = Math.min(elapsed / cdMs, 1);
     setCooldownProgress(progress);
     
-    if (tower.damage > 0 && elapsed >= cdMs) {
+    if (tower.damage > 0 && elapsed >= cdMs && !enemyState.isDying) {
       lastAttackTime.current = now;
       const projectileType = tower.specId?.includes('-1a') || tower.specId?.includes('-2a') ? 'arrow' : 'beam';
       attacks.current.push({
+        id: crypto.randomUUID(),
         start: now,
         duration: 400,
         from: fromPos,
@@ -74,10 +83,32 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
 
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
-    attacks.current = attacks.current.filter((attack) => {
+    
+    const remainingAttacks: DemoAttack[] = [];
+    attacks.current.forEach((attack) => {
       const aElapsed = now - attack.start;
-      if (aElapsed > attack.duration) return false;
+      if (aElapsed > attack.duration) {
+         // Projectile hit logic
+         setEnemyState(prev => {
+           if (prev.isDying) return prev;
+           
+           const newHealth = prev.health - (tower.damage / 4); // Deal 1/4th damage per hit for demo
+           if (newHealth <= 0) {
+             setTimeout(() => {
+                 setEnemyState({ health: 100, maxHealth: 100, isDying: false, wasHit: false });
+             }, 2000); // Respawn after 2s
+             return { ...prev, health: 0, isDying: true, wasHit: true };
+           }
+           
+           if(hitTimeoutRef.current) clearTimeout(hitTimeoutRef.current);
+           hitTimeoutRef.current = setTimeout(() => setEnemyState(p => ({...p, wasHit: false})), 150);
 
+           return { ...prev, health: newHealth, wasHit: true };
+         });
+         return; // Don't draw or keep it
+      }
+      
+      remainingAttacks.push(attack);
       const t = aElapsed / attack.duration;
       const easeT = t * (2 - t);
 
@@ -117,13 +148,11 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
           ctx.arc(headX, headY, 2.0, 0, Math.PI * 2);
           ctx.fill();
       }
-
       ctx.restore();
-      return true;
     });
-  }, [cssSize, tower.attackSpeed, tower.elements, tower.damage, tower.specId]);
+    attacks.current = remainingAttacks;
+  }, [cssSize, tower.attackSpeed, tower.elements, tower.damage, tower.specId, enemyState.isDying]);
 
-  // Stable resize handler
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -137,10 +166,8 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     setCssSize({ w: rect.width, h: rect.height });
   }, []);
 
-  // Effect for initialization and resize handling
   useEffect(() => {
-    handleResize(); // Initial size
-    // Initialize lastAttackTime to allow an immediate first shot
+    handleResize();
     lastAttackTime.current = performance.now() - cooldownMsFrom(tower.attackSpeed);
     
     const canvas = canvasRef.current;
@@ -152,8 +179,6 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     return () => resizeObserver.disconnect();
   }, [handleResize, tower.attackSpeed]);
 
-
-  // Effect for animation loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -161,7 +186,6 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     if (!ctx) return;
     
     const loop = (now: number) => {
-      // ~60fps cap
       if (now - lastFrameTime.current > 16) { 
         draw(ctx, now);
         lastFrameTime.current = now;
@@ -172,9 +196,9 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (hitTimeoutRef.current) clearTimeout(hitTimeoutRef.current);
     };
   }, [draw]);
-
 
   return (
     <div className="relative h-full w-full">
@@ -197,10 +221,12 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
       >
         <EnemyComponent 
           type="standard" 
-          health={100} 
-          maxHealth={100} 
+          health={enemyState.health} 
+          maxHealth={enemyState.maxHealth} 
           effects={[]} 
           className="w-8 h-8"
+          isDying={enemyState.isDying}
+          wasHit={enemyState.wasHit}
         />
       </div>
 
