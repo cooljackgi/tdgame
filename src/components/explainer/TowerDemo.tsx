@@ -5,7 +5,7 @@ import * as React from 'react';
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Tower } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
-import TowerComponent from '@/components/game/Tower';
+import TowerComponent, { TOWER_MUZZLE_POINTS } from '@/components/game/Tower';
 import EnemyComponent from '@/components/game/Enemy';
 
 type DemoAttack = {
@@ -53,15 +53,30 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     return { x: r.left + r.width / 2 - cRect.left, y: r.top + r.height / 2 - cRect.top };
   };
 
+  const getMuzzlePosition = (): { x: number; y: number } => {
+    if (!towerRef.current) return { x: 0, y: 0 };
+    const towerCenter = getCanvasRelativeCenter(towerRef.current);
+    
+    const specId = tower.specId || tower.id;
+    const towerVariant = 
+        specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
+        specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
+        "basic";
+    
+    const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
+    const xOffset = (muzzle.x / 100) * towerSize - (towerSize / 2);
+    const yOffset = (muzzle.y / 100) * towerSize - (towerSize / 2);
+
+    return { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
+  };
+
   const draw = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
     const { w, h } = cssSize;
     ctx.clearRect(0, 0, w, h);
 
-    const fromPos = getCanvasRelativeCenter(towerRef.current);
+    const fromPos = getMuzzlePosition();
     const toPos = getCanvasRelativeCenter(enemyRef.current);
     
-    fromPos.y -= towerSize * 0.1;
-
     const cdMs = cooldownMsFrom(tower.attackSpeed);
     const elapsed = now - lastAttackTime.current;
     const progress = Math.min(elapsed / cdMs, 1);
