@@ -42,6 +42,15 @@ const SFX_FILES: Record<string, string> = {
     'wave_start': 'wave_start.wav',
 };
 
+// Vibration patterns
+const VIBRATION_PATTERNS: Record<string, number | number[]> = {
+    'kill': 20,
+    'leak': [50, 30, 50],
+    'build': 30,
+    'error': [100, 50, 100],
+    'click': 15,
+};
+
 // Based on user's detailed specification
 type SoundSettings = {
     wave: OscillatorType;
@@ -94,6 +103,16 @@ class AudioManager {
         }
         this.musicSource = null;
         this.musicGainNode = null;
+    }
+
+    public playVibration(patternName: keyof typeof VIBRATION_PATTERNS) {
+        if (this.isMuted || typeof navigator.vibrate !== 'function') {
+            return;
+        }
+        const pattern = VIBRATION_PATTERNS[patternName];
+        if (pattern) {
+            navigator.vibrate(pattern);
+        }
     }
 
     public playAttackSound(element: Element, position: Node) {
