@@ -64,6 +64,9 @@ export default function SinglePlayerGame({
 
 
     // --- VFX State ---
+    const [attacks, setAttacks] = useState<Attack[]>([]);
+    const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
+    const [splashRings, setSplashRings] = useState<SplashRing[]>([]);
     const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
     
     // --- Stats State ---
@@ -157,7 +160,7 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (isCheating || gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial') {
+            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial') {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -182,7 +185,7 @@ export default function SinglePlayerGame({
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
-    }, [isCheating]);
+    }, []);
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
@@ -220,14 +223,14 @@ export default function SinglePlayerGame({
         };
         
         localStorage.removeItem(LOCAL_STORAGE_KEY);
-        if (user?.uid && difficultyRef.current !== 'Chaos') {
+        if (user?.uid && !isCheating) {
              try {
                 await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
             } catch(e) { console.error("Failed to save score", e); }
         }
 
         setFinalGameResult({ ...result, date: new Date().toISOString() });
-    }, [user]);
+    }, [user, isCheating]);
 
     const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];
@@ -606,10 +609,10 @@ export default function SinglePlayerGame({
 
             for (let enemy of currentEnemies) {
                 // First, check for death and apply DoT, regardless of stun status
-                 if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+                if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                     audioManager.playVibration('kill');
                     audioManager.playSfx('enemy_die', 0.4);
-                    continue;
+                    continue; // Remove after death animation
                 }
 
                 if (enemy.deathTimestamp) {
@@ -755,8 +758,8 @@ export default function SinglePlayerGame({
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies} 
-                    damageNumbers={[]} 
-                    splashRings={[]}
+                    damageNumbers={damageNumbers} 
+                    splashRings={splashRings}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
@@ -790,7 +793,7 @@ export default function SinglePlayerGame({
                     cheat_unlockAll={handleUnlockAll}
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
-                    attacks={[]}
+                    attacks={attacks}
                 />
             </div>
 

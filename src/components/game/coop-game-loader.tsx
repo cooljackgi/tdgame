@@ -755,12 +755,12 @@ export default function CoopGameLoader() {
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
 
           for (let enemy of currentEnemies) {
-              // First, check for death and apply DoT, regardless of stun status
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                   audioManager.playVibration('kill');
                   audioManager.playSfx('enemy_die', 0.4);
                   continue; // Remove after death animation
               }
+
               if (enemy.deathTimestamp) {
                   stillAlive.push(enemy);
                   continue;
@@ -780,11 +780,10 @@ export default function CoopGameLoader() {
                   }
               }
               
-              // Now, check for stun. If stunned, skip movement but don't skip the entire loop.
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
                   stillAlive.push(updatedEnemy);
-                  continue; // Skip movement for this tick
+                  continue;
               }
               
               let vx = 0, vy = 0;
