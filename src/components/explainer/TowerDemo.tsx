@@ -458,7 +458,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     resizeObserver.observe(canvas);
 
     return () => resizeObserver.disconnect();
-  }, [handleResize, tower.attackSpeed]);
+  }, [handleResize, tower.attackSpeed, tower.id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
