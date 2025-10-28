@@ -188,12 +188,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     setIsBuildSheetOpen(false);
   };
   
-  // --- New upgrade logic as requested ---
-  const handleUpgrade = (upgradeId: string) => {
-    handleUpgradeTower(upgradeId);
-    // The decision to close the sheet is now handled by the useEffect below.
-  };
-
   const getAvailableUpgrades = useCallback((tower: PlacedTower) => {
     if (!tower.upgradesTo?.length || !localPlayer) return [];
     
@@ -210,10 +204,15 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       );
   }, [localPlayer, allTowers]);
 
+  const handleUpgrade = (upgradeId: string) => {
+    handleUpgradeTower(upgradeId);
+    // Decision to close sheet is handled by the effect below
+  };
+
   useEffect(() => {
     if (!lastUpgradedTowerId || !focusedTower) return;
     
-    // We must check upgrades for the *newly focused* tower
+    // Check upgrades for the *newly focused* tower
     if (focusedTower.id === lastUpgradedTowerId) {
         const availableNext = getAvailableUpgrades(focusedTower);
         if (availableNext.length === 0) {
@@ -221,7 +220,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
         }
     }
   }, [lastUpgradedTowerId, focusedTower, getAvailableUpgrades]);
-  // --- End of new upgrade logic ---
 
 
   const handleFocusTower = (tower: PlacedTower) => {
@@ -334,9 +332,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 </Button>
               </SheetTrigger>
 
-              <SheetContent side="bottom" className="rounded-t-2xl h-[75svh] max-h-[75svh] p-0">
-  <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b px-4 pt-2 pb-3 rounded-t-2xl">
-    <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-muted" />
+              <SheetContent side="bottom" className="rounded-t-2xl h-[75svh] max-h-[75svh] p-0 flex flex-col">
+                <div className="flex-shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b px-4 pt-2 pb-3 rounded-t-2xl">
+                  <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-muted" />
 
                   <SheetHeader className="items-center flex-row justify-between">
                     <SheetTitle>{sheetTitle}</SheetTitle>
@@ -348,21 +346,23 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                     )}
                   </SheetHeader>
                 </div>
-                <div className="px-4 py-4">
-                  {!isSpectator && (
-                    <TowerSelection
-                      allTowers={allTowers}
-                      onSelectTower={handleSelectAndClose}
-                      focusedTower={focusedTower}
-                      selectedTowerToBuild={selectedTowerToBuild}
-                      onUpgradeTower={handleUpgrade}
-                      onSellTower={handleSell}
-                      onBack={cancelInteractions}
-                      localPlayer={localPlayer}
-                      isMobile
-                      buffedTowerIds={buffedTowerIds}
-                    />
-                  )}
+                <div className="flex-grow min-h-0">
+                  <ScrollArea className="h-full px-4 py-4">
+                    {!isSpectator && (
+                      <TowerSelection
+                        allTowers={allTowers}
+                        onSelectTower={handleSelectAndClose}
+                        focusedTower={focusedTower}
+                        selectedTowerToBuild={selectedTowerToBuild}
+                        onUpgradeTower={handleUpgrade}
+                        onSellTower={handleSell}
+                        onBack={cancelInteractions}
+                        localPlayer={localPlayer}
+                        isMobile
+                        buffedTowerIds={buffedTowerIds}
+                      />
+                    )}
+                  </ScrollArea>
                 </div>
               </SheetContent>
             </Sheet>
