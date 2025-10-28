@@ -204,15 +204,19 @@ export function processAttack(
             vfxType: vfxType,
         } as SplashRing);
         
-        output.updatedEnemies = output.updatedEnemies.map(enemy => {
-            if (enemy.id === target.id) return enemy; 
+        // Corrected splash damage logic
+        const enemiesToUpdate = [...output.updatedEnemies];
+        for (let i = 0; i < enemiesToUpdate.length; i++) {
+            const enemy = enemiesToUpdate[i];
+            if (enemy.id === target.id) continue;
+            
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= splashRadiusSq) {
                 const updatedEnemy = applyDamage(enemy, splashDamage, false, tower.effect);
-                return { ...updatedEnemy, wasHit: true };
+                enemiesToUpdate[i] = { ...updatedEnemy, wasHit: true };
             }
-            return enemy;
-        });
+        }
+        output.updatedEnemies = enemiesToUpdate;
     }
 
     // --- Process Chain Damage ---
@@ -265,3 +269,4 @@ export function processAttack(
     // The main game loop is responsible for handling death logic.
     return output;
 }
+
