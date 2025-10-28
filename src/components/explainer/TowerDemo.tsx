@@ -445,6 +445,9 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
 
   useEffect(() => {
     handleResize();
+    // This is the reset logic
+    attacks.current = []; // Clear any active attacks from previous tower
+    splashRings.current = []; // Clear any active splash rings
     lastAttackTime.current = performance.now() - cooldownMsFrom(tower.attackSpeed);
     
     const canvas = canvasRef.current;
