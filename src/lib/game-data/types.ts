@@ -54,6 +54,18 @@ export type GravityWell = {
   expires: number;
 };
 
+export type DamageZone = {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  potency: number; // Damage per second
+  type: 'poison';
+  expires: number;
+  lastTick: number; // Timestamp of last damage application
+};
+
+
 export type TowerEffect = {
   type: 'slow' | 'stun' | 'burn' | 'pushback' | 'splash' | 'multishot' | 'chain' | 'pull' | 'vulnerability' | 'aura' | 'armor_shred' | 'lifesteal' | 'crit';
   duration?: number; // ms
