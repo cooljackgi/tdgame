@@ -1,3 +1,4 @@
+
 // src/components/explainer/TowerDemo.tsx
 'use client';
 import * as React from 'react';
@@ -55,7 +56,6 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
   ]);
   const hitTimeoutRefs = useRef<Record<string, NodeJS.Timeout>>({});
   
-  // This effect reliably resets the `wasHit` flag after the animation plays.
   useEffect(() => {
     enemies.forEach(enemy => {
         if (enemy.wasHit) {
@@ -68,11 +68,10 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                         e.id === enemy.id ? { ...e, wasHit: false } : e
                     )
                 );
-            }, 150); // Duration of the flash animation
+            }, 150);
         }
     });
 
-    // Cleanup timeouts on component unmount
     return () => {
         Object.values(hitTimeoutRefs.current).forEach(clearTimeout);
     };
@@ -189,7 +188,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
   }, []);
 
   const drawSplashRing = useCallback((ctx: CanvasRenderingContext2D, s: SplashRing, t: number) => {
-    const pos = { x: s.x * CELL_SIZE, y: s.y * CELL_SIZE };
+    const pos = { x: s.x, y: s.y }; // Use pixel coordinates directly
     const maxRadius = s.r * CELL_SIZE;
     const easeOutT = 1 - (1 - t) * (1 - t);
     const tSquared = t * t;
@@ -413,8 +412,8 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
           
             splashRings.current.push({
                 id: crypto.randomUUID(),
-                x: toPos.x / CELL_SIZE,
-                y: toPos.y / CELL_SIZE,
+                x: toPos.x, // Use pixel coords
+                y: toPos.y, // Use pixel coords
                 r: tower.effect.radius!,
                 element: tower.elements[0] || 'neutral',
                 color: elementProjectileColors[tower.elements[0] || 'neutral'],
@@ -447,10 +446,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
         if (elapsed > splash.life) return;
         remainingSplashes.push(splash);
         const t = elapsed / splash.life;
-        
-        // Convert splash center back to pixels for drawing
-        const splashCenterPx = { x: splash.x * CELL_SIZE, y: splash.y * CELL_SIZE };
-        drawSplashRing(ctx, { ...splash, ...splashCenterPx }, t);
+        drawSplashRing(ctx, splash, t);
     });
     splashRings.current = remainingSplashes;
 
