@@ -180,7 +180,7 @@ export function processAttack(
     
     // --- Process Special Effects on Attack ---
 
-     // --- Handle Persistent Cloud ---
+    // --- Handle Persistent Cloud ---
     if (tower.effect?.type === 'persistent_cloud' && tower.effect.radius) {
         output.newPoisonClouds.push({
             id: crypto.randomUUID(),
