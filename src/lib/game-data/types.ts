@@ -120,7 +120,7 @@ export type LifeGainVfx = {
   amount: number;
 };
 
-export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark';
+export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison';
 
 export type SplashRing = {
     id: string;

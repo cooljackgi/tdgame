@@ -189,7 +189,7 @@ export function processAttack(
         else if (towerId.includes('fire-2b')) vfxType = 'flame';
         else if (towerId.includes('water-2b')) vfxType = 'ice';
         else if (towerId.includes('earth-2b')) vfxType = 'rock';
-        else if (towerId.includes('nature-2b')) vfxType = 'thorn';
+        else if (towerId.includes('nature-2b')) vfxType = 'poison';
         else if (towerId.includes('light-2b')) vfxType = 'light';
         else if (towerId.includes('dark-2b')) vfxType = 'dark';
 
@@ -269,4 +269,3 @@ export function processAttack(
     // The main game loop is responsible for handling death logic.
     return output;
 }
-
