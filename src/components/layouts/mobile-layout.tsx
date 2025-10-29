@@ -19,7 +19,7 @@ import { Separator } from '../ui/separator';
 
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
-  Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element
+  Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PoisonCloud
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -38,6 +38,7 @@ interface MobileLayoutProps {
   enemies: Enemy[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
+  poisonClouds: PoisonCloud[];
   currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
@@ -94,7 +95,7 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
-    damageNumbers, splashRings, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
+    damageNumbers, splashRings, poisonClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
@@ -267,6 +268,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           attacks={attacks}
           damageNumbers={damageNumbers}
           splashRings={splashRings}
+          poisonClouds={poisonClouds}
           currentPath={currentPath}
           handlePlaceTower={handlePlaceTower}
           onFocusTower={handleFocusTower} // Use the new handler

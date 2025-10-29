@@ -14,7 +14,7 @@ import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PoisonCloud } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -38,6 +38,7 @@ interface DesktopLayoutProps {
   enemies: Enemy[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
+  poisonClouds: PoisonCloud[];
   currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
@@ -86,6 +87,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
     resetGame, towers, setTowers, placedTowers, enemies, damageNumbers, splashRings,
+    poisonClouds,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
     onSelectTowerToBuild, handleUpgradeTower, handleSellTower,
@@ -237,6 +239,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 attacks={attacks}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
+                poisonClouds={poisonClouds}
                 currentPath={currentPath}
                 handlePlaceTower={handlePlaceTower}
                 onFocusTower={onFocusTower}

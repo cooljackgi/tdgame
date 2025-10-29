@@ -1,6 +1,6 @@
 // src/components/explainer/vfx-renderer.ts
 
-import type { Tower, SplashRing, Element, Attack } from '@/lib/game-data/types';
+import type { Tower, SplashRing, Element, Attack, PoisonCloud } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 
 const CELL_SIZE = 64;
@@ -270,6 +270,31 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
           ctx.stroke();
         }
     }
+    ctx.restore();
+}
+
+export function drawPoisonCloud(ctx: CanvasRenderingContext2D, cloud: PoisonCloud, now: number) {
+    const pos = { x: cloud.x * CELL_SIZE, y: cloud.y * CELL_SIZE };
+    const maxRadius = cloud.radius * CELL_SIZE;
+    const lifetime = cloud.expires - (now - 5000); // Rough estimate of cloud creation time
+    const t = 1 - (cloud.expires - now) / lifetime;
+
+    ctx.save();
+    
+    const bubbles = 20;
+    for(let i=0; i<bubbles; i++) {
+        const angle = (cloud.id.charCodeAt(i % cloud.id.length) / 255) * 360 + (i * 360 / bubbles) + now * 0.01;
+        const rad = angle * Math.PI / 180;
+        const dist = Math.random() * maxRadius * 0.9;
+        const size = (2 + Math.sin(now * 0.002 + i) * 1.5) * 5;
+        const alpha = 0.1 + Math.sin(now * 0.001 + i) * 0.05;
+
+        ctx.fillStyle = `hsla(140, 70%, 35%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
     ctx.restore();
 }
 

@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PoisonCloud } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -153,6 +153,7 @@ type GameBoardProps = {
   enemies: Enemy[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
+  poisonClouds: PoisonCloud[];
   currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
@@ -295,6 +296,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     attacks = [], // default to empty array
     damageNumbers,
     splashRings,
+    poisonClouds,
     currentPath,
     handlePlaceTower, 
     onFocusTower,
