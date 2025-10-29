@@ -1,4 +1,3 @@
-
 // src/app/page.tsx
 "use client";
 
@@ -27,6 +26,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loadSavedGame, setLoadSavedGame] = useState(false);
   const [startTutorial, setStartTutorial] = useState(false);
+  const [startAsCheating, setStartAsCheating] = useState(false);
   
   const { toast } = useToast();
 
@@ -44,7 +44,7 @@ export default function Home() {
       console.error("Failed to parse saved game data.", e);
       setSavedGame(null);
     }
-  }, [difficulty]); // Re-check when difficulty changes
+  }, [difficulty]); 
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -54,12 +54,14 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false, isTutorial: boolean = false) => {
+  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false, isTutorial: boolean = false, isCheating: boolean = false) => {
     setLoadSavedGame(shouldLoadSaved);
     setStartTutorial(isTutorial);
+    setStartAsCheating(isCheating);
     if (isTutorial) setDifficulty('Einfach');
     setActiveGame(mode);
   }, []);
+
 
   const handleNewCoopGame = useCallback(async () => {
     if (!user) {
@@ -143,7 +145,7 @@ export default function Home() {
             difficulty={difficulty}
             onExit={() => setActiveGame(null)}
             initialSavedGame={loadSavedGame ? savedGame : null}
-            isCheating={difficulty === 'Chaos'}
+            isCheating={startAsCheating}
             startWithTutorial={startTutorial}
             user={user}
           />
@@ -200,12 +202,12 @@ export default function Home() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={() => startGame('singleplayer', false)} className="w-full" size="lg">
+                        <Button onClick={() => startGame('singleplayer', false, false, difficulty === 'Chaos')} className="w-full" size="lg">
                             <Play className="mr-2" /> Neues Spiel starten
                         </Button>
                         {savedGame && (
                            <div className="space-y-2">
-                            <Button onClick={() => startGame('singleplayer', true)} variant="outline" className="w-full">
+                            <Button onClick={() => startGame('singleplayer', true, false, difficulty === 'Chaos')} variant="outline" className="w-full">
                                 <Gamepad2 className="mr-2" /> Spielstand laden (Welle {savedGame.currentWave + 1})
                             </Button>
                              <Button onClick={clearSavedGame} variant="link" size="sm" className="w-full text-muted-foreground hover:text-destructive">

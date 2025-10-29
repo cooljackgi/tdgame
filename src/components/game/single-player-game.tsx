@@ -113,6 +113,10 @@ export default function SinglePlayerGame({
     useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
     useEffect(() => { poisonCloudsRef.current = poisonClouds; }, [poisonClouds]);
 
+    const STORAGE_KEY = useMemo(
+      () => (isCheating ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY),
+      [isCheating]
+    );
 
     useEffect(() => {
         const onFirstPointer = async () => {
@@ -146,8 +150,6 @@ export default function SinglePlayerGame({
             setCurrentWave(initialSavedGame.currentWave);
             setDifficulty(initialSavedGame.difficulty);
             setGameStatus('playing');
-            // If the saved game has no enemies and is not in intermission, it means a wave just ended.
-            // Start the next intermission.
             if (initialSavedGame.enemies.length === 0) {
                  setIsIntermission(true);
                  setWaveStartCountdown(INTERMISSION_TIME);
@@ -178,35 +180,46 @@ export default function SinglePlayerGame({
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial]);
     
-    // Auto-save game state on unload
     useEffect(() => {
-        const saveGame = () => {
-            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial' || isCheating) {
-                localStorage.removeItem(LOCAL_STORAGE_KEY);
-                return;
-            }
-            
-            const player1 = playersRef.current[0];
-            if (!player1) return;
+      const saveGame = () => {
+        if (gameStatusRef.current === 'tutorial') return;
 
-            const saveState: GameSaveState = {
-                players: { player1, player2: null },
-                gameState: gameStateRef.current,
-                towersByCell: towersByCellRef.current,
-                enemies: enemiesRef.current,
-                currentWave: currentWaveRef.current,
-                difficulty: difficultyRef.current,
-            };
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveState));
+        const player1 = playersRef.current[0];
+        if (!player1) return;
+
+        const saveState: GameSaveState & { isCheating?: boolean; _v?: number; _savedAt?: number; } = {
+          players: { player1, player2: null },
+          gameState: gameStateRef.current,
+          towersByCell: towersByCellRef.current,
+          enemies: enemiesRef.current,
+          currentWave: currentWaveRef.current,
+          difficulty: difficultyRef.current,
+          isCheating: isCheating,
+          _v: 1,
+          _savedAt: Date.now(),
         };
-        
-        window.addEventListener('beforeunload', saveGame);
-        
-        return () => {
-            saveGame();
-            window.removeEventListener('beforeunload', saveGame);
-        };
-    }, [isCheating]);
+
+        try {
+          const json = JSON.stringify(saveState);
+          localStorage.setItem(STORAGE_KEY, json);
+        } catch (e) {
+          console.error('Save failed', e);
+        }
+      };
+
+      const iv = setInterval(saveGame, 15000);
+      const onVis = () => { if (document.visibilityState !== 'visible') saveGame(); };
+      document.addEventListener('visibilitychange', onVis);
+      window.addEventListener('beforeunload', saveGame);
+
+      return () => {
+        saveGame();
+        clearInterval(iv);
+        document.removeEventListener('visibilitychange', onVis);
+        window.removeEventListener('beforeunload', saveGame);
+      };
+    }, [isCheating, STORAGE_KEY]);
+
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);
@@ -243,7 +256,7 @@ export default function SinglePlayerGame({
             finalTowers: towersByCellRef.current 
         };
         
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);
         if (user?.uid && !isCheating) {
              try {
                 await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
@@ -251,7 +264,7 @@ export default function SinglePlayerGame({
         }
 
         setFinalGameResult({ ...result, date: new Date().toISOString() });
-    }, [user, isCheating]);
+    }, [user, isCheating, STORAGE_KEY]);
 
     const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];
@@ -416,14 +429,12 @@ export default function SinglePlayerGame({
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         const mazePath: Node[] = [
-            // Lange vertikale Linien
             ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 2 })),
             ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 4 })),
             ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 6 })),
             ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 8 })),
             ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 10 })),
             
-            // Konnektoren, um den Weg zu zwingen
             { row: 11, col: 3 },
             { row: 2, col: 5 },
             { row: 11, col: 7 },
@@ -632,11 +643,10 @@ export default function SinglePlayerGame({
             const activePoisonClouds = [...poisonCloudsRef.current.filter(w => w.expires > now), ...newPoisonClouds];
             
             for (let enemy of currentEnemies) {
-              // First, check for death and apply DoT, regardless of stun status
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                 audioManager.playVibration('kill');
                 audioManager.playSfx('enemy_die', 0.4);
-                continue; // Remove after death animation
+                continue;
               }
 
               if (enemy.deathTimestamp) {
@@ -646,7 +656,6 @@ export default function SinglePlayerGame({
               
               let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-              // Check if enemy is inside a poison cloud
               for (const cloud of activePoisonClouds) {
                 const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
                 if (distSq <= cloud.radius ** 2) {
@@ -679,14 +688,12 @@ export default function SinglePlayerGame({
               processDoTEffect('burn', '#f97316');
               processDoTEffect('poison', '#22c55e');
 
-              // Now, check for stun. If stunned, skip movement but don't skip the entire loop.
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
                   nextEnemies.push(updatedEnemy);
-                  continue; // Skip movement for this tick
+                  continue;
               }
                 
-              // Pull logic
               for (const well of activeGravityWells) {
                   const dx = well.x - updatedEnemy.position.col;
                   const dy = well.y - updatedEnemy.position.row;
@@ -807,6 +814,7 @@ export default function SinglePlayerGame({
                     enemies={enemies} 
                     damageNumbers={damageNumbers} 
                     splashRings={splashRings}
+                    poisonClouds={poisonClouds}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
@@ -841,7 +849,6 @@ export default function SinglePlayerGame({
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
                     attacks={attacks}
-                    poisonClouds={poisonClouds}
                 />
             </div>
 
