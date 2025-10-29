@@ -180,32 +180,31 @@ export function processAttack(
     
     // --- Process Special Effects on Attack ---
 
-    // --- Handle Persistent Cloud ---
-    if (tower.effect?.type === 'persistent_cloud' && tower.effect.radius) {
-        output.newPoisonClouds.push({
-            id: crypto.randomUUID(),
-            x: target.position.col,
-            y: target.position.row,
-            radius: tower.effect.radius,
-            potency: tower.effect.potency ?? 0, // Damage per second of poison
-            duration: tower.effect.duration ?? 0, // Duration of applied poison
-            expires: now + 5000, // Cloud's own lifetime
-        });
-    }
-
     // --- Process Splash Damage / Area of Effect ---
     if (tower.effect?.radius && (tower.effect.type === 'splash')) {
         const effectRadiusSq = tower.effect.radius * tower.effect.radius;
 
-        output.splashRings.push({
-            id: crypto.randomUUID(),
-            x: target.position.col,
-            y: target.position.row,
-            r: tower.effect.radius,
-            element: tower.elements[0] || 'neutral',
-            color: elementProjectileColors[tower.elements[0] || 'neutral'],
-            vfxType: tower.effect.vfxType,
-        } as SplashRing);
+        if (tower.effect.vfxType === 'poison') {
+            output.newPoisonClouds.push({
+                id: crypto.randomUUID(),
+                x: target.position.col,
+                y: target.position.row,
+                radius: tower.effect.radius,
+                potency: tower.effect.potency ?? 0,
+                duration: tower.effect.duration ?? 0,
+                expires: now + 5000, // Cloud's own lifetime
+            });
+        } else {
+            output.splashRings.push({
+                id: crypto.randomUUID(),
+                x: target.position.col,
+                y: target.position.row,
+                r: tower.effect.radius,
+                element: tower.elements[0] || 'neutral',
+                color: elementProjectileColors[tower.elements[0] || 'neutral'],
+                vfxType: tower.effect.vfxType,
+            } as SplashRing);
+        }
         
         // Apply effect to all enemies in radius
         const enemiesToUpdate = [...output.updatedEnemies];
