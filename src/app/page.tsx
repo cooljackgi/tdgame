@@ -30,7 +30,6 @@ export default function Home() {
   
   const { toast } = useToast();
 
-  // Updated logic to check for the correct save file based on selected difficulty
   useEffect(() => {
     try {
       const isChaos = difficulty === 'Chaos';
