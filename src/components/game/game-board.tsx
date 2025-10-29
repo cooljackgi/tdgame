@@ -14,6 +14,7 @@ import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import TowerContextMenu from './TowerContextMenu';
+import { drawPoisonCloud } from '@/components/explainer/vfx-renderer';
 
 const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
@@ -317,6 +318,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 }, ref) => {
 
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const groundFxCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
   
   const incomingAttacksRef = useRef<Attack[]>([]);
@@ -447,472 +449,508 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   useEffect(() => {
     const canvas = fxCanvasRef.current;
     if (canvas) handleResize(canvas);
+    const groundCanvas = groundFxCanvasRef.current;
+    if(groundCanvas) handleResize(groundCanvas);
   }, [handleResize]);
 
   useEffect(() => {
     const canvas = fxCanvasRef.current;
-    if (!canvas) return;
+    const groundCanvas = groundFxCanvasRef.current;
+    if (!canvas || !groundCanvas) return;
 
     const ro = new ResizeObserver(() => {
         handleResize(canvas);
+        handleResize(groundCanvas);
     });
     ro.observe(canvas);
+    ro.observe(groundCanvas);
 
     return () => ro.disconnect();
   }, [handleResize]);
 
-  const renderVfx = useCallback(() => {
-    animationFrameRef.current = requestAnimationFrame(renderVfx);
-    const now = playerRole === 'player1' ? Date.now() : Date.now() - NETWORK_INTERP_LAG_MS;
-    if (now - lastTsRef.current < fpsCapMs) return;
-    lastTsRef.current = now;
-
+  // Main VFX Loop (Projectiles, Damage Numbers, etc.)
+  useEffect(() => {
     const canvas = fxCanvasRef.current;
-    if (!canvas || !document.contains(canvas)) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!canvas) return;
 
-    try {
-        const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height); 
-        
-        ctx.scale(dpr, dpr);
-        
-        ctx.translate(panRef.current.x, panRef.current.y);
-        ctx.scale(zoomRef.current, zoomRef.current);
-        
-        const currentEnemyIds = new Set(enemies.map(e => e.id));
-        for (const id of interpolatedEnemyPositions.keys()) {
-            if (!currentEnemyIds.has(id)) {
-                interpolatedEnemyPositions.delete(id);
+    const renderVfx = () => {
+        animationFrameRef.current = requestAnimationFrame(renderVfx);
+        const now = playerRole === 'player1' ? Date.now() : Date.now() - NETWORK_INTERP_LAG_MS;
+        if (now - lastTsRef.current < fpsCapMs) return;
+        lastTsRef.current = now;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx || !document.contains(canvas)) return;
+
+        try {
+            const dpr = window.devicePixelRatio || 1;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            
+            ctx.scale(dpr, dpr);
+            
+            ctx.translate(panRef.current.x, panRef.current.y);
+            ctx.scale(zoomRef.current, zoomRef.current);
+            
+            const currentEnemyIds = new Set(enemies.map(e => e.id));
+            for (const id of interpolatedEnemyPositions.keys()) {
+                if (!currentEnemyIds.has(id)) {
+                    interpolatedEnemyPositions.delete(id);
+                }
             }
-        }
-        
-        const enemiesById = new Map(enemies.map(e => [e.id, e]));
-        for (const enemy of enemies) {
-            getEnemyWorldPos(enemy, now, enemy.path || currentPath);
-        }
-        
-        const towersMap = new Map(placedTowers.map(t => [t.id, t]));
+            
+            const enemiesById = new Map(enemies.map(e => [e.id, e]));
+            for (const enemy of enemies) {
+                getEnemyWorldPos(enemy, now, enemy.path || currentPath);
+            }
+            
+            const towersMap = new Map(placedTowers.map(t => [t.id, t]));
 
-        {
-            const q = incomingAttacksRef.current;
-            if (q.length) {
-                for (const a of q) {
-                    const enemyTarget = enemiesById.get(a.targetId);
-                    // Don't discard if target is gone, fly to last known spot
-                    // if (!enemyTarget) continue;
-
-                    let fromPx: {x:number, y:number} | null = null;
-                    const tower = towersMap.get(a.towerId);
-                    if (!tower) continue;
-
-                    if (a.isChain && a.chainSourceId) {
-                        fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
-                    } else {
-                        const towerCenter = gridToPx(tower.position);
-                        const specId = tower.specId || tower.id;
-                        const towerVariant = 
-                            specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
-                            specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
-                            "basic";
+            {
+                const q = incomingAttacksRef.current;
+                if (q.length) {
+                    for (const a of q) {
+                        const enemyTarget = enemiesById.get(a.targetId);
                         
-                        const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
-                        const size = CELL_SIZE * 0.8;
-                        const xOffset = (muzzle.x / 100) * size - (size / 2);
-                        const yOffset = (muzzle.y / 100) * size - (size / 2);
+                        let fromPx: {x:number, y:number} | null = null;
+                        const tower = towersMap.get(a.towerId);
+                        if (!tower) continue;
 
-                        fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
+                        if (a.isChain && a.chainSourceId) {
+                            fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
+                        } else {
+                            const towerCenter = gridToPx(tower.position);
+                            const specId = tower.specId || tower.id;
+                            const towerVariant = 
+                                specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
+                                specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
+                                "basic";
+                            
+                            const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
+                            const size = CELL_SIZE * 0.8;
+                            const xOffset = (muzzle.x / 100) * size - (size / 2);
+                            const yOffset = (muzzle.y / 100) * size - (size / 2);
+
+                            fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
+                        }
+                        if (!fromPx) continue;
+                        
+                        const toPx = enemyTarget 
+                            ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath)
+                            : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
+
+                        if (!toPx) continue;
+                
+                        const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
+                        let dynamicLife = clamp(dist * 2.6, 320, 750);
+                        if (a.projectile === "beam") dynamicLife = 220;
+                        if (a.projectile === "chain") dynamicLife = 250;
+                
+                        attacksPoolRef.current.alloc({
+                            ...a,
+                            _vfx: { start: now, life: dynamicLife, fromPx, toPx },
+                        });
                     }
-                    if (!fromPx) continue;
-                    
-                    const toPx = enemyTarget 
-                        ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath)
-                        : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
-
-                    if (!toPx) continue;
-            
-                    const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
-                    let dynamicLife = clamp(dist * 2.6, 320, 750);
-                    if (a.projectile === "beam") dynamicLife = 220;
-                    if (a.projectile === "chain") dynamicLife = 250;
-            
-                    attacksPoolRef.current.alloc({
-                        ...a,
-                        _vfx: { start: now, life: dynamicLife, fromPx, toPx },
-                    });
+                    q.length = 0;
+                }
+            }
+            {
+                const q = incomingRingsRef.current;
+                if (q.length) { 
+                    for (let i = 0; i < q.length; i++) {
+                        splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
+                    }
+                    q.length = 0; 
+                }
+            }
+            {
+                const q = incomingDmgRef.current;
+                if (q.length) { 
+                    for (let i = 0; i < q.length; i++) {
+                        const damageData = { ...q[i], targetId: q[i].targetId || ''};
+                        damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
+                    }
+                    q.length = 0; 
+                }
+            }
+            {
+              const q = incomingLifeGainRef.current;
+              if(q.length > 0) {
+                for(const vfx of q) {
+                  lifeGainPoolRef.current.alloc({ ...vfx, start: now, life: 1500 });
                 }
                 q.length = 0;
+              }
             }
-        }
-        {
-            const q = incomingRingsRef.current;
-            if (q.length) { 
-                for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
-                }
-                q.length = 0; 
-            }
-        }
-        {
-            const q = incomingDmgRef.current;
-            if (q.length) { 
-                for (let i = 0; i < q.length; i++) {
-                    const damageData = { ...q[i], targetId: q[i].targetId || ''};
-                    damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
-                }
-                q.length = 0; 
-            }
-        }
-        {
-          const q = incomingLifeGainRef.current;
-          if(q.length > 0) {
-            for(const vfx of q) {
-              lifeGainPoolRef.current.alloc({ ...vfx, start: now, life: 1500 });
-            }
-            q.length = 0;
-          }
-        }
-        
-        attacksPoolRef.current.forEachActive(attack => {
-            const now = Date.now();
-            const {fromPx, life} = attack._vfx;
-            let { start, toPx } = attack._vfx;
             
-            const liveTarget = enemiesById.get(attack.targetId);
-            const currentToPx = liveTarget ? getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath) : toPx;
-
-            const t = clamp((now - start) / life, 0, 1);
-            if (t >= 1) { attacksPoolRef.current.free(attack); return; }
-
-            ctx.save();
-            const primaryElement = attack.elements?.[0] ?? 'neutral';
-            const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = baseColor;
-            
-            if (attack.projectile === 'arrow') {
-                const easeT = t * (2 - t);
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
-                const headX = fromPx.x + dx * easeT;
-                const headY = fromPx.y + dy * easeT;
+            attacksPoolRef.current.forEachActive(attack => {
+                const now = Date.now();
+                const {fromPx, life} = attack._vfx;
+                let { start, toPx } = attack._vfx;
                 
-                const angle = Math.atan2(dy, dx);
-                const length = 14;
+                const liveTarget = enemiesById.get(attack.targetId);
+                const currentToPx = liveTarget ? getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath) : toPx;
 
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = 1 - t*t;
+                const t = clamp((now - start) / life, 0, 1);
+                if (t >= 1) { attacksPoolRef.current.free(attack); return; }
+
+                ctx.save();
+                const primaryElement = attack.elements?.[0] ?? 'neutral';
+                const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = baseColor;
                 
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
-                ctx.stroke();
-
-            } else if (attack.projectile === 'chain') {
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
-                const segments = 5;
-                const randomness = 15;
-                ctx.lineWidth = 3.5;
-                ctx.globalAlpha = (1 - t*t);
-                ctx.strokeStyle = baseColor;
-                ctx.shadowBlur = 12;
-
-                ctx.beginPath();
-                ctx.moveTo(fromPx.x, fromPx.y);
-
-                for (let i = 1; i < segments; i++) {
-                    const progress = i / segments;
-                    const currentX = fromPx.x + dx * progress;
-                    const currentY = fromPx.y + dy * progress;
-                    ctx.lineTo(
-                        currentX + (Math.random() - 0.5) * randomness,
-                        currentY + (Math.random() - 0.5) * randomness
-                    );
-                }
-                ctx.lineTo(currentToPx.x, currentToPx.y);
-                ctx.stroke();
-            } else { // BEAM
-                const easeT = t * (2-t);
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
-
-                const headX = fromPx.x + dx * easeT;
-                const headY = fromPx.y + dy * easeT;
-                const tailT = Math.max(0, easeT - 0.15);
-                const tailX = fromPx.x + dx * tailT;
-                const tailY = fromPx.y + dy * tailT;
-                
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = (1 - t*t);
-                
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(tailX, tailY);
-                ctx.stroke();
-
-                if (attack.projectile === "beam") {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.shadowColor = '#ffffff';
-                    ctx.shadowBlur = 12;
-                    ctx.beginPath();
-                    ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-            ctx.restore();
-        });
-
-        splashRingsPoolRef.current.forEachActive(s => {
-            const t = clamp((now - s.start) / s.life, 0, 1);
-            if (t >= 1) { splashRingsPoolRef.current.free(s); return; }
-            
-            const pos = gridToPx({ row: s.y, col: s.x });
-            const maxRadius = s.r * CELL_SIZE;
-            const easeOutT = 1 - (1 - t) * (1 - t);
-            const tSquared = t * t;
-            const tRoot = Math.sqrt(t);
-            const baseAngle = s.id.charCodeAt(0) % 360; 
-        
-            ctx.save();
-            ctx.globalAlpha = 1 - tSquared;
-        
-            switch(s.vfxType) {
-                case 'magma':
-                case 'flame': {
-                    const cracks = s.vfxType === 'magma' ? 5 : 7;
-                    for (let i = 0; i < cracks; i++) {
-                        const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
-                        ctx.stroke();
-                    }
-                    if (s.vfxType === 'magma') {
-                        const particles = 8;
-                        for (let i = 0; i < particles; i++) {
-                            const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
-                            const rad = angle * Math.PI / 180;
-                            const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
-                            const size = 3 * (1 - t);
-                            ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
-                            ctx.beginPath();
-                            ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                    break;
-                }
-                case 'ice': {
-                    const shards = 8;
-                    for (let i = 0; i < shards; i++) {
-                        const angle = baseAngle + (i * (360 / shards));
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * (0.5 + tRoot * 0.5);
-                        const shardSize = 15 * (1 - t);
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 3 + (1 - t) * 3;
-                        ctx.stroke();
-                    }
-                    break;
-                }
-                case 'rock': {
-                    const fragments = 8;
-                    for (let i = 0; i < fragments; i++) {
-                        const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
-                        const rad = angle * Math.PI / 180;
-                        const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
-                        const particleSize = 6 * (1 - t);
-                        
-                        ctx.save();
-                        ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
-                        ctx.rotate(angle * Math.PI / 180);
-                        
-                        ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -particleSize);
-                        ctx.lineTo(particleSize, particleSize);
-                        ctx.lineTo(-particleSize, particleSize);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.restore();
-                    }
-                    break;
-                }
-                case 'thorn': {
-                    const spikes = 12;
-                    for (let i = 0; i < spikes; i++) {
-                        const angle = baseAngle + (i * (360 / spikes));
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * tRoot;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    }
-                    break;
-                }
-                case 'light': {
-                    ctx.globalCompositeOperation = 'lighter';
-                    const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
-                    const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
-                    coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
-                    coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
-                    ctx.fillStyle = coreGradient;
-                    ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
-        
-                    const glowRadius = maxRadius * easeOutT;
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-                    ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
-                    ctx.fill();
-                    break;
-                }
-                case 'dark': {
-                    const pullRadius = maxRadius * (1 - easeOutT);
-                    const implosionRadius = maxRadius * (1 - t);
+                if (attack.projectile === 'arrow') {
+                    const easeT = t * (2 - t);
+                    const dx = currentToPx.x - fromPx.x;
+                    const dy = currentToPx.y - fromPx.y;
+                    const headX = fromPx.x + dx * easeT;
+                    const headY = fromPx.y + dy * easeT;
                     
-                    const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
-                    gradient.addColorStop(0, 'rgba(128, 0, 128, 0)');
-                    gradient.addColorStop(0.8, 'rgba(128, 0, 128, 0.4)');
-                    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
-                    ctx.fill();
-        
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
+                    const angle = Math.atan2(dy, dx);
+                    const length = 14;
+
+                    ctx.strokeStyle = baseColor;
                     ctx.lineWidth = 3;
-                    ctx.stroke();
-                    break;
-                }
-                default: { // Default shockwave
-                    const shockwaveRadius = maxRadius * easeOutT;
-                    const shockwaveAlpha = 1 - tSquared;
-                    const shockwaveWidth = (2 + (1 - t) * 4);
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
+                    ctx.globalAlpha = 1 - t*t;
+                    
                     ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = s.color;
-                    ctx.lineWidth = shockwaveWidth;
-                    ctx.globalAlpha = shockwaveAlpha;
+                    ctx.moveTo(headX, headY);
+                    ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
                     ctx.stroke();
+
+                } else if (attack.projectile === 'chain') {
+                    const dx = currentToPx.x - fromPx.x;
+                    const dy = currentToPx.y - fromPx.y;
+                    const segments = 5;
+                    const randomness = 15;
+                    ctx.lineWidth = 3.5;
+                    ctx.globalAlpha = (1 - t*t);
+                    ctx.strokeStyle = baseColor;
+                    ctx.shadowBlur = 12;
+
+                    ctx.beginPath();
+                    ctx.moveTo(fromPx.x, fromPx.y);
+
+                    for (let i = 1; i < segments; i++) {
+                        const progress = i / segments;
+                        const currentX = fromPx.x + dx * progress;
+                        const currentY = fromPx.y + dy * progress;
+                        ctx.lineTo(
+                            currentX + (Math.random() - 0.5) * randomness,
+                            currentY + (Math.random() - 0.5) * randomness
+                        );
+                    }
+                    ctx.lineTo(currentToPx.x, currentToPx.y);
+                    ctx.stroke();
+                } else { // BEAM
+                    const easeT = t * (2-t);
+                    const dx = currentToPx.x - fromPx.x;
+                    const dy = currentToPx.y - fromPx.y;
+
+                    const headX = fromPx.x + dx * easeT;
+                    const headY = fromPx.y + dy * easeT;
+                    const tailT = Math.max(0, easeT - 0.15);
+                    const tailX = fromPx.x + dx * tailT;
+                    const tailY = fromPx.y + dy * tailT;
+                    
+                    ctx.strokeStyle = baseColor;
+                    ctx.lineWidth = 3;
+                    ctx.globalAlpha = (1 - t*t);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(headX, headY);
+                    ctx.lineTo(tailX, tailY);
+                    ctx.stroke();
+
+                    if (attack.projectile === "beam") {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.shadowColor = '#ffffff';
+                        ctx.shadowBlur = 12;
+                        ctx.beginPath();
+                        ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
-            }
-            ctx.restore();
-        });
+                ctx.restore();
+            });
 
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-
-        damageNumbersPoolRef.current.forEachActive(dn => {
-            const t = clamp((now - dn.start) / dn.life, 0, 1);
-            if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
+            splashRingsPoolRef.current.forEachActive(s => {
+                const t = clamp((now - s.start) / s.life, 0, 1);
+                if (t >= 1) { splashRingsPoolRef.current.free(s); return; }
+                
+                const pos = gridToPx({ row: s.y, col: s.x });
+                const maxRadius = s.r * CELL_SIZE;
+                const easeOutT = 1 - (1 - t) * (1 - t);
+                const tSquared = t * t;
+                const tRoot = Math.sqrt(t);
+                const baseAngle = s.id.charCodeAt(0) % 360; 
             
-            let p = interpolatedEnemyPositions.get(dn.targetId!);
-            if (!p) return; // Don't draw damage numbers for dead enemies
+                ctx.save();
+                ctx.globalAlpha = 1 - tSquared;
+            
+                switch(s.vfxType) {
+                    case 'magma':
+                    case 'flame': {
+                        const cracks = s.vfxType === 'magma' ? 5 : 7;
+                        for (let i = 0; i < cracks; i++) {
+                            const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
+                            const rad = angle * Math.PI / 180;
+                            const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
+                            ctx.beginPath();
+                            ctx.moveTo(pos.x, pos.y);
+                            ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                            ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
+                            ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
+                            ctx.stroke();
+                        }
+                        if (s.vfxType === 'magma') {
+                            const particles = 8;
+                            for (let i = 0; i < particles; i++) {
+                                const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
+                                const rad = angle * Math.PI / 180;
+                                const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
+                                const size = 3 * (1 - t);
+                                ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
+                                ctx.beginPath();
+                                ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                        break;
+                    }
+                    case 'ice': {
+                        const shards = 8;
+                        for (let i = 0; i < shards; i++) {
+                            const angle = baseAngle + (i * (360 / shards));
+                            const rad = angle * Math.PI / 180;
+                            const len = maxRadius * (0.5 + tRoot * 0.5);
+                            const shardSize = 15 * (1 - t);
+                            ctx.beginPath();
+                            ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
+                            ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                            ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
+                            ctx.lineWidth = 3 + (1 - t) * 3;
+                            ctx.stroke();
+                        }
+                        break;
+                    }
+                    case 'rock': {
+                        const fragments = 8;
+                        for (let i = 0; i < fragments; i++) {
+                            const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
+                            const rad = angle * Math.PI / 180;
+                            const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
+                            const particleSize = 6 * (1 - t);
+                            
+                            ctx.save();
+                            ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
+                            ctx.rotate(angle * Math.PI / 180);
+                            
+                            ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
+                            ctx.beginPath();
+                            ctx.moveTo(0, -particleSize);
+                            ctx.lineTo(particleSize, particleSize);
+                            ctx.lineTo(-particleSize, particleSize);
+                            ctx.closePath();
+                            ctx.fill();
+                            ctx.restore();
+                        }
+                        break;
+                    }
+                    case 'thorn': {
+                        const spikes = 12;
+                        for (let i = 0; i < spikes; i++) {
+                            const angle = baseAngle + (i * (360 / spikes));
+                            const rad = angle * Math.PI / 180;
+                            const len = maxRadius * tRoot;
+                            ctx.beginPath();
+                            ctx.moveTo(pos.x, pos.y);
+                            ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                            ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                        break;
+                    }
+                    case 'light': {
+                        ctx.globalCompositeOperation = 'lighter';
+                        const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
+                        const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
+                        coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
+                        coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
+                        ctx.fillStyle = coreGradient;
+                        ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
+            
+                        const glowRadius = maxRadius * easeOutT;
+                        ctx.shadowBlur = 30;
+                        ctx.shadowColor = s.color;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
+                        ctx.fill();
+                        break;
+                    }
+                    case 'dark': {
+                        const pullRadius = maxRadius * (1 - easeOutT);
+                        const implosionRadius = maxRadius * (1 - t);
+                        
+                        const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
+                        gradient.addColorStop(0, 'rgba(128, 0, 128, 0)');
+                        gradient.addColorStop(0.8, 'rgba(128, 0, 128, 0.4)');
+                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
+                        ctx.fill();
+            
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = s.color;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
+                        ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
+                        ctx.lineWidth = 3;
+                        ctx.stroke();
+                        break;
+                    }
+                    default: { // Default shockwave
+                        const shockwaveRadius = maxRadius * easeOutT;
+                        const shockwaveAlpha = 1 - tSquared;
+                        const shockwaveWidth = (2 + (1 - t) * 4);
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = s.color;
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
+                        ctx.strokeStyle = s.color;
+                        ctx.lineWidth = shockwaveWidth;
+                        ctx.globalAlpha = shockwaveAlpha;
+                        ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            });
 
-            const yOffset = dn.isCrit ? 25 : 15;
-            const size = dn.isCrit ? 16 : 12;
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
 
-            ctx.font = `bold ${size}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = dn.color;
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = dn.isCrit ? 4 : 2;
-            ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
-        });
+            damageNumbersPoolRef.current.forEachActive(dn => {
+                const t = clamp((now - dn.start) / dn.life, 0, 1);
+                if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
+                
+                let p = interpolatedEnemyPositions.get(dn.targetId!);
+                if (!p) return; // Don't draw damage numbers for dead enemies
 
-        lifeGainPoolRef.current.forEachActive(lg => {
-            const t = clamp((now - lg.start) / lg.life, 0, 1);
-            if (t >= 1) { lifeGainPoolRef.current.free(lg); return; }
+                const yOffset = dn.isCrit ? 25 : 15;
+                const size = dn.isCrit ? 16 : 12;
 
-            const endNodePos = gridToPx({row: GRID_ROWS, col: GRID_COLS});
+                ctx.font = `bold ${size}px system-ui, sans-serif`;
+                ctx.textAlign = "center";
+                ctx.globalAlpha = 1 - t;
+                ctx.fillStyle = dn.color;
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = dn.isCrit ? 4 : 2;
+                ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
+            });
 
-            ctx.font = `bold 16px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = '#22c55e'; // Green
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = 4;
-            ctx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
-        });
-        
-        const primaryColor = cssVar('--primary');
-        const destructiveColor = cssVar('--destructive');
-        
-        pingsRef.current.forEach((p) => {
-          const { x, y } = gridToPx({ row: p.row, col: p.col });
-          const age = now - p.createdAt;
-          const ttl = p.ttl ?? 4000;
-          const t = Math.max(0, 1 - age/ttl);
-          const pingColor = p.from === 'player1' ? primaryColor : destructiveColor;
-          
-          ctx.save();
-          
-          // Draw Circle
-          ctx.strokeStyle = pingColor;
-          ctx.globalAlpha = 0.25 + 0.5*t;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
-          ctx.stroke();
+            lifeGainPoolRef.current.forEachActive(lg => {
+                const t = clamp((now - lg.start) / lg.life, 0, 1);
+                if (t >= 1) { lifeGainPoolRef.current.free(lg); return; }
 
-          // Draw Text
-          const text = pingTextMap[p.kind] || p.kind;
-          ctx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillStyle = pingColor;
-          ctx.globalAlpha = 1 - (age / ttl);
-          ctx.shadowColor = "black";
-          ctx.shadowBlur = 4;
-          ctx.fillText(text, x, y - CELL_SIZE * 0.8);
-          
-          ctx.restore();
-        });
+                const endNodePos = gridToPx({row: GRID_ROWS, col: GRID_COLS});
+
+                ctx.font = `bold 16px system-ui, sans-serif`;
+                ctx.textAlign = "center";
+                ctx.globalAlpha = 1 - t;
+                ctx.fillStyle = '#22c55e'; // Green
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = 4;
+                ctx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
+            });
+            
+            const primaryColor = cssVar('--primary');
+            const destructiveColor = cssVar('--destructive');
+            
+            pingsRef.current.forEach((p) => {
+              const { x, y } = gridToPx({ row: p.row, col: p.col });
+              const age = now - p.createdAt;
+              const ttl = p.ttl ?? 4000;
+              const t = Math.max(0, 1 - age/ttl);
+              const pingColor = p.from === 'player1' ? primaryColor : destructiveColor;
+              
+              ctx.save();
+              
+              // Draw Circle
+              ctx.strokeStyle = pingColor;
+              ctx.globalAlpha = 0.25 + 0.5*t;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
+              ctx.stroke();
+
+              // Draw Text
+              const text = pingTextMap[p.kind] || p.kind;
+              ctx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
+              ctx.textAlign = "center";
+              ctx.fillStyle = pingColor;
+              ctx.globalAlpha = 1 - (age / ttl);
+              ctx.shadowColor = "black";
+              ctx.shadowBlur = 4;
+              ctx.fillText(text, x, y - CELL_SIZE * 0.8);
+              
+              ctx.restore();
+            });
 
 
-        for (const tower of placedTowers) {
-            if (!tower.lastAttack) continue;
-            const progress = clamp((now - tower.lastAttack) / tower.attackSpeed, 0, 1);
-            towerCooldownsRef.current.set(tower.id, progress);
+            for (const tower of placedTowers) {
+                if (!tower.lastAttack) continue;
+                const progress = clamp((now - tower.lastAttack) / tower.attackSpeed, 0, 1);
+                towerCooldownsRef.current.set(tower.id, progress);
+            }
+
+        } catch (err) {
+            console.error('VFX render failed:', err);
         }
+    }
+    const groundVfxLoop = () => {
+        const now = Date.now();
+        const canvas = groundFxCanvasRef.current;
+        if (!canvas || !document.contains(canvas)) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-    } catch (err) {
-        console.error('VFX render failed:', err);
-    }
-  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole]);
-  
-   useEffect(() => {
-    animationFrameRef.current = requestAnimationFrame(renderVfx);
-    return () => {
-        if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
+        try {
+            const dpr = window.devicePixelRatio || 1;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            ctx.scale(dpr, dpr);
+            ctx.translate(panRef.current.x, panRef.current.y);
+            ctx.scale(zoomRef.current, zoomRef.current);
+            
+            poisonClouds?.forEach(cloud => {
+                if (now < cloud.expires) {
+                    drawPoisonCloud(ctx, cloud, now);
+                }
+            });
+
+        } catch(e) {
+            console.error("Ground VFX render failed:", e);
         }
-    }
-  }, [renderVfx]);
+    };
+    
+    // Combined loop
+    useEffect(() => {
+        const loop = () => {
+            renderVfx();
+            groundVfxLoop();
+            animationFrameRef.current = requestAnimationFrame(loop);
+        }
+        animationFrameRef.current = requestAnimationFrame(loop);
+        return () => {
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fpsCapMs, playerRole, enemies, currentPath, placedTowers, poisonClouds]);
 
   const pathD = useMemo(() => {
     if (currentPath.length === 0) return '';
@@ -1240,6 +1278,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             cancelInteractions();
           }}
         >
+          {/* Layer 5: Ground Effects (e.g. Poison Cloud) */}
+           <canvas 
+              ref={groundFxCanvasRef} 
+              className="absolute inset-0 pointer-events-none" 
+              style={{ zIndex: 5, left: 0, top: 0, width: '100%', height: '100%' }}
+          />
           {/* Layer 10: Game World (Grid, Path, Towers, Enemies) */}
           <div 
             className="absolute inset-0"
