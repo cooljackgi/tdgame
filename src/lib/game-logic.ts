@@ -1,9 +1,8 @@
 
-
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { User } from 'firebase/auth';
-import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx, SplashRingVfxType } from './game-data/types';
+import type { PlacedTower, Difficulty, Enemy, Attack, DamageNumber, SplashRing, TowerEffect, Element, LifeGainVfx, SplashRingVfxType, PoisonCloud } from './game-data/types';
 import { elementProjectileColors } from './game-data/constants';
 import { audioManager } from './audio/audio-manager';
 
@@ -68,6 +67,7 @@ export function processAttack(
     newAttacks: Attack[];
     splashRings: SplashRing[];
     lifeGainVfx: LifeGainVfx[];
+    newPoisonClouds: PoisonCloud[];
 } {
     const output = {
         updatedEnemies: [...allEnemies],
@@ -78,6 +78,7 @@ export function processAttack(
         newAttacks: [] as Attack[],
         splashRings: [] as SplashRing[],
         lifeGainVfx: [] as LifeGainVfx[],
+        newPoisonClouds: [] as PoisonCloud[],
     };
 
     // Play the dynamically generated sound for the primary attack
@@ -133,7 +134,7 @@ export function processAttack(
 
         if (sourceEffect) {
             const { type, chance = 1, duration = 0, potency = 0 } = sourceEffect;
-            if (type !== 'crit' && Math.random() < chance) { // Crits are handled separately
+            if (type !== 'crit' && type !== 'splash' && type !== 'persistent_cloud' && Math.random() < chance) {
                 const existingEffectIndex = newEffects.findIndex(ef => ef.type === type);
                 if (existingEffectIndex !== -1) {
                     newEffects[existingEffectIndex] = {
@@ -178,6 +179,19 @@ export function processAttack(
     }
     
     // --- Process Special Effects on Attack ---
+
+     // --- Handle Persistent Cloud ---
+    if (tower.effect?.type === 'persistent_cloud' && tower.effect.radius) {
+        output.newPoisonClouds.push({
+            id: crypto.randomUUID(),
+            x: target.position.col,
+            y: target.position.row,
+            radius: tower.effect.radius,
+            potency: tower.effect.potency ?? 0, // Damage per second of poison
+            duration: tower.effect.duration ?? 0, // Duration of applied poison
+            expires: now + 5000, // Cloud's own lifetime
+        });
+    }
 
     // --- Process Splash Damage / Area of Effect ---
     if (tower.effect?.radius && (tower.effect.type === 'splash')) {
