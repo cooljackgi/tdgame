@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
@@ -177,15 +178,10 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial') {
+            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial' || isCheating) {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
-            if (isCheating) { 
-                localStorage.removeItem(LOCAL_STORAGE_KEY); 
-                return; 
-            }
-
             
             const player1 = playersRef.current[0];
             if (!player1) return;
@@ -644,16 +640,21 @@ export default function SinglePlayerGame({
               
               let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-              const burnEffect = updatedEnemy.effects.find(e => e.type === 'burn');
-              if (burnEffect && (!burnEffect.lastTick || now - burnEffect.lastTick >= 1000)) {
-                  const damage = burnEffect.potency ?? 0;
-                  updatedEnemy.health -= damage;
-                  burnEffect.lastTick = now;
-                  gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy.id, color: '#f97316' } as DamageNumber]);
-                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
-                    updatedEnemy.deathTimestamp = now;
-                  }
+              const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
+                const effect = updatedEnemy!.effects.find(e => e.type === type);
+                if (effect && (!effect.lastTick || now - effect.lastTick >= 1000)) {
+                    const damage = effect.potency ?? 0;
+                    updatedEnemy!.health -= damage;
+                    effect.lastTick = now;
+                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
+                    if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
+                      updatedEnemy!.deathTimestamp = now;
+                    }
+                }
               }
+
+              processDoTEffect('burn', '#f97316');
+              processDoTEffect('poison', '#22c55e');
 
               // Now, check for stun. If stunned, skip movement but don't skip the entire loop.
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
