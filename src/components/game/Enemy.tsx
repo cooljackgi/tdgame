@@ -29,6 +29,7 @@ const effectIconMap: Partial<Record<EnemyStatusEffect['type'], React.FC<any>>> =
   vulnerability: ShieldOff,
   armor_shred: ShieldAlert,
   lifesteal: Biohazard, // Placeholder, usually not shown on enemy
+  poison: Biohazard,
   stun: Star,
   pushback: Wind,
   pull: VenetianMask,
@@ -40,6 +41,7 @@ const effectIconClasses: Partial<Record<EnemyStatusEffect['type'], string>> = {
   slow: "text-sky-300 -bottom-1 -left-1",
   vulnerability: "text-pink-400 -top-1 -left-1",
   armor_shred: "text-yellow-400 -bottom-1 -right-1",
+  poison: "text-green-500 -bottom-1.5 -right-1",
   stun: "text-yellow-300 -top-1.5 left-1/2 -translate-x-1/2 animate-spin",
   pushback: "text-gray-300 -bottom-1.5 left-1/2 -translate-x-1/2",
   pull: "text-purple-400 -top-1.5 -left-1",
