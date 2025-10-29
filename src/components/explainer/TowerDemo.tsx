@@ -1,4 +1,3 @@
-
 // src/components/explainer/TowerDemo.tsx
 'use client';
 import * as React from 'react';
@@ -187,7 +186,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                 ctx.beginPath();
                 ctx.moveTo(pos.x, pos.y);
                 ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                ctx.strokeStyle = `hsla(30, 100%, ${'${60 - t * 20}'}%, ${'${1 - tSquared}'})`;
+                ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
                 ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
                 ctx.stroke();
             }
@@ -198,7 +197,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                       const rad = angle * Math.PI / 180;
                       const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
                       const size = 3 * (1 - t);
-                      ctx.fillStyle = `hsla(35, 100%, ${'${60 - t * 15}'}%, ${'${1 - tSquared * 0.5}'})`;
+                      ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
                       ctx.beginPath();
                       ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
                       ctx.fill();
@@ -216,7 +215,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                 ctx.beginPath();
                 ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
                 ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                ctx.strokeStyle = `hsla(200, 100%, ${'${70 - t * 20}'}%, ${'${1 - tSquared}'})`;
+                ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
                 ctx.lineWidth = 3 + (1 - t) * 3;
                 ctx.stroke();
             }
@@ -234,7 +233,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                   ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
                   ctx.rotate(angle * Math.PI / 180);
                   
-                  ctx.fillStyle = `hsla(25, 60%, ${'${50 - t * 20}'}%, ${'${1 - tSquared}'})`;
+                  ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
                   ctx.beginPath();
                   ctx.moveTo(0, -particleSize);
                   ctx.lineTo(particleSize, particleSize);
@@ -255,7 +254,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                   ctx.beginPath();
                   ctx.moveTo(pos.x, pos.y);
                   ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                  ctx.strokeStyle = `hsla(140, 80%, ${'${50 - t * 20}'}%, ${'${1 - tSquared}'})`;
+                  ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
                   ctx.lineWidth = 2;
                   ctx.stroke();
               }
@@ -265,7 +264,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
               ctx.globalCompositeOperation = 'lighter';
               const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
               const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
-              coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${'${Math.sin(t * Math.PI)}'})`);
+              coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
               coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
               ctx.fillStyle = coreGradient;
               ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
@@ -275,7 +274,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
               ctx.shadowColor = s.color;
               ctx.beginPath();
               ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-              ctx.fillStyle = `hsla(50, 100%, 80%, ${'${Math.sin(t * Math.PI) * 0.8}'})`;
+              ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
               ctx.fill();
               break;
           }
@@ -297,7 +296,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
               ctx.shadowColor = s.color;
               ctx.beginPath();
               ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
-              ctx.strokeStyle = `hsla(270, 90%, 70%, ${'${1 - t}'})`;
+              ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
               ctx.lineWidth = 3;
               ctx.stroke();
               break;
@@ -359,22 +358,29 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
         const t = aElapsed / demoAttack.duration;
         drawProjectile(ctx, demoAttack, t);
       } else {
-        // Projectile hit logic
+        // Projectile hit logic for the primary target
         setEnemies(prevEnemies => {
-          return prevEnemies.map(enemy => {
-            if (enemy.id !== 'e1' || enemy.isDying) return enemy;
-            
-            const newHealth = enemy.health - (tower.damage / 4);
-            if (newHealth <= 0) {
-              setTimeout(() => setEnemies(es => es.map(e => ({ ...e, health: e.maxHealth, isDying: false, wasHit: false }))), 2000);
-              return { ...enemy, health: 0, isDying: true, wasHit: true };
-            }
-            
-            if (hitTimeoutRefs.current[enemy.id]) clearTimeout(hitTimeoutRefs.current[enemy.id]);
-            hitTimeoutRefs.current[enemy.id] = setTimeout(() => setEnemies(p => p.map(e => e.id === enemy.id ? {...e, wasHit: false} : e)), 150);
+            const newEnemies = [...prevEnemies];
+            const enemyIndex = newEnemies.findIndex(e => e.id === 'e1');
+            if (enemyIndex === -1 || newEnemies[enemyIndex].isDying) return newEnemies;
 
-            return { ...enemy, health: newHealth, wasHit: true };
-          });
+            const enemy = newEnemies[enemyIndex];
+            const newHealth = enemy.health - (tower.damage / 4);
+
+            if (newHealth <= 0) {
+                newEnemies[enemyIndex] = { ...enemy, health: 0, isDying: true, wasHit: true };
+                setTimeout(() => setEnemies(es => es.map(e => ({ ...e, health: e.maxHealth, isDying: false, wasHit: false }))), 2000);
+            } else {
+                newEnemies[enemyIndex] = { ...enemy, health: newHealth, wasHit: true };
+                // Set a timeout to reset the wasHit flag
+                if (hitTimeoutRefs.current[enemy.id]) {
+                    clearTimeout(hitTimeoutRefs.current[enemy.id]);
+                }
+                hitTimeoutRefs.current[enemy.id] = setTimeout(() => {
+                    setEnemies(current => current.map(e => e.id === enemy.id ? { ...e, wasHit: false } : e));
+                }, 150);
+            }
+            return newEnemies;
         });
 
         if (tower.effect?.type === 'splash' || tower.effect?.type === 'poison') {
@@ -532,7 +538,3 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
     </div>
   );
 }
-
-    
-
-    
