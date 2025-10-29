@@ -1,4 +1,3 @@
-
 // src/components/explainer/TowerDemo.tsx
 'use client';
 import * as React from 'react';
@@ -401,14 +400,14 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
   
           if (tower.effect?.type === 'splash' || tower.effect?.type === 'poison') {
             let vfxType: SplashRingVfxType | undefined = undefined;
-            const towerId = (tower as any).specId || tower.id;
-            if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
-            else if (towerId.includes('fire-2b')) vfxType = 'flame';
-            else if (towerId.includes('water-2b')) vfxType = 'ice';
-            else if (towerId.includes('earth-2b')) vfxType = 'rock';
-            else if (towerId.includes('nature-2b')) vfxType = 'thorn';
-            else if (towerId.includes('light-2b')) vfxType = 'light';
-            else if (towerId.includes('dark-2b')) vfxType = 'dark';
+            const specId = (tower as any).specId || tower.id;
+            if (specId.includes('combo-fire-earth')) vfxType = 'magma';
+            else if (specId.includes('fire-2b')) vfxType = 'flame';
+            else if (specId.includes('water-2b')) vfxType = 'ice';
+            else if (specId.includes('earth-2b')) vfxType = 'rock';
+            else if (specId.includes('nature-2b')) vfxType = 'thorn';
+            else if (specId.includes('light-2b')) vfxType = 'light';
+            else if (specId.includes('dark-2b')) vfxType = 'dark';
           
             splashRings.current.push({
                 id: crypto.randomUUID(),

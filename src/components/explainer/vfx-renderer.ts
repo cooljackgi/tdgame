@@ -170,6 +170,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing & { 
               }
               break;
          }
+         case 'poison':
          case 'thorn': {
               const spikes = 12;
               for (let i = 0; i < spikes; i++) {
