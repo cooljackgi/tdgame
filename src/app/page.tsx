@@ -30,17 +30,22 @@ export default function Home() {
   
   const { toast } = useToast();
 
+  // Updated logic to check for the correct save file based on selected difficulty
   useEffect(() => {
     try {
-      const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+      const isChaos = difficulty === 'Chaos';
+      const storageKey = isChaos ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY;
+      const savedData = localStorage.getItem(storageKey);
       if (savedData) {
         setSavedGame(JSON.parse(savedData));
+      } else {
+        setSavedGame(null); // Clear if no save for this mode exists
       }
     } catch (e) {
       console.error("Failed to parse saved game data.", e);
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      setSavedGame(null);
     }
-  }, []);
+  }, [difficulty]); // Re-check when difficulty changes
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -124,7 +129,9 @@ export default function Home() {
   };
 
   const clearSavedGame = () => {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    const isChaos = difficulty === 'Chaos';
+    const storageKey = isChaos ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY;
+    localStorage.removeItem(storageKey);
     setSavedGame(null);
     toast({title: 'Spielstand gelöscht!'});
   };
