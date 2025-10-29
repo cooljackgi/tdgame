@@ -113,11 +113,6 @@ export default function SinglePlayerGame({
     useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
     useEffect(() => { poisonCloudsRef.current = poisonClouds; }, [poisonClouds]);
 
-    const STORAGE_KEY = useMemo(
-      () => (isCheating ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY),
-      [isCheating]
-    );
-
     useEffect(() => {
         const onFirstPointer = async () => {
             try {
@@ -182,7 +177,7 @@ export default function SinglePlayerGame({
     
     useEffect(() => {
       const saveGame = () => {
-        if (gameStatusRef.current === 'tutorial') return; // Do not save during tutorial
+        if (gameStatusRef.current === 'tutorial') return;
 
         const player1 = playersRef.current[0];
         if (!player1) return;
@@ -201,7 +196,7 @@ export default function SinglePlayerGame({
 
         try {
           const json = JSON.stringify(saveState);
-          localStorage.setItem(STORAGE_KEY, json);
+          localStorage.setItem(LOCAL_STORAGE_KEY, json);
         } catch (e) {
           console.error('Save failed', e);
         }
@@ -218,7 +213,7 @@ export default function SinglePlayerGame({
         document.removeEventListener('visibilitychange', onVis);
         window.removeEventListener('beforeunload', saveGame);
       };
-    }, [isCheating, STORAGE_KEY]);
+    }, [isCheating]);
 
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
@@ -256,7 +251,7 @@ export default function SinglePlayerGame({
             finalTowers: towersByCellRef.current 
         };
         
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
         if (user?.uid && !isCheating) {
              try {
                 await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
@@ -264,7 +259,7 @@ export default function SinglePlayerGame({
         }
 
         setFinalGameResult({ ...result, date: new Date().toISOString() });
-    }, [user, isCheating, STORAGE_KEY]);
+    }, [user, isCheating]);
 
     const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];

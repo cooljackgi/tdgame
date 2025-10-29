@@ -1,3 +1,4 @@
+
 // src/app/page.tsx
 "use client";
 
@@ -31,20 +32,19 @@ export default function Home() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Universal save game check, independent of difficulty
     try {
-      const isChaos = difficulty === 'Chaos';
-      const storageKey = isChaos ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY;
-      const savedData = localStorage.getItem(storageKey);
+      const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (savedData) {
         setSavedGame(JSON.parse(savedData));
       } else {
-        setSavedGame(null); // Clear if no save for this mode exists
+        setSavedGame(null);
       }
     } catch (e) {
       console.error("Failed to parse saved game data.", e);
       setSavedGame(null);
     }
-  }, [difficulty]); 
+  }, []); 
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -54,7 +54,12 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const startGame = useCallback((mode: "singleplayer" | "coop", shouldLoadSaved: boolean = false, isTutorial: boolean = false, isCheating: boolean = false) => {
+  const startGame = useCallback((
+      mode: "singleplayer" | "coop", 
+      shouldLoadSaved: boolean = false, 
+      isTutorial: boolean = false, 
+      isCheating: boolean = false
+  ) => {
     setLoadSavedGame(shouldLoadSaved);
     setStartTutorial(isTutorial);
     setStartAsCheating(isCheating);
@@ -130,9 +135,7 @@ export default function Home() {
   };
 
   const clearSavedGame = () => {
-    const isChaos = difficulty === 'Chaos';
-    const storageKey = isChaos ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY;
-    localStorage.removeItem(storageKey);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
     setSavedGame(null);
     toast({title: 'Spielstand gelöscht!'});
   };
@@ -207,7 +210,15 @@ export default function Home() {
                         </Button>
                         {savedGame && (
                            <div className="space-y-2">
-                            <Button onClick={() => startGame('singleplayer', true, false, difficulty === 'Chaos')} variant="outline" className="w-full">
+                            <Button 
+                                onClick={() => {
+                                    // @ts-expect-error isCheating is an extended property
+                                    const isChaosSave = savedGame.isCheating === true;
+                                    startGame('singleplayer', true, false, isChaosSave);
+                                }}
+                                variant="outline" 
+                                className="w-full"
+                            >
                                 <Gamepad2 className="mr-2" /> Spielstand laden (Welle {savedGame.currentWave + 1})
                             </Button>
                              <Button onClick={clearSavedGame} variant="link" size="sm" className="w-full text-muted-foreground hover:text-destructive">
