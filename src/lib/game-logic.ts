@@ -180,19 +180,9 @@ export function processAttack(
     // --- Process Special Effects on Attack ---
 
     // --- Process Splash Damage / Area of Effect ---
-    if (tower.effect?.radius && (tower.effect.type === 'splash' || tower.effect.type === 'poison')) {
+    if (tower.effect?.radius && (tower.effect.type === 'splash')) {
         const effectRadiusSq = tower.effect.radius * tower.effect.radius;
 
-        let vfxType: SplashRingVfxType | undefined = undefined;
-        const towerId = tower.specId;
-        if (towerId.includes('combo-fire-earth')) vfxType = 'magma';
-        else if (towerId.includes('fire-2b')) vfxType = 'flame';
-        else if (towerId.includes('water-2b')) vfxType = 'ice';
-        else if (towerId.includes('earth-2b')) vfxType = 'rock';
-        else if (towerId.includes('nature-2b')) vfxType = 'poison'; // Use 'poison' for the vfx
-        else if (towerId.includes('light-2b')) vfxType = 'light';
-        else if (towerId.includes('dark-2b')) vfxType = 'dark';
-        
         output.splashRings.push({
             id: crypto.randomUUID(),
             x: target.position.col,
@@ -200,7 +190,7 @@ export function processAttack(
             r: tower.effect.radius,
             element: tower.elements[0] || 'neutral',
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
-            vfxType: vfxType,
+            vfxType: tower.effect.vfxType,
         } as SplashRing);
         
         // Apply effect to all enemies in radius
@@ -211,26 +201,10 @@ export function processAttack(
             
             const distSq = (target.position.col - enemy.position.col) ** 2 + (target.position.row - enemy.position.row) ** 2;
             if (distSq <= effectRadiusSq) {
-                if (tower.effect.type === 'splash') {
-                    const splashDamage = attackDamage * (tower.effect.potency ?? 0.5);
-                    const updatedEnemy = applyDamage(enemy, splashDamage, false, tower.effect);
-                    enemiesToUpdate[i] = { ...updatedEnemy, wasHit: true };
-                } else if (tower.effect.type === 'poison') {
-                    // Correctly apply the poison effect instead of direct damage
-                    const { duration = 0, potency = 0 } = tower.effect;
-                    const existingEffectIndex = enemy.effects.findIndex(ef => ef.type === 'poison');
-                    let newEffects = [...enemy.effects];
-                    if (existingEffectIndex !== -1) {
-                         newEffects[existingEffectIndex] = {
-                            ...newEffects[existingEffectIndex],
-                            expires: now + duration,
-                            potency: Math.max(newEffects[existingEffectIndex].potency, potency),
-                        };
-                    } else {
-                        newEffects.push({ type: 'poison', expires: now + duration, potency, duration });
-                    }
-                     enemiesToUpdate[i] = { ...enemy, wasHit: true, effects: newEffects };
-                }
+                // Apply splash damage
+                const splashDamage = attackDamage * (tower.effect.potency ?? 0.5);
+                const updatedEnemy = applyDamage(enemy, splashDamage, false, tower.effect);
+                enemiesToUpdate[i] = { ...updatedEnemy, wasHit: true };
             }
         }
         output.updatedEnemies = enemiesToUpdate;

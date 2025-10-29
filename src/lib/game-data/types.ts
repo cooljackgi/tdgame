@@ -54,6 +54,8 @@ export type GravityWell = {
   expires: number;
 };
 
+export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison' | 'steam';
+
 export type TowerEffect = {
   type: 'slow' | 'stun' | 'burn' | 'pushback' | 'splash' | 'multishot' | 'chain' | 'pull' | 'vulnerability' | 'aura' | 'armor_shred' | 'lifesteal' | 'crit' | 'poison';
   duration?: number; // ms
@@ -63,6 +65,7 @@ export type TowerEffect = {
   radius?: number; // for splash damage
   targets?: number; // for multishot
   bounces?: number; // for chain
+  vfxType?: SplashRingVfxType;
 };
 
 export type Tower = {
@@ -120,7 +123,6 @@ export type LifeGainVfx = {
   amount: number;
 };
 
-export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison';
 
 export type SplashRing = {
     id: string;

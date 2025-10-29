@@ -177,7 +177,7 @@ export default function SinglePlayerGame({
     // Auto-save game state on unload
     useEffect(() => {
         const saveGame = () => {
-            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial') {
+            if (gameStatusRef.current === 'gameover' || gameStatusRef.current === 'tutorial' || isCheating) {
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
                 return;
             }
@@ -202,7 +202,7 @@ export default function SinglePlayerGame({
             saveGame();
             window.removeEventListener('beforeunload', saveGame);
         };
-    }, []);
+    }, [isCheating]);
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
     const localPlayer = useMemo(() => players.find(p => p.id === 'player1'), [players]);

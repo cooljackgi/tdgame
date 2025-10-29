@@ -7,12 +7,12 @@ const CELL_SIZE = 64;
 
 type LiveAttack = Attack & { _vfx: { start: number; life: number; fromPx: {x:number, y:number}; toPx: {x:number,y:number} } };
 
-export function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: number) {
-    let fromPos = a._vfx.fromPx;
-    let toPos = a._vfx.toPx;
+export function drawProjectile(ctx: CanvasRenderingContext2D, a: DemoAttack, t: number) {
+    const fromPos = a.from;
+    const toPos = a.to;
 
     const primaryElement = a.elements?.[0] ?? 'neutral';
-    const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
+    const baseColor = a.color ?? elementProjectileColors[primaryElement] ?? '#9ca3af';
     const easeT = t * (2 - t);
     const dx = toPos.x - fromPos.x;
     const dy = toPos.y - fromPos.y;
@@ -90,7 +90,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, a: LiveAttack, t: 
 }
 
 
-export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing & { x: number, y: number }, t: number) {
+export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: number) {
     const pos = { x: s.x, y: s.y };
     const maxRadius = s.r * CELL_SIZE;
     const easeOutT = 1 - (1 - t) * (1 - t);
@@ -102,6 +102,21 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing & { 
     ctx.globalAlpha = 1 - tSquared;
   
     switch(s.vfxType) {
+        case 'steam': {
+            const particles = 12;
+            for(let i=0; i < particles; i++) {
+                const angle = baseAngle + (i * 360/particles) + (easeOutT * 45);
+                const rad = angle * Math.PI / 180;
+                const dist = maxRadius * easeOutT * (0.6 + (i%2) * 0.4);
+                const size = 12 * (1 - t);
+                
+                ctx.fillStyle = `hsla(210, 30%, 80%, ${1-tSquared})`;
+                ctx.beginPath();
+                ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            break;
+        }
         case 'magma':
         case 'flame': {
             const cracks = s.vfxType === 'magma' ? 5 : 7;
@@ -170,7 +185,21 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing & { 
               }
               break;
          }
-         case 'poison':
+         case 'poison': {
+            const bubbles = 15;
+            for(let i=0; i < bubbles; i++) {
+                const angle = baseAngle + (i * 360/bubbles) + (easeOutT * 20);
+                const rad = angle * Math.PI / 180;
+                const dist = maxRadius * Math.pow(easeOutT, 0.7) * (0.4 + (i%3) * 0.2);
+                const size = 6 * (1 - t) * (0.5 + Math.sin(i + t*Math.PI*2) * 0.5);
+
+                ctx.fillStyle = `hsla(110, 80%, 40%, ${0.8 - tSquared})`;
+                ctx.beginPath();
+                ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+             break;
+         }
          case 'thorn': {
               const spikes = 12;
               for (let i = 0; i < spikes; i++) {
@@ -242,4 +271,15 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing & { 
         }
     }
     ctx.restore();
-  }
+}
+
+type DemoAttack = {
+  id: string;
+  start: number;
+  duration: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  color: string;
+  projectile: 'beam' | 'arrow' | 'chain';
+  elements: Tower['elements'];
+};
