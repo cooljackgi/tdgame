@@ -9,7 +9,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PoisonCloud } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -51,6 +51,7 @@ export default function CoopGameLoader() {
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
   const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
+  const [poisonClouds, setPoisonClouds] = useState<PoisonCloud[]>([]);
   const [fps, setFps] = useState(0);
 
   
@@ -489,10 +490,11 @@ export default function CoopGameLoader() {
             currentWave, isIntermission, waveStartCountdown, gameStatus,
             totalKilled, totalLeaked,
             gravityWells,
+            poisonClouds,
             fps,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, fps]);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, poisonClouds, fps]);
     
     useEffect(() => {
         if (!isGameHost || hostRevision === 0) return;
@@ -650,6 +652,7 @@ export default function CoopGameLoader() {
           let allNewSplashRings: SplashRing[] = [];
           let allNewLifeGainVfx: LifeGainVfx[] = [];
           let newGravityWells: GravityWell[] = [];
+          let newPoisonClouds: PoisonCloud[] = [];
           
           let currentEnemies = enemies.map(e => ({...e, wasHit: false})); // Reset wasHit
           
@@ -723,6 +726,7 @@ export default function CoopGameLoader() {
                            allNewDamageNumbers.push(...result.damageNumbers);
                            allNewSplashRings.push(...result.splashRings);
                            allNewLifeGainVfx.push(...result.lifeGainVfx);
+                           if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
  
                            if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
                            if (result.killed > 0) killedThisTick += result.killed;
@@ -770,6 +774,7 @@ export default function CoopGameLoader() {
           // 3. Enemy movement and effects logic
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
+          const activePoisonClouds = [...(poisonClouds || []), ...newPoisonClouds].filter(c => c.expires > now);
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
@@ -784,6 +789,23 @@ export default function CoopGameLoader() {
               }
 
               let updatedEnemy: Enemy | null = { ...enemy, effects: enemy.effects.filter(e => e.expires > now) };
+
+              // Check if enemy is inside a poison cloud
+              for (const cloud of activePoisonClouds) {
+                  const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
+                  if (distSq <= cloud.radius ** 2) {
+                      const existingPoison = updatedEnemy.effects.find(e => e.type === 'poison');
+                      if (!existingPoison) {
+                          updatedEnemy.effects.push({
+                              type: 'poison',
+                              expires: now + cloud.duration,
+                              potency: cloud.potency,
+                              duration: cloud.duration,
+                              lastTick: now,
+                          });
+                      }
+                  }
+              }
 
               const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
                 const effect = updatedEnemy!.effects.find(e => e.type === type);
@@ -858,6 +880,7 @@ export default function CoopGameLoader() {
           // 4. Update state based on tick results
           setEnemies(stillAlive);
           setGravityWells(activeGravityWells);
+          setPoisonClouds(activePoisonClouds);
 
 
           if (livesLostThisTick > 0) {
@@ -905,7 +928,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, poisonClouds]);
 
 
   const toggleMute = () => {
@@ -991,6 +1014,7 @@ export default function CoopGameLoader() {
                 clientPacketsPerSecond={stats.packetsPerSecond}
                 clientBytesReceivedPerSecond={stats.bytesPerSecond}
                 averagePacketSize={stats.averagePacketSize}
+                poisonClouds={poisonClouds}
                 />
             </div>
             {localPlayer && (
