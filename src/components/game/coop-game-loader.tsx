@@ -674,7 +674,16 @@ export default function CoopGameLoader() {
 
           for (const tower of Object.values(towersByCell)) {
               if (now - tower.lastAttack < tower.attackSpeed) continue;
-              const isBuffed = buffedTowerIds.has(tower.id);
+
+              const auraTowers = Object.values(towersByCell).filter(t => t.effect?.type === 'aura');
+              let isBuffed = false;
+              for (const aura of auraTowers) {
+                  const distSq = (tower.position.col - aura.position.col)**2 + (tower.position.row - aura.position.row)**2;
+                  if (distSq <= (aura.range ** 2)) {
+                      isBuffed = true;
+                      break;
+                  }
+              }
 
               let targets: Enemy[] = [];
               if (tower.effect?.type === 'multishot' && tower.effect.targets) {
@@ -840,7 +849,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, poisonClouds, buffedTowerIds, startWave]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave]);
 
 
   const toggleMute = () => {
@@ -851,93 +860,93 @@ export default function CoopGameLoader() {
       return newMuted;
     });
   };
-
-  if (loading || !localPlayerId || !localPlayer) {
-    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
-  }
   
-  const onPlaceTower = (row: number, col: number) => {
-    if(selectedTowerToBuild) {
-        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
-    }
-  };
-  const onUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
-  const onSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
-  const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
-  const handleStartNextWaveNow = () => dispatchAction('start_wave_now', {});
-  
-  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+  if (!localPlayer) return null;
 
-  return (
-    <div className="w-full h-full flex flex-col" onClick={() => { if (!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
-       <Header onExit={() => router.push('/')} isMuted={isMuted} toggleMute={toggleMute} fps={isGameHost ? fps : stats.fps} />
-        <div className="flex-grow p-2">
-            <LayoutComponent
-                players={players} 
-                setPlayers={setPlayers} 
-                gameState={gameState} 
-                localPlayer={localPlayer!}
-                currentWave={currentWave} 
-                totalWaves={waves.length} 
-                difficulty={difficulty} 
-                handleGameControl={() => {}} 
-                gameStatus={gameStatus} 
-                resetGame={() => router.push('/')}
-                towers={initialTowers} 
-                setTowers={() => {}} 
-                placedTowers={placedTowers} 
-                enemies={enemies} 
-                damageNumbers={damageNumbers} 
-                splashRings={splashRings}
-                poisonClouds={poisonClouds}
-                currentPath={currentPath} 
-                handlePlaceTower={onPlaceTower}
-                onFocusTower={onFocusTower} 
-                selectedTowerToBuild={selectedTowerToBuild}
-                focusedTower={focusedTower}
-                gameBoardRef={gameBoardRef}
-                interactionPrompt={""} 
-                cancelInteractions={cancelInteractions}
-                onSelectTowerToBuild={onSelectTowerToBuild} 
-                handleUpgradeTower={onUpgradeTower}
-                handleSellTower={onSellTower}
-                setFocusedTower={setFocusedTower}
-                spawnedThisWave={isIntermission ? 0 : (waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
-                totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
-                totalKilled={totalKilled}
-                totalLeaked={totalLeaked}
-                isIntermission={isIntermission}
-                waveStartCountdown={Math.max(0, Math.ceil(waveStartCountdown))}
-                intermissionTime={INTERMISSION_TIME} 
-                handleStartNextWaveNow={handleStartNextWaveNow}
-                lastUpgradedTowerId={lastUpgradedTowerId}
-                justPlacedTowerId={justPlacedTowerId}
-                isCoop={true} 
-                playerRole={localPlayerId}
-                handleLoadTestLayout={() => {}} 
-                handleLoadAllTowersLayout={() => {}}
-                isCheating={false} 
-                cheat_unlockAll={() => {}}
-                firingTowerIds={firingTowerIds} 
-                allTowers={initialTowers}
-                isWsConnected={isConnected} 
-                onPing={sendPing}
-                hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                hostBytesSentPerSecond={stats.sentBytesPerSecond}
-                clientPacketsPerSecond={stats.packetsPerSecond}
-                clientBytesReceivedPerSecond={stats.bytesPerSecond}
-                averagePacketSize={stats.averagePacketSize}
+  const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
+
+    return (
+        <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
+             {gameStatus === 'tutorial' && <TutorialOverlay onFinish={() => setGameStatus('waiting')} />}
+             <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={fps} />
+             <div className="flex-grow p-2">
+                <LayoutComponent
+                    players={players} 
+                    setPlayers={setPlayers} 
+                    gameState={gameState} 
+                    localPlayer={localPlayer}
+                    currentWave={currentWave} 
+                    totalWaves={waves.length} 
+                    difficulty={difficulty} 
+                    handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')} 
+                    gameStatus={gameStatus} 
+                    resetGame={onExit}
+                    towers={initialTowers} 
+                    setTowers={() => {}} 
+                    placedTowers={placedTowers} 
+                    enemies={enemies} 
+                    damageNumbers={[]} 
+                    splashRings={[]}
+                    poisonClouds={poisonClouds}
+                    currentPath={currentPath} 
+                    handlePlaceTower={handlePlaceTower}
+                    onFocusTower={onFocusTower} 
+                    selectedTowerToBuild={selectedTowerToBuild}
+                    focusedTower={focusedTower}
+                    gameBoardRef={gameBoardRef}
+                    interactionPrompt={interactionPrompt} 
+                    cancelInteractions={cancelInteractions}
+                    onSelectTowerToBuild={onSelectTowerToBuild} 
+                    handleUpgradeTower={handleUpgradeTower}
+                    handleSellTower={handleSellTower}
+                    setFocusedTower={setFocusedTower}
+                    spawnedThisWave={isIntermission ? 0 : (waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
+                    totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
+                    totalKilled={totalKilled}
+                    totalLeaked={totalLeaked}
+                    isIntermission={isIntermission} 
+                    waveStartCountdown={Math.ceil(waveStartCountdown)}
+                    intermissionTime={INTERMISSION_TIME} 
+                    handleStartNextWaveNow={handleStartNextWaveNow}
+                    lastUpgradedTowerId={lastUpgradedTowerId}
+                    justPlacedTowerId={justPlacedTowerId}
+                    isCoop={false} 
+                    playerRole="player1"
+                    handleLoadTestLayout={handleLoadTestLayout}
+                    handleLoadAllTowersLayout={handleLoadAllTowersLayout}
+                    isCheating={isCheating} 
+                    cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
+                    cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
+                    cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
+                    cheat_unlockAll={handleUnlockAll}
+                    firingTowerIds={firingTowerIds} 
+                    allTowers={initialTowers}
+                    attacks={attacks}
                 />
             </div>
-            {localPlayer && (
-                <ElementPickDialog
-                    isOpen={gameStatus === 'picking-element'}
-                    onElementPick={onElementPick}
-                    playerName={localPlayer.name}
-                    currentWave={currentWave}
-                    unlockedElements={new Set(localPlayer.unlockedElements)}
-                />
-            )}
-      </div>
-  );
+
+            <AlertDialog open={gameStatus === 'gameover'}>
+                <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{(finalGameResult)?.won ? "Sieg!" : "Game Over"}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                    {(finalGameResult)?.won ? "Herzlichen Glückwunsch, du hast alle Wellen besiegt!" : "Du hast alle Leben verloren."} Du hast Welle {(finalGameResult)?.wave || currentWave + 1} erreicht.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                {(finalGameResult)?.finalTowers && (
+                    <div className="flex flex-col items-center gap-2"><p className="text-sm font-semibold text-muted-foreground">Dein finales Spielfeld:</p><ScoreboardMiniMap towersByCell={(finalGameResult)!.finalTowers!} /></div>
+                )}
+                <AlertDialogFooter><AlertDialogAction onClick={onExit}>Zum Hauptmenü</AlertDialogAction></AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            
+            <ElementPickDialog
+                isOpen={gameStatus === 'picking-element'}
+                unlockedElements={new Set(localPlayer.unlockedElements)}
+                onElementPick={handleElementPick}
+                playerName={localPlayer.name}
+                currentWave={currentWave}
+            />
+        </div>
+    );
 }
