@@ -316,7 +316,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     onPing,
 }, ref) => {
 
-  const fxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const vfxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const groundVfxCanvasRef = useRef<HTMLCanvasElement>(null); // New canvas for ground effects
   const animationFrameRef = useRef<number>();
   
   const incomingAttacksRef = useRef<Attack[]>([]);
@@ -445,18 +446,22 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, []);
 
   useEffect(() => {
-    const canvas = fxCanvasRef.current;
-    if (canvas) handleResize(canvas);
+    const airCanvas = vfxCanvasRef.current;
+    const groundCanvas = groundVfxCanvasRef.current;
+    if (airCanvas) handleResize(airCanvas);
+    if (groundCanvas) handleResize(groundCanvas);
   }, [handleResize]);
 
   useEffect(() => {
-    const canvas = fxCanvasRef.current;
-    if (!canvas) return;
+    const airCanvas = vfxCanvasRef.current;
+    const groundCanvas = groundVfxCanvasRef.current;
+    if (!airCanvas || !groundCanvas) return;
 
     const ro = new ResizeObserver(() => {
-        handleResize(canvas);
+        handleResize(airCanvas);
+        handleResize(groundCanvas);
     });
-    ro.observe(canvas);
+    ro.observe(airCanvas); // Observing one is enough as they have same dimensions
 
     return () => ro.disconnect();
   }, [handleResize]);
@@ -467,131 +472,99 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     if (now - lastTsRef.current < fpsCapMs) return;
     lastTsRef.current = now;
 
-    const canvas = fxCanvasRef.current;
-    if (!canvas || !document.contains(canvas)) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const airCanvas = vfxCanvasRef.current;
+    const groundCanvas = groundVfxCanvasRef.current;
+    if (!airCanvas || !groundCanvas || !document.contains(airCanvas)) return;
+    
+    const airCtx = airCanvas.getContext('2d');
+    const groundCtx = groundCanvas.getContext('2d');
+    if (!airCtx || !groundCtx) return;
 
     try {
         const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        const canvases = [{ctx: airCtx, canvas: airCanvas}, {ctx: groundCtx, canvas: groundCanvas}];
+
+        for (const { ctx, canvas } of canvases) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            ctx.scale(dpr, dpr);
+            ctx.translate(panRef.current.x, panRef.current.y);
+            ctx.scale(zoomRef.current, zoomRef.current);
+        }
         
-        ctx.scale(dpr, dpr);
-        
-        ctx.translate(panRef.current.x, panRef.current.y);
-        ctx.scale(zoomRef.current, zoomRef.current);
-        
-        // --- Poison clouds (draw under other VFX) ---
-for (const cloud of poisonClouds) {
-  // cloud.x / cloud.y sind Grid-Koordinaten (col/row)
-  const center = gridToPx({ row: cloud.y, col: cloud.x });
-  let radiusPx = cloud.radius * CELL_SIZE;
-  const VISUAL_SCALE = 0.45;          // z.B. 75% der bisherigen Größe
-  radiusPx = radiusPx * VISUAL_SCALE;
+        // --- GROUND EFFECTS ---
+        for (const cloud of poisonClouds) {
+          const center = gridToPx({ row: cloud.y, col: cloud.x });
+          let radiusPx = cloud.radius * CELL_SIZE;
 
-  // Fade out abhängig von verbleibender Dauer
-  const remaining = Math.max(0, cloud.expires - now);
-  const t = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
+          const remaining = Math.max(0, cloud.expires - now);
+          const t = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
 
-  const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
-  const grad = ctx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-  grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`); // #22c55e
-  grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
+          const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+          const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
+          grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`);
+          grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
 
-  ctx.save();
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
-  ctx.fill();
-  // --- Extra: bedrohlichere Wolke mit Blasen & Glow ---
-// (weiterhin im selben cloud-Loop)
-ctx.save();
+          groundCtx.save();
+          groundCtx.fillStyle = grad;
+          groundCtx.beginPath();
+          groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+          groundCtx.fill();
+          
+          groundCtx.globalCompositeOperation = 'lighter';
+          groundCtx.globalAlpha = 0.10 * t;
+          groundCtx.beginPath();
+          groundCtx.arc(center.x, center.y, radiusPx * 0.9, 0, Math.PI * 2);
+          groundCtx.fillStyle = 'rgba(34,197,94,0.25)';
+          groundCtx.fill();
+          groundCtx.restore();
 
-// dezentes Gift-Glow (Additiv-Blending)
-ctx.globalCompositeOperation = 'lighter';
-ctx.globalAlpha = 0.10 * t;
-ctx.beginPath();
-ctx.arc(center.x, center.y, radiusPx * 0.9, 0, Math.PI * 2);
-ctx.fillStyle = 'rgba(34,197,94,0.25)';
-ctx.fill();
-ctx.restore();
+          function hashStr(s: string) {
+            let h = 2166136261 >>> 0;
+            for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
+            return h >>> 0;
+          }
+          function rngFactory(seed: number) {
+            return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+          }
 
-// --- Blasen: prozedural, konstant je Cloud-Id ---
-function hashStr(s: string) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
-  return h >>> 0;
-}
-function rngFactory(seed: number) {
-  return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-}
+          const rng = rngFactory(hashStr(cloud.id));
+          const bubbleCount = 10 + Math.floor(rng()*6);
+          const drift = 0.15 + 0.1 * Math.sin(now * 0.001);
 
-const rng = rngFactory(hashStr(cloud.id));      // stabile „Zufälle“ je Wolke
-const bubbleCount = 10 + Math.floor(rng()*6);    // 8–13 Blasen
-const drift = 0.15 + 0.1 * Math.sin(now * 0.001); // leichte horizontale Drift
-
-for (let i = 0; i < bubbleCount; i++) {
-  // zufällige Bahn innerhalb der Wolke
-  const baseAngle = rng() * Math.PI * 2;
-  const ring = 0.15 + 0.75 * rng();         // 15–90% des Radius
-  const pathR = radiusPx * ring;
-
-  // Größe, Geschwindigkeit, Phase der Blase
-  const r = 2 + 4 * rng();                  // 2–6 px
-  const speed = 12 + 24 * rng();            // px/sek
-  const phase = rng() * 5000;               // ms offset
-
-  // Aufstieg: zyklisch von unten nach oben
-  const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
-  const rise = -prog + radiusPx * 0.8;      // startet unten, steigt nach oben
-
-  // Bahnposition (leicht taumelnd)
-  const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
-  const x = center.x + Math.cos(baseAngle + wobble) * pathR * (1 + 0.15 * drift);
-  const y = center.y + Math.sin(baseAngle + wobble) * pathR + rise;
-
-  // nur zeichnen, wenn im Kreis (Performance & Korrektheit)
-  const dx = x - center.x, dy = y - center.y;
-  if (dx*dx + dy*dy > radiusPx*radiusPx) continue;
-
-  // Transparenz nimmt zur „Decke“ zu & mit Restdauer ab
-  const toTop = (center.y - y + radiusPx) / (2*radiusPx);
-  const a = Math.max(0, Math.min(1, 0.35 * t * (0.5 + 0.5 * toTop)));
-
-  // Blasenrand + kleiner Highlight-Glanz
-  ctx.save();
-  ctx.globalAlpha = a;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(209,250,229,0.18)';      // sehr hell/grünlich innen
-  ctx.fill();
-
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(34,197,94,0.55)';      // giftgrüner Rand
-  ctx.stroke();
-
-  // Highlight (kleiner Punkt oben links)
-  ctx.beginPath();
-  ctx.arc(x - r*0.35, y - r*0.45, r*0.25, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.fill();
-  ctx.restore();
-}
-
-  ctx.restore();
-
-  // Optional: feiner Rand/„Nebelkranz“
-  ctx.save();
-  ctx.globalAlpha = 0.15 * t;
-  ctx.strokeStyle = 'rgba(34,197,94,0.45)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radiusPx * (0.88 + 0.06 * Math.sin(now * 0.004)), 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-}
-
+          for (let i = 0; i < bubbleCount; i++) {
+            const baseAngle = rng() * Math.PI * 2;
+            const ring = 0.15 + 0.75 * rng();
+            const pathR = radiusPx * ring;
+            const r = 2 + 4 * rng();
+            const speed = 12 + 24 * rng();
+            const phase = rng() * 5000;
+            const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
+            const rise = -prog + radiusPx * 0.8;
+            const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
+            const x = center.x + Math.cos(baseAngle + wobble) * pathR * (1 + 0.15 * drift);
+            const y = center.y + Math.sin(baseAngle + wobble) * pathR + rise;
+            const dx = x - center.x, dy = y - center.y;
+            if (dx*dx + dy*dy > radiusPx*radiusPx) continue;
+            const toTop = (center.y - y + radiusPx) / (2*radiusPx);
+            const a = Math.max(0, Math.min(1, 0.35 * t * (0.5 + 0.5 * toTop)));
+            groundCtx.save();
+            groundCtx.globalAlpha = a;
+            groundCtx.beginPath();
+            groundCtx.arc(x, y, r, 0, Math.PI * 2);
+            groundCtx.fillStyle = 'rgba(209,250,229,0.18)';
+            groundCtx.fill();
+            groundCtx.lineWidth = 1;
+            groundCtx.strokeStyle = 'rgba(34,197,94,0.55)';
+            groundCtx.stroke();
+            groundCtx.beginPath();
+            groundCtx.arc(x - r*0.35, y - r*0.45, r*0.25, 0, Math.PI*2);
+            groundCtx.fillStyle = 'rgba(255,255,255,0.35)';
+            groundCtx.fill();
+            groundCtx.restore();
+          }
+          groundCtx.restore();
+        }
 
         const currentEnemyIds = new Set(enemies.map(e => e.id));
         for (const id of interpolatedEnemyPositions.keys()) {
@@ -607,101 +580,76 @@ for (let i = 0; i < bubbleCount; i++) {
         
         const towersMap = new Map(placedTowers.map(t => [t.id, t]));
 
-        {
+        if (incomingAttacksRef.current.length) {
             const q = incomingAttacksRef.current;
-            if (q.length) {
-                for (const a of q) {
-                    const enemyTarget = enemiesById.get(a.targetId);
-                    // Don't discard if target is gone, fly to last known spot
-                    // if (!enemyTarget) continue;
-
-                    let fromPx: {x:number, y:number} | null = null;
-                    const tower = towersMap.get(a.towerId);
-                    if (!tower) continue;
-
-                    if (a.isChain && a.chainSourceId) {
-                        fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
-                    } else {
-                        const towerCenter = gridToPx(tower.position);
-                        const specId = tower.specId || tower.id;
-                        const towerVariant = 
-                            specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
-                            specId.includes('-1b') || specId.includes('-2b') ? "ballista" :
-                            "basic";
-                        
-                        const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
-                        const size = CELL_SIZE * 0.8;
-                        const xOffset = (muzzle.x / 100) * size - (size / 2);
-                        const yOffset = (muzzle.y / 100) * size - (size / 2);
-
-                        fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
-                    }
-                    if (!fromPx) continue;
-                    
-                    const toPx = enemyTarget 
-                        ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath)
-                        : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
-
-                    if (!toPx) continue;
-            
-                    const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
-                    let dynamicLife = clamp(dist * 2.6, 320, 750);
-                    if (a.projectile === "beam") dynamicLife = 220;
-                    if (a.projectile === "chain") dynamicLife = 250;
-            
-                    attacksPoolRef.current.alloc({
-                        ...a,
-                        _vfx: { start: now, life: dynamicLife, fromPx, toPx },
-                    });
+            for (const a of q) {
+                const enemyTarget = enemiesById.get(a.targetId);
+                let fromPx: {x:number, y:number} | null = null;
+                const tower = towersMap.get(a.towerId);
+                if (!tower) continue;
+                if (a.isChain && a.chainSourceId) {
+                    fromPx = interpolatedEnemyPositions.get(a.chainSourceId) ?? null;
+                } else {
+                    const towerCenter = gridToPx(tower.position);
+                    const specId = tower.specId || tower.id;
+                    const towerVariant = specId.includes('-1a') || specId.includes('-2a') ? "sniper" : specId.includes('-1b') || specId.includes('-2b') ? "ballista" : "basic";
+                    const muzzle = TOWER_MUZZLE_POINTS[towerVariant];
+                    const size = CELL_SIZE * 0.8;
+                    const xOffset = (muzzle.x / 100) * size - (size / 2);
+                    const yOffset = (muzzle.y / 100) * size - (size / 2);
+                    fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
                 }
-                q.length = 0;
-            }
-        }
-        {
-            const q = incomingRingsRef.current;
-            if (q.length) { 
-                for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
-                }
-                q.length = 0; 
-            }
-        }
-        {
-            const q = incomingDmgRef.current;
-            if (q.length) { 
-                for (let i = 0; i < q.length; i++) {
-                    const damageData = { ...q[i], targetId: q[i].targetId || ''};
-                    damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
-                }
-                q.length = 0; 
-            }
-        }
-        {
-          const q = incomingLifeGainRef.current;
-          if(q.length > 0) {
-            for(const vfx of q) {
-              lifeGainPoolRef.current.alloc({ ...vfx, start: now, life: 1500 });
+                if (!fromPx) continue;
+                const toPx = enemyTarget ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath) : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
+                if (!toPx) continue;
+                const dist = Math.hypot(toPx.x - fromPx.x, toPx.y - fromPx.y);
+                let dynamicLife = clamp(dist * 2.6, 320, 750);
+                if (a.projectile === "beam") dynamicLife = 220;
+                if (a.projectile === "chain") dynamicLife = 250;
+                attacksPoolRef.current.alloc({ ...a, _vfx: { start: now, life: dynamicLife, fromPx, toPx }});
             }
             q.length = 0;
+        }
+
+        if (incomingRingsRef.current.length) { 
+            const q = incomingRingsRef.current;
+            for (let i = 0; i < q.length; i++) {
+                splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
+            }
+            q.length = 0; 
+        }
+
+        if (incomingDmgRef.current.length) {
+            const q = incomingDmgRef.current;
+            for (let i = 0; i < q.length; i++) {
+                const damageData = { ...q[i], targetId: q[i].targetId || ''};
+                damageNumbersPoolRef.current.alloc({ ...damageData, start: now, life: 900 }); 
+            }
+            q.length = 0; 
+        }
+
+        if(incomingLifeGainRef.current.length > 0) {
+          const q = incomingLifeGainRef.current;
+          for(const vfx of q) {
+            lifeGainPoolRef.current.alloc({ ...vfx, start: now, life: 1500 });
           }
+          q.length = 0;
         }
         
+        // --- AIR EFFECTS ---
         attacksPoolRef.current.forEachActive(attack => {
-            const now = Date.now();
             const {fromPx, life} = attack._vfx;
             let { start, toPx } = attack._vfx;
-            
             const liveTarget = enemiesById.get(attack.targetId);
             const currentToPx = liveTarget ? getEnemyWorldPos(liveTarget, now, liveTarget.path || currentPath) : toPx;
-
             const t = clamp((now - start) / life, 0, 1);
             if (t >= 1) { attacksPoolRef.current.free(attack); return; }
 
-            ctx.save();
+            airCtx.save();
             const primaryElement = attack.elements?.[0] ?? 'neutral';
             const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = baseColor;
+            airCtx.shadowBlur = 8;
+            airCtx.shadowColor = baseColor;
             
             if (attack.projectile === 'arrow') {
                 const easeT = t * (2 - t);
@@ -709,73 +657,60 @@ for (let i = 0; i < bubbleCount; i++) {
                 const dy = currentToPx.y - fromPx.y;
                 const headX = fromPx.x + dx * easeT;
                 const headY = fromPx.y + dy * easeT;
-                
                 const angle = Math.atan2(dy, dx);
                 const length = 14;
-
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = 1 - t*t;
-                
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
-                ctx.stroke();
-
+                airCtx.strokeStyle = baseColor;
+                airCtx.lineWidth = 3;
+                airCtx.globalAlpha = 1 - t*t;
+                airCtx.beginPath();
+                airCtx.moveTo(headX, headY);
+                airCtx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
+                airCtx.stroke();
             } else if (attack.projectile === 'chain') {
                 const dx = currentToPx.x - fromPx.x;
                 const dy = currentToPx.y - fromPx.y;
                 const segments = 5;
                 const randomness = 15;
-                ctx.lineWidth = 3.5;
-                ctx.globalAlpha = (1 - t*t);
-                ctx.strokeStyle = baseColor;
-                ctx.shadowBlur = 12;
-
-                ctx.beginPath();
-                ctx.moveTo(fromPx.x, fromPx.y);
-
+                airCtx.lineWidth = 3.5;
+                airCtx.globalAlpha = (1 - t*t);
+                airCtx.strokeStyle = baseColor;
+                airCtx.shadowBlur = 12;
+                airCtx.beginPath();
+                airCtx.moveTo(fromPx.x, fromPx.y);
                 for (let i = 1; i < segments; i++) {
                     const progress = i / segments;
                     const currentX = fromPx.x + dx * progress;
                     const currentY = fromPx.y + dy * progress;
-                    ctx.lineTo(
-                        currentX + (Math.random() - 0.5) * randomness,
-                        currentY + (Math.random() - 0.5) * randomness
-                    );
+                    airCtx.lineTo(currentX + (Math.random() - 0.5) * randomness, currentY + (Math.random() - 0.5) * randomness);
                 }
-                ctx.lineTo(currentToPx.x, currentToPx.y);
-                ctx.stroke();
+                airCtx.lineTo(currentToPx.x, currentToPx.y);
+                airCtx.stroke();
             } else { // BEAM
                 const easeT = t * (2-t);
                 const dx = currentToPx.x - fromPx.x;
                 const dy = currentToPx.y - fromPx.y;
-
                 const headX = fromPx.x + dx * easeT;
                 const headY = fromPx.y + dy * easeT;
                 const tailT = Math.max(0, easeT - 0.15);
                 const tailX = fromPx.x + dx * tailT;
                 const tailY = fromPx.y + dy * tailT;
-                
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = (1 - t*t);
-                
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(tailX, tailY);
-                ctx.stroke();
-
+                airCtx.strokeStyle = baseColor;
+                airCtx.lineWidth = 3;
+                airCtx.globalAlpha = (1 - t*t);
+                airCtx.beginPath();
+                airCtx.moveTo(headX, headY);
+                airCtx.lineTo(tailX, tailY);
+                airCtx.stroke();
                 if (attack.projectile === "beam") {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.shadowColor = '#ffffff';
-                    ctx.shadowBlur = 12;
-                    ctx.beginPath();
-                    ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
-                    ctx.fill();
+                    airCtx.fillStyle = '#ffffff';
+                    airCtx.shadowColor = '#ffffff';
+                    airCtx.shadowBlur = 12;
+                    airCtx.beginPath();
+                    airCtx.arc(headX, headY, 2.5, 0, Math.PI * 2);
+                    airCtx.fill();
                 }
             }
-            ctx.restore();
+            airCtx.restore();
         });
 
         splashRingsPoolRef.current.forEachActive(s => {
@@ -789,8 +724,8 @@ for (let i = 0; i < bubbleCount; i++) {
             const tRoot = Math.sqrt(t);
             const baseAngle = s.id.charCodeAt(0) % 360; 
         
-            ctx.save();
-            ctx.globalAlpha = 1 - tSquared;
+            groundCtx.save();
+            groundCtx.globalAlpha = 1 - tSquared;
         
             switch(s.vfxType) {
                 case 'magma':
@@ -800,12 +735,12 @@ for (let i = 0; i < bubbleCount; i++) {
                         const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
                         const rad = angle * Math.PI / 180;
                         const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
-                        ctx.stroke();
+                        groundCtx.beginPath();
+                        groundCtx.moveTo(pos.x, pos.y);
+                        groundCtx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                        groundCtx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
+                        groundCtx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
+                        groundCtx.stroke();
                     }
                     if (s.vfxType === 'magma') {
                         const particles = 8;
@@ -814,10 +749,10 @@ for (let i = 0; i < bubbleCount; i++) {
                             const rad = angle * Math.PI / 180;
                             const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
                             const size = 3 * (1 - t);
-                            ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
-                            ctx.beginPath();
-                            ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
-                            ctx.fill();
+                            groundCtx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
+                            groundCtx.beginPath();
+                            groundCtx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                            groundCtx.fill();
                         }
                     }
                     break;
@@ -829,12 +764,12 @@ for (let i = 0; i < bubbleCount; i++) {
                         const rad = angle * Math.PI / 180;
                         const len = maxRadius * (0.5 + tRoot * 0.5);
                         const shardSize = 15 * (1 - t);
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 3 + (1 - t) * 3;
-                        ctx.stroke();
+                        groundCtx.beginPath();
+                        groundCtx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
+                        groundCtx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                        groundCtx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
+                        groundCtx.lineWidth = 3 + (1 - t) * 3;
+                        groundCtx.stroke();
                     }
                     break;
                 }
@@ -845,19 +780,17 @@ for (let i = 0; i < bubbleCount; i++) {
                         const rad = angle * Math.PI / 180;
                         const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
                         const particleSize = 6 * (1 - t);
-                        
-                        ctx.save();
-                        ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
-                        ctx.rotate(angle * Math.PI / 180);
-                        
-                        ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -particleSize);
-                        ctx.lineTo(particleSize, particleSize);
-                        ctx.lineTo(-particleSize, particleSize);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.restore();
+                        groundCtx.save();
+                        groundCtx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
+                        groundCtx.rotate(angle * Math.PI / 180);
+                        groundCtx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
+                        groundCtx.beginPath();
+                        groundCtx.moveTo(0, -particleSize);
+                        groundCtx.lineTo(particleSize, particleSize);
+                        groundCtx.lineTo(-particleSize, particleSize);
+                        groundCtx.closePath();
+                        groundCtx.fill();
+                        groundCtx.restore();
                     }
                     break;
                 }
@@ -867,75 +800,71 @@ for (let i = 0; i < bubbleCount; i++) {
                         const angle = baseAngle + (i * (360 / spikes));
                         const rad = angle * Math.PI / 180;
                         const len = maxRadius * tRoot;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
+                        groundCtx.beginPath();
+                        groundCtx.moveTo(pos.x, pos.y);
+                        groundCtx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
+                        groundCtx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
+                        groundCtx.lineWidth = 2;
+                        groundCtx.stroke();
                     }
                     break;
                 }
                 case 'light': {
-                    ctx.globalCompositeOperation = 'lighter';
+                    groundCtx.globalCompositeOperation = 'lighter';
                     const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
-                    const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
+                    const coreGradient = groundCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
                     coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
                     coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
-                    ctx.fillStyle = coreGradient;
-                    ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
-        
+                    groundCtx.fillStyle = coreGradient;
+                    groundCtx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
                     const glowRadius = maxRadius * easeOutT;
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-                    ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
-                    ctx.fill();
+                    groundCtx.shadowBlur = 30;
+                    groundCtx.shadowColor = s.color;
+                    groundCtx.beginPath();
+                    groundCtx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
+                    groundCtx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
+                    groundCtx.fill();
                     break;
                 }
                 case 'dark': {
                     const pullRadius = maxRadius * (1 - easeOutT);
                     const implosionRadius = maxRadius * (1 - t);
-                    
-                    const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
+                    const gradient = groundCtx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
                     gradient.addColorStop(0, 'rgba(128, 0, 128, 0)');
                     gradient.addColorStop(0.8, 'rgba(128, 0, 128, 0.4)');
                     gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
-                    ctx.fill();
-        
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
+                    groundCtx.fillStyle = gradient;
+                    groundCtx.beginPath();
+                    groundCtx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
+                    groundCtx.fill();
+                    groundCtx.shadowBlur = 15;
+                    groundCtx.shadowColor = s.color;
+                    groundCtx.beginPath();
+                    groundCtx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
+                    groundCtx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
+                    groundCtx.lineWidth = 3;
+                    groundCtx.stroke();
                     break;
                 }
                 default: { // Default shockwave
                     const shockwaveRadius = maxRadius * easeOutT;
                     const shockwaveAlpha = 1 - tSquared;
                     const shockwaveWidth = (2 + (1 - t) * 4);
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = s.color;
-                    ctx.lineWidth = shockwaveWidth;
-                    ctx.globalAlpha = shockwaveAlpha;
-                    ctx.stroke();
+                    groundCtx.shadowBlur = 15;
+                    groundCtx.shadowColor = s.color;
+                    groundCtx.beginPath();
+                    groundCtx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
+                    groundCtx.strokeStyle = s.color;
+                    groundCtx.lineWidth = shockwaveWidth;
+                    groundCtx.globalAlpha = shockwaveAlpha;
+                    groundCtx.stroke();
                 }
             }
-            ctx.restore();
+            groundCtx.restore();
         });
 
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
+        airCtx.globalAlpha = 1;
+        airCtx.shadowBlur = 0;
 
         damageNumbersPoolRef.current.forEachActive(dn => {
             const t = clamp((now - dn.start) / dn.life, 0, 1);
@@ -947,13 +876,13 @@ for (let i = 0; i < bubbleCount; i++) {
             const yOffset = dn.isCrit ? 25 : 15;
             const size = dn.isCrit ? 16 : 12;
 
-            ctx.font = `bold ${size}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = dn.color;
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = dn.isCrit ? 4 : 2;
-            ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
+            airCtx.font = `bold ${size}px system-ui, sans-serif`;
+            airCtx.textAlign = "center";
+            airCtx.globalAlpha = 1 - t;
+            airCtx.fillStyle = dn.color;
+            airCtx.shadowColor = 'black';
+            airCtx.shadowBlur = dn.isCrit ? 4 : 2;
+            airCtx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
         });
 
         lifeGainPoolRef.current.forEachActive(lg => {
@@ -962,13 +891,13 @@ for (let i = 0; i < bubbleCount; i++) {
 
             const endNodePos = gridToPx({row: GRID_ROWS, col: GRID_COLS});
 
-            ctx.font = `bold 16px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = '#22c55e'; // Green
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = 4;
-            ctx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
+            airCtx.font = `bold 16px system-ui, sans-serif`;
+            airCtx.textAlign = "center";
+            airCtx.globalAlpha = 1 - t;
+            airCtx.fillStyle = '#22c55e'; // Green
+            airCtx.shadowColor = 'black';
+            airCtx.shadowBlur = 4;
+            airCtx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
         });
         
         const primaryColor = cssVar('--primary');
@@ -981,27 +910,22 @@ for (let i = 0; i < bubbleCount; i++) {
           const t = Math.max(0, 1 - age/ttl);
           const pingColor = p.from === 'player1' ? primaryColor : destructiveColor;
           
-          ctx.save();
-          
-          // Draw Circle
-          ctx.strokeStyle = pingColor;
-          ctx.globalAlpha = 0.25 + 0.5*t;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
-          ctx.stroke();
-
-          // Draw Text
+          airCtx.save();
+          airCtx.strokeStyle = pingColor;
+          airCtx.globalAlpha = 0.25 + 0.5*t;
+          airCtx.lineWidth = 3;
+          airCtx.beginPath();
+          airCtx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
+          airCtx.stroke();
           const text = pingTextMap[p.kind] || p.kind;
-          ctx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillStyle = pingColor;
-          ctx.globalAlpha = 1 - (age / ttl);
-          ctx.shadowColor = "black";
-          ctx.shadowBlur = 4;
-          ctx.fillText(text, x, y - CELL_SIZE * 0.8);
-          
-          ctx.restore();
+          airCtx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
+          airCtx.textAlign = "center";
+          airCtx.fillStyle = pingColor;
+          airCtx.globalAlpha = 1 - (age / ttl);
+          airCtx.shadowColor = "black";
+          airCtx.shadowBlur = 4;
+          airCtx.fillText(text, x, y - CELL_SIZE * 0.8);
+          airCtx.restore();
         });
 
 
@@ -1014,7 +938,7 @@ for (let i = 0; i < bubbleCount; i++) {
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, poisonClouds]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -1336,6 +1260,11 @@ for (let i = 0; i < bubbleCount; i++) {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
+        <canvas 
+            ref={groundVfxCanvasRef} 
+            className="absolute inset-0 pointer-events-none" 
+            style={{ zIndex: 5, left: 0, top: 0, width: '100%', height: '100%' }}
+        />
         <div 
           ref={worldRef}
           className="absolute inset-0"
@@ -1611,7 +1540,7 @@ for (let i = 0; i < bubbleCount; i++) {
         </div>
         
         <canvas 
-            ref={fxCanvasRef} 
+            ref={vfxCanvasRef} 
             className="absolute inset-0 pointer-events-none" 
             style={{ zIndex: 20, left: 0, top: 0, width: '100%', height: '100%' }}
         />
@@ -1657,3 +1586,4 @@ for (let i = 0; i < bubbleCount; i++) {
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
