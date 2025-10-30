@@ -54,15 +54,22 @@ export type GravityWell = {
   expires: number;
 };
 
-export type PoisonCloud = {
+export type PersistentCloudEffect = 'poison' | 'slow';
+
+export type PersistentCloud = {
   id: string;
+  effectType: PersistentCloudEffect;
   x: number;
   y: number;
   radius: number;
-  potency: number; // Damage per second of the poison it applies
-  duration: number; // How long the poison lasts on an enemy
-  expires: number; // When the cloud itself disappears
+  potency: number; // For poison: damage/sec. For slow: 0.0 to 1.0.
+  duration: number; // How long the effect lasts on an enemy.
+  expires: number; // When the cloud itself disappears.
 };
+
+// Deprecated, use PersistentCloud
+export type PoisonCloud = PersistentCloud & { effectType: 'poison' };
+
 
 export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison' | 'steam';
 
@@ -72,10 +79,11 @@ export type TowerEffect = {
   potency?: number; // e.g., 0.5 for 50% slow, or damage per tick for burn
   chance?: number; // 0 to 1 for stun/crit etc.
   distance?: number; // for pushback
-  radius?: number; // for splash damage
+  radius?: number; // for splash damage or cloud radius
   targets?: number; // for multishot
   bounces?: number; // for chain
   vfxType?: SplashRingVfxType;
+  cloudEffect?: PersistentCloudEffect; // What effect the cloud applies
 };
 
 export type Tower = {
@@ -316,7 +324,7 @@ export type ProcessAttackResult = {
   damageNumbers: DamageNumber[];    // Floating-Text / Trefferzahlen
   splashRings: SplashRing[];        // AoE-VFX-Ringe
   lifeGainVfx: LifeGainVfx[];       // Heil-/Leech-VFX
-  newPoisonClouds: PoisonCloud[];   // persistente Giftwolken
+  newPersistentClouds: PersistentCloud[];   // persistente Giftwolken
   newGravityWells: GravityWell[];   // Gravitations-Felder
   soundEvents: SoundEvent[];      // Audio Events
   resourcesGained: number;          // Gold/Essenz etc. in diesem Tick
