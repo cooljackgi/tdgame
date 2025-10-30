@@ -303,3 +303,18 @@ export type DamageApplicationResult = {
     dotsApplied: DoTEffect[];
     killed: boolean;
 };
+
+// vorhandene Imports/Typen beibehalten
+export type ProcessAttackResult = {
+  updatedEnemies: Enemy[];          // kopierte/aktualisierte Gegnerliste
+  newAttacks: Attack[];             // projizierte neue Projektile/Strahlen
+  damageNumbers: DamageNumber[];    // Floating-Text / Trefferzahlen
+  splashRings: SplashRing[];        // AoE-VFX-Ringe
+  lifeGainVfx: LifeGainVfx[];       // Heil-/Leech-VFX
+  newPoisonClouds: PoisonCloud[];   // persistente Giftwolken
+  newGravityWells: GravityWell[];   // Gravitations-Felder
+  resourcesGained: number;          // Gold/Essenz etc. in diesem Tick
+  livesGained: number;              // ggf. Lifegain aufs Spielerleben
+  killed: number;                   // in diesem Angriff getötete Gegner
+};
+

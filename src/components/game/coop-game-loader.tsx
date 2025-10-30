@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PoisonCloud, AuraBuffs, DoTEffect, DamageApplicationResult } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PoisonCloud, AuraBuffs, DoTEffect, DamageApplicationResult, ProcessAttackResult } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -100,6 +100,10 @@ export default function CoopGameLoader() {
   const cancelInteractions = () => {
     setSelectedTowerToBuild(null);
     setFocusedTower(null);
+  };
+
+  const onExit = () => {
+    router.push('/');
   };
 
   const onSelectTowerToBuild = (tower: Tower | null) => {
@@ -715,7 +719,20 @@ export default function CoopGameLoader() {
                   
                   let enemiesForThisTick = [...currentEnemies];
                   for (const target of targets) {
-                      const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
+                       const attackContext: Attack = {
+                        id: crypto.randomUUID(),
+                        towerId: tower.id,
+                        targetId: target.id,
+                        targetPosition: { ...target.position },
+                        elements: tower.elements,
+                        projectile: tower.id.includes('sniper') ? 'arrow' : 'beam',
+                        baseDamage: tower.damage,
+                        critChance: tower.effect?.type === 'crit' ? tower.effect.chance : 0,
+                        critMult: tower.effect?.type === 'crit' ? tower.effect.potency : 2,
+                        armorPenFlat: tower.effect?.type === 'armor_shred' ? tower.damage * (tower.effect.potency ?? 0) : 0,
+                      };
+
+                      const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed, attackContext);
                       enemiesForThisTick = result.updatedEnemies;
                       
                       allNewAttacks.push(...result.newAttacks);
@@ -726,8 +743,8 @@ export default function CoopGameLoader() {
                       if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                       if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
-                      if (result.killed > 0) killedThisTick += result.killed;
                       if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
+                      if (result.killed > 0) killedThisTick += result.killed;
                   }
                   currentEnemies = enemiesForThisTick;
               }
@@ -847,7 +864,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave, onGameEnd]);
 
 
   const toggleMute = () => {
@@ -862,11 +879,12 @@ export default function CoopGameLoader() {
   if (!localPlayer) return null;
 
   const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
+  
+  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
 
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
-             {gameStatus === 'tutorial' && <TutorialOverlay onFinish={() => setGameStatus('waiting')} />}
-             <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={fps} />
+             <Header onExit={() => router.push('/')} isMuted={isMuted} toggleMute={toggleMute} fps={fps} />
              <div className="flex-grow p-2">
                 <LayoutComponent
                     players={players} 
@@ -883,8 +901,8 @@ export default function CoopGameLoader() {
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies} 
-                    damageNumbers={damageNumbers} 
-                    splashRings={splashRings}
+                    damageNumbers={[]} 
+                    splashRings={[]}
                     poisonClouds={poisonClouds}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}
@@ -919,25 +937,10 @@ export default function CoopGameLoader() {
                     cheat_unlockAll={handleUnlockAll}
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
-                    attacks={attacks}
+                    attacks={[]}
                 />
             </div>
 
-            <AlertDialog open={gameStatus === 'gameover'}>
-                <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>{(finalGameResult)?.won ? "Sieg!" : "Game Over"}</AlertDialogTitle>
-                    <AlertDialogDescription>
-                    {(finalGameResult)?.won ? "Herzlichen Glückwunsch, du hast alle Wellen besiegt!" : "Du hast alle Leben verloren."} Du hast Welle {(finalGameResult)?.wave || currentWave + 1} erreicht.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                {(finalGameResult)?.finalTowers && (
-                    <div className="flex flex-col items-center gap-2"><p className="text-sm font-semibold text-muted-foreground">Dein finales Spielfeld:</p><ScoreboardMiniMap towersByCell={(finalGameResult)!.finalTowers!} /></div>
-                )}
-                <AlertDialogFooter><AlertDialogAction onClick={onExit}>Zum Hauptmenü</AlertDialogAction></AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-            
             <ElementPickDialog
                 isOpen={gameStatus === 'picking-element'}
                 unlockedElements={new Set(localPlayer.unlockedElements)}
