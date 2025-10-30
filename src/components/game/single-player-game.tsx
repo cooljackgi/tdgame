@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PoisonCloud } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PoisonCloud, DoTEffect, AuraBuffs, DamageApplicationResult } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -15,7 +15,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
-import { onGameEnd, processAttack } from '@/lib/game-logic';
+import { onGameEnd, processAttack, tickDots } from '@/lib/game-logic';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -538,201 +538,137 @@ export default function SinglePlayerGame({
             let allNewAttacks: Attack[] = [];
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
-            let allNewLifeGainVfx: LifeGainVfx[] = [];
-            let newPoisonClouds: PoisonCloud[] = [];
             let firingIds = new Set<string>();
             let resourcesGainedThisTick = 0;
-            let livesGainedThisTick = 0;
             let killedThisTick = 0;
-            let newGravityWells: GravityWell[] = [];
+            
 
             const towers = Object.values(towersByCellRef.current);
-            const auraTowers = towers.filter(t => t.effect?.type === 'aura');
             
-            const currentBuffedTowerIds = new Set<string>();
-            if (auraTowers.length > 0) {
-                towers.forEach(tower => {
-                  if (tower.effect?.type === 'aura') return;
-                  for (const auraTower of auraTowers) {
-                    const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-                    if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
-                      currentBuffedTowerIds.add(tower.id);
-                      break;
-                    }
-                  }
-                });
-            }
-
             for (const tower of towers) {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
-                    const isBuffed = currentBuffedTowerIds.has(tower.id);
-                    let targets: Enemy[] = [];
-
-                    if (tower.effect?.type === 'multishot' && tower.effect.targets) {
-                        const potentialTargets = currentEnemies.filter(enemy => {
-                            if (enemy.deathTimestamp) return false;
-                            const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                            return distSq <= tower.range * tower.range;
-                        }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, tower.effect.targets);
-                        targets.push(...potentialTargets);
-                    } else {
-                        let target: Enemy | null = null;
-                        let minDistanceSq = tower.range * tower.range;
-                        currentEnemies.forEach(enemy => {
-                            if (enemy.deathTimestamp) return; // Ignore dying enemies
-                            const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                            if (distSq <= minDistanceSq) {
-                                minDistanceSq = distSq;
-                                target = enemy;
-                            }
-                        });
-                        if (target) targets.push(target);
-                    }
+                    let target: Enemy | null = null;
+                    let minDistanceSq = tower.range * tower.range;
+                    currentEnemies.forEach(enemy => {
+                        if (enemy.deathTimestamp) return;
+                        const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                        if (distSq <= minDistanceSq) {
+                            minDistanceSq = distSq;
+                            target = enemy;
+                        }
+                    });
                     
-                    if (targets.length > 0) {
+                    if (target) {
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
+                        audioManager.playAttackSound(tower.elements[0] || 'neutral', tower.position);
                         
-                        let enemiesForThisTick = [...currentEnemies];
-                        for (const target of targets) {
-                            const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
-                            enemiesForThisTick = result.updatedEnemies;
-                            
-                            allNewAttacks.push(...result.newAttacks);
-                            allNewDamageNumbers.push(...result.damageNumbers);
-                            allNewSplashRings.push(...result.splashRings);
-                            allNewLifeGainVfx.push(...result.lifeGainVfx);
-                            if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
+                        const attackContext: Attack = {
+                            id: crypto.randomUUID(),
+                            towerId: tower.id,
+                            targetId: target.id,
+                            targetPosition: target.position,
+                            elements: tower.elements,
+                            projectile: tower.specId.includes('-1a') || tower.specId.includes('-2a') ? 'arrow' : 'beam',
+                            baseDamage: tower.damage,
+                            critChance: tower.effect?.type === 'crit' ? tower.effect.chance : 0,
+                            critMult: tower.effect?.type === 'crit' ? tower.effect.potency : 2,
+                            dots: tower.effect?.type === 'burn' ? [{ id: `dot-${now}`, sourceId: tower.id, type: 'burn', startTime: now, durationMs: tower.effect.duration || 3000, remainingMs: tower.effect.duration || 3000, tickMs: 1000, flatPerTick: tower.effect.potency }] : undefined,
+                        };
+                        
+                        allNewAttacks.push(attackContext);
 
-                            if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
-                            if (result.killed > 0) killedThisTick += result.killed;
-                            if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
-                            
-                            if (tower.effect?.type === 'pull' && tower.effect.radius && tower.effect.duration && tower.effect.potency) {
-                                newGravityWells.push({
-                                    id: `well-${now}`,
-                                    x: target.position.col,
-                                    y: target.position.row,
-                                    radius: tower.effect.radius,
-                                    potency: tower.effect.potency,
-                                    expires: now + tower.effect.duration
-                                });
-                            }
+                        const auras: AuraBuffs | null = null; // Simplified for SP
+                        const result = processAttack(tower.id, target, attackContext, auras);
+
+                        allNewDamageNumbers.push({
+                            id: crypto.randomUUID(),
+                            amount: result.immediateDamage,
+                            targetId: target.id,
+                            isCrit: result.crit,
+                            color: result.crit ? '#facc15' : '#fff',
+                        } as DamageNumber);
+                        
+                        const enemyIndex = currentEnemies.findIndex(e => e.id === target!.id);
+                        if (enemyIndex !== -1) {
+                           currentEnemies[enemyIndex] = {
+                               ...currentEnemies[enemyIndex],
+                               ...target // Health updated by processAttack
+                           };
+                           if(result.killed) {
+                               resourcesGainedThisTick += currentEnemies[enemyIndex].bounty;
+                               killedThisTick++;
+                           }
                         }
-                        currentEnemies = enemiesForThisTick;
                     }
                 }
             }
 
             if (firingIds.size > 0) setFiringTowerIds(firingIds);
-            if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
-            if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
-            if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
-            if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
-
+            gameBoardRef.current?.queueAttacks(allNewAttacks);
+            gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+            
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
-            const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
-            const activePoisonClouds = [...poisonCloudsRef.current.filter(c => c.expires > now), ...newPoisonClouds];
             
             for (let enemy of currentEnemies) {
+              if (enemy.health <= 0 && !enemy.deathTimestamp) {
+                  enemy.deathTimestamp = now;
+              }
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                 audioManager.playVibration('kill');
                 audioManager.playSfx('enemy_die', 0.4);
                 continue;
               }
-
               if (enemy.deathTimestamp) {
                 nextEnemies.push(enemy);
                 continue;
               }
               
-              let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
-
-              for (const cloud of activePoisonClouds) {
-                const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
-                if (distSq <= cloud.radius ** 2) {
-                    const existingPoison = updatedEnemy.effects.find(e => e.type === 'poison');
-                    if (!existingPoison) {
-                        updatedEnemy.effects.push({
-                            type: 'poison',
-                            expires: now + cloud.duration,
-                            potency: cloud.potency,
-                            duration: cloud.duration,
-                            lastTick: now,
-                        });
-                    }
-                }
+              const dotResult = tickDots(enemy, delta);
+              if (dotResult.totalDamage > 0) {
+                gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'} as DamageNumber]);
+              }
+              if (dotResult.killed && !enemy.deathTimestamp) {
+                enemy.deathTimestamp = now;
+              }
+              if (enemy.deathTimestamp) {
+                nextEnemies.push(enemy);
+                continue;
               }
 
-              const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
-                const effect = updatedEnemy!.effects.find(e => e.type === type);
-                if (effect && (!effect.lastTick || now - effect.lastTick >= 1000)) {
-                    const damage = effect.potency ?? 0;
-                    updatedEnemy!.health -= damage;
-                    effect.lastTick = now;
-                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
-                    if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
-                      updatedEnemy!.deathTimestamp = now;
-                    }
-                }
-              }
-
-              processDoTEffect('burn', '#f97316');
-              processDoTEffect('poison', '#22c55e');
-
-              const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
+              const stunEffect = enemy.effects.find(e => e.type === 'stun' && e.expires > now);
               if (stunEffect) {
-                  nextEnemies.push(updatedEnemy);
+                  nextEnemies.push(enemy);
                   continue;
               }
                 
-              for (const well of activeGravityWells) {
-                  const dx = well.x - updatedEnemy.position.col;
-                  const dy = well.y - updatedEnemy.position.row;
-                  const distSq = dx * dx + dy * dy;
-                  if (distSq <= well.radius * well.radius) {
-                      const dist = Math.sqrt(distSq);
-                      if (dist > 0.1) {
-                          const pullStrength = well.potency;
-                          updatedEnemy.vx += (dx / dist) * pullStrength * (delta / 1000);
-                          updatedEnemy.vy += (dy / dist) * pullStrength * (delta / 1000);
-                      }
-                  }
-              }
-
-              const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
-              const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+              const slowEffect = enemy.effects.find(e => e.type === 'slow' && e.expires > now);
+              const speed = enemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
               const stepMs = 1000 / Math.max(0.001, speed);
               
-              let timeToMove = now - updatedEnemy.lastMove;
+              let timeToMove = now - enemy.lastMove;
               
               while (timeToMove >= stepMs) {
-                  if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
-                      updatedEnemy.pathIndex += 1;
-                      updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
+                  if (enemy.pathIndex < enemy.path.length - 1) {
+                      enemy.pathIndex += 1;
+                      enemy.position = enemy.path[enemy.pathIndex];
                       timeToMove -= stepMs;
-                      updatedEnemy.lastMove += stepMs;
+                      enemy.lastMove += stepMs;
                   } else {
                       livesLostThisTick++;
                       audioManager.playSfx('enemy_leak', 0.5);
-                      updatedEnemy = null;
+                      enemy.health = -1; // Mark for removal
                       break;
                   }
               }
-              
-               if (updatedEnemy) {
-                 if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
-                      updatedEnemy.deathTimestamp = now;
-                 }
-                 nextEnemies.push(updatedEnemy);
-               }
+              if (enemy.health > 0) {
+                nextEnemies.push(enemy);
+              }
             }
             
             setEnemies(nextEnemies);
-            setGravityWells(activeGravityWells);
-            setPoisonClouds(activePoisonClouds);
-
+            
             if (livesLostThisTick > 0) {
                 setTotalLeaked(prev => prev + livesLostThisTick);
                 setGameState(prev => {
@@ -741,9 +677,7 @@ export default function SinglePlayerGame({
                     return { ...prev, lives: newLives };
                 });
             }
-             if (livesGainedThisTick > 0) {
-                setGameState(prev => ({ ...prev, lives: prev.lives + livesGainedThisTick }));
-            }
+            
             if (resourcesGainedThisTick > 0) {
                 setTotalKilled(prev => prev + killedThisTick);
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);

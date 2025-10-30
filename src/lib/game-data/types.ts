@@ -115,6 +115,14 @@ export type Attack = {
   chainSourceId?: string;
   // VFX Pool properties
   active?: boolean;
+  
+  // Properties for new damage pipeline
+  baseDamage: number;
+  critChance?: number;
+  critMult?: number;
+  vulnerabilityPct?: number;
+  armorPenFlat?: number;
+  dots?: DoTEffect[];
 };
 
 export type DamageNumber = {
@@ -162,6 +170,26 @@ export type EnemyStatusEffect = {
   radius?: number;
 };
 
+// New types for the damage pipeline
+export type Debuffs = {
+    vulnerabilityPct?: number;
+    armorReductionFlat?: number;
+};
+
+export type DoTEffect = {
+    id: string;
+    sourceId: string; // ID of tower/ability that applied it
+    type: 'burn' | 'poison';
+    startTime: number;
+    durationMs: number;
+    remainingMs: number;
+    tickMs: number;
+    flatPerTick?: number;
+    scalePctOfHit?: number;
+    critScaled?: boolean;
+    snapshotted?: boolean;
+};
+
 export type Enemy = {
   id: string;
   type: EnemyType;
@@ -175,7 +203,9 @@ export type Enemy = {
   pathIndex: number;
   position: { row: number; col: number };
   isBlocked: boolean;
-  effects: EnemyStatusEffect[];
+  effects: EnemyStatusEffect[]; // Old system, to be phased out
+  activeDots?: DoTEffect[];
+  debuffs?: Debuffs;
   lastMove: number;
   wasHit: boolean;
   targetNode: Node;
@@ -256,3 +286,20 @@ export type RequestPayload = {
 };
 
 export type RequestResolve = { id: string; result: 'accepted' | 'declined'; by: 'player1'|'player2'; at: number };
+
+
+// -- New Types for Damage Pipeline ---
+
+export type AuraBuffs = {
+    damageFlat?: number;
+    damageMult?: number;
+};
+
+export type DamageApplicationResult = {
+    immediateDamage: number;
+    crit: boolean;
+    vulnerabilityAppliedPct: number;
+    effectiveArmor: number;
+    dotsApplied: DoTEffect[];
+    killed: boolean;
+};
