@@ -25,6 +25,7 @@ import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { processAttack, tickDots } from '@/lib/game-logic';
 import { onGameEnd } from '@/lib/game-end';
+import type { GameBoardHandle } from './game-board';
 
 
 export default function CoopGameLoader() {
