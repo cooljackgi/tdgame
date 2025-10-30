@@ -1,6 +1,6 @@
 // src/components/explainer/vfx-renderer.ts
 
-import type { Tower, SplashRing, Element, Attack, PoisonCloud } from '@/lib/game-data/types';
+import type { Tower, SplashRing, Element, Attack, PoisonCloud, PersistentCloudEffect, PersistentCloud } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 
 const CELL_SIZE = 64;
@@ -273,32 +273,98 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
     ctx.restore();
 }
 
-export function drawPoisonCloud(ctx: CanvasRenderingContext2D, cloud: PoisonCloud, now: number) {
+export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: PersistentCloud, now: number) {
     const pos = { x: cloud.x * CELL_SIZE, y: cloud.y * CELL_SIZE };
     const maxRadius = cloud.radius * CELL_SIZE;
-    const lifetime = cloud.duration; // Use the poison duration for the cloud's visual lifetime for now
+    const lifetime = cloud.duration; // Use the effect duration for visual lifetime
     const t = 1 - Math.max(0, (cloud.expires - now) / lifetime);
-
+    
     ctx.save();
     
-    const bubbles = 15 + Math.floor(cloud.radius * 5);
-    for(let i=0; i<bubbles; i++) {
-        // Hash the ID to get a stable random seed for this cloud
-        const idHash = (cloud.id.charCodeAt(i % cloud.id.length) + i);
-        const angle = (idHash / 255) * 360 + (i * 360 / bubbles) + now * 0.01;
-        const rad = angle * Math.PI / 180;
-        const dist = (Math.sin(idHash) * 0.5 + 0.5) * maxRadius * 0.9;
-        const size = (2 + Math.sin(now * 0.002 + idHash) * 1.5) * 3.5;
-        const alpha = (0.1 + Math.sin(now * 0.001 + idHash) * 0.05) * (1 - t);
+    // Hash the ID to get a stable random seed for this cloud
+    const hashStr = (s: string) => {
+        let h = 2166136261 >>> 0;
+        for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
+        return h >>> 0;
+    };
+    const rngFactory = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 
-        ctx.fillStyle = `hsla(140, 70%, 35%, ${alpha})`;
+    if (cloud.effectType === 'poison') {
+        const rng = rngFactory(hashStr(cloud.id));
+        const bubbleCount = 10 + Math.floor(rng() * 6);
+        const drift = 0.15 + 0.1 * Math.sin(now * 0.001);
+
+        for (let i = 0; i < bubbleCount; i++) {
+            const baseAngle = rng() * Math.PI * 2;
+            const ring = 0.15 + 0.75 * rng();
+            const pathR = maxRadius * ring;
+            const r = 2 + 4 * rng();
+            const speed = 12 + 24 * rng();
+            const phase = rng() * 5000;
+            const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
+            const rise = -prog + maxRadius * 0.8;
+            const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
+            const x = pos.x + Math.cos(baseAngle + wobble) * pathR * (1 + 0.15 * drift);
+            const y = pos.y + Math.sin(baseAngle + wobble) * pathR + rise;
+            if (Math.hypot(x - pos.x, y - pos.y) > maxRadius) continue;
+            
+            const toTop = (pos.y - y + maxRadius) / (2 * maxRadius);
+            const a = Math.max(0, Math.min(1, 0.35 * t * (0.5 + 0.5 * toTop)));
+            
+            ctx.save();
+            ctx.globalAlpha = a;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(209,250,229,0.18)';
+            ctx.fill();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(34,197,94,0.55)';
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x - r * 0.35, y - r * 0.45, r * 0.25, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.fill();
+            ctx.restore();
+        }
+    } else if (cloud.effectType === 'slow') {
+        const center = pos;
+        const radiusPx = maxRadius;
+        
+        const remaining = Math.max(0, cloud.expires - now);
+        const cloudLifetime = 10000; // Cloud lingers for 10s
+        const fadeT = 1 - Math.max(0, (cloud.expires - now) / cloudLifetime);
+
+
+        const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * (1 - fadeT)));
+        const grad = ctx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
+        grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * (1 - fadeT)})`);
+        grad.addColorStop(1, `rgba(56, 189, 248, 0)`);
+        
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+        ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
         ctx.fill();
-    }
+        
+        const rng = rngFactory(hashStr(cloud.id));
+        const particleCount = 15 + Math.floor(rng() * 8);
 
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (rng() * 360) + (now * 0.01);
+            const rad = angle * Math.PI / 180;
+            const dist = rng() * radiusPx;
+            const size = 1 + rng() * 2;
+            const alpha = (0.1 + rng() * 0.2) * (1-fadeT);
+
+            ctx.fillStyle = `rgba(180, 220, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(center.x + Math.cos(rad) * dist, center.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
     ctx.restore();
 }
+
 
 type DemoAttack = {
   id: string;
@@ -310,4 +376,3 @@ type DemoAttack = {
   projectile: 'beam' | 'arrow' | 'chain';
   elements: Tower['elements'];
 };
-

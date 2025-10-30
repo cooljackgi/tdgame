@@ -1,5 +1,3 @@
-
-
 // src/components/game/Enemy.tsx
 "use client";
 
