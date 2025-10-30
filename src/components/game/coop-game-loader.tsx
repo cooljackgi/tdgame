@@ -25,7 +25,8 @@ import type { GameBoardHandle } from './game-board';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
-import { onGameEnd, processAttack, tickDots } from '@/lib/game-logic';
+import { processAttack, tickDots } from '@/lib/game-logic';
+import { onGameEnd } from '@/lib/game-end';
 
 
 export default function CoopGameLoader() {
@@ -732,14 +733,11 @@ export default function CoopGameLoader() {
               }
           }
           
-          if (firingIds.size > 0) {
-            setFiringTowerIds(firingIds);
-            setTimeout(() => setFiringTowerIds(new Set()), 150);
-          }
-          gameBoardRef.current?.queueAttacks(allNewAttacks);
-          gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
-          gameBoardRef.current?.queueSplashRings(allNewSplashRings);
-          gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
+          if (firingIds.size > 0) setFiringTowerIds(firingIds);
+          if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
+          if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+          if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+          if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
 
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
@@ -849,7 +847,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave]);
 
 
   const toggleMute = () => {
@@ -885,8 +883,8 @@ export default function CoopGameLoader() {
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies} 
-                    damageNumbers={[]} 
-                    splashRings={[]}
+                    damageNumbers={damageNumbers} 
+                    splashRings={splashRings}
                     poisonClouds={poisonClouds}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}

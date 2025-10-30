@@ -128,8 +128,8 @@ export type Attack = {
 export type DamageNumber = {
   id: string;
   amount: number;
-  targetId: string;
-  position: { row: number; col: number };
+  targetId?: string;
+  position?: { row: number; col: number };
   color: string;
   isCrit?: boolean;
   // VFX Pool properties
@@ -149,8 +149,8 @@ export type SplashRing = {
     r: number;
     color: string;
     element: Element;
-    start: number;
-    life: number;
+    start?: number;
+    life?: number;
     vfxType?: SplashRingVfxType;
     // VFX Pool properties
     active?: boolean;
