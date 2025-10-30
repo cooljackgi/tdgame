@@ -287,6 +287,11 @@ export type RequestPayload = {
 
 export type RequestResolve = { id: string; result: 'accepted' | 'declined'; by: 'player1'|'player2'; at: number };
 
+// --- NEW AUDIO SYNC ---
+export type SoundEvent =
+  | { kind: 'attack'; element: Element; pitch?: number; x: number; y: number, towerId?: string; }
+  | { kind: 'sfx'; name: 'enemy_die' | 'enemy_leak' | 'build_tower' | 'upgrade_tower' | 'sell_tower' | 'ui_click' | 'wave_start'; x?: number; y?: number };
+
 
 // -- New Types for Damage Pipeline ---
 
@@ -313,8 +318,8 @@ export type ProcessAttackResult = {
   lifeGainVfx: LifeGainVfx[];       // Heil-/Leech-VFX
   newPoisonClouds: PoisonCloud[];   // persistente Giftwolken
   newGravityWells: GravityWell[];   // Gravitations-Felder
+  soundEvents: SoundEvent[];      // Audio Events
   resourcesGained: number;          // Gold/Essenz etc. in diesem Tick
   livesGained: number;              // ggf. Lifegain aufs Spielerleben
   killed: number;                   // in diesem Angriff getötete Gegner
 };
-

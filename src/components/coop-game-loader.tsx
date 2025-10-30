@@ -76,7 +76,7 @@ export default function CoopGameLoader() {
     const p = players.find(p => p.id === localPlayerId);
     if (p) return p;
     // Fallback (verhindert Crashes in Kindkomponenten)
-    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'], incomePerSecond: 1 } : null;
+    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'], incomePerSecond: 5 } : null;
   }, [players, localPlayerId]);
 
 

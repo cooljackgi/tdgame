@@ -1,27 +1,18 @@
 
 'use client';
 
-import type { Element, Node } from '@/lib/game-data/types';
+import type { Element, Node, SoundEvent } from '@/lib/game-data/types';
 import { GRID_COLS } from '@/lib/game-data/constants';
 
 const audioBufferCache = new Map<string, AudioBuffer>();
-let audioContext: AudioContext | null = null;
 let hapticsPrimed = false;
 let lastVibeAt = 0;
-
-function getAudioContext(): AudioContext {
-    if (!audioContext || audioContext.state === 'closed') {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    return audioContext;
-}
 
 function canVibrate(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 }
 
-
-async function loadAudioFile(url: string): Promise<AudioBuffer> {
+async function loadAudioFile(ctx: AudioContext, url: string): Promise<AudioBuffer> {
     if (audioBufferCache.has(url)) {
         return audioBufferCache.get(url)!;
     }
@@ -29,7 +20,7 @@ async function loadAudioFile(url: string): Promise<AudioBuffer> {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`Failed to fetch audio file: ${url}`);
         const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await getAudioContext().decodeAudioData(arrayBuffer);
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
         audioBufferCache.set(url, audioBuffer);
         return audioBuffer;
     } catch (error) {
@@ -39,7 +30,7 @@ async function loadAudioFile(url: string): Promise<AudioBuffer> {
 }
 
 // Sound effect mapping
-const SFX_FILES: Record<string, string> = {
+const SFX_FILES: Record<SoundEvent['kind'] extends 'sfx' ? SoundEvent['name'] : never, string> = {
     'build_tower': 'build.wav',
     'upgrade_tower': 'upgrade.wav',
     'sell_tower': 'sell.wav',
@@ -58,17 +49,14 @@ const VIBRATION_PATTERNS: Record<string, number | number[]> = {
     'click': 15,
 };
 
-// Based on user's detailed specification
 type SoundSettings = {
     wave: OscillatorType;
     baseFreq: number;
     vol: number;
-    // ADSR
     attack: number;
     decay: number;
     sustain: number;
     release: number;
-    // Layering
     noise?: { type: 'bandpass' | 'highpass', freq: number, q: number };
     pitchDrop?: boolean;
 };
@@ -85,23 +73,40 @@ const ELEMENT_SOUNDS: Record<Element, SoundSettings> = {
 };
 
 class AudioManager {
+    private ctx: AudioContext | null = null;
+    private unlocked = false;
     private musicSource: AudioBufferSourceNode | null = null;
     private musicGainNode: GainNode | null = null;
-    private isInitialized = false;
     public isMuted = false;
 
     public async init() {
-        if (this.isInitialized) return;
-        const ctx = getAudioContext();
-        if (ctx.state === 'suspended') {
-            await ctx.resume();
-        }
-        this.isInitialized = true;
-        console.log("Audio Manager Initialized.");
+        if (this.ctx) return;
+        this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        const unlock = async () => {
+            if (!this.ctx || this.unlocked) return;
+            if (this.ctx.state === 'suspended') {
+                await this.ctx.resume();
+            }
+            this.unlocked = this.ctx.state === 'running';
+            if (this.unlocked) {
+                console.log("AudioContext unlocked and running.");
+                window.removeEventListener('pointerdown', unlock);
+                window.removeEventListener('keydown', unlock);
+            }
+        };
+
+        window.addEventListener('pointerdown', unlock, { once: true });
+        window.addEventListener('keydown', unlock, { once: true });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') this.ctx?.resume();
+        });
+
+        // Initial attempt to unlock
+        unlock();
     }
     
     public primeHaptics() {
-      // aus einer echten User-Geste (Tap/Click) aufrufen!
       hapticsPrimed = true;
     }
 
@@ -121,7 +126,7 @@ class AudioManager {
       if (this.isMuted || !canVibrate() || !hapticsPrimed) return;
 
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      if (now - lastVibeAt < 60) return; // kleines Rate-Limit, damit Chrome nicht „stumm“ schaltet
+      if (now - lastVibeAt < 60) return;
 
       const pattern = VIBRATION_PATTERNS[patternName];
       if (pattern) {
@@ -129,25 +134,33 @@ class AudioManager {
         navigator.vibrate(pattern);
       }
     }
+    
+    public play(event: SoundEvent) {
+        if (!this.ctx) this.init();
+        if (!this.ctx || this.ctx.state !== 'running' || this.isMuted) return;
+
+        if(event.kind === 'attack') {
+            this.playAttackSound(event.element, {row: event.y, col: event.x});
+        } else if (event.kind === 'sfx') {
+            this.playSfx(event.name);
+            if (event.name === 'enemy_die') this.playVibration('kill');
+            if (event.name === 'enemy_leak') this.playVibration('leak');
+        }
+    }
 
 
-    public playAttackSound(element: Element, position: Node) {
-        if (!this.isInitialized || this.isMuted) return;
-
-        const ctx = getAudioContext();
-        const now = ctx.currentTime;
-
+    private playAttackSound(element: Element, position: Node) {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
         const settings = ELEMENT_SOUNDS[element] || ELEMENT_SOUNDS.neutral;
         const totalDuration = settings.attack + settings.decay + settings.release;
 
-        // Create main Gain and Panner nodes
-        const mainGain = ctx.createGain();
-        const panner = ctx.createStereoPanner();
+        const mainGain = this.ctx.createGain();
+        const panner = this.ctx.createStereoPanner();
         panner.pan.value = ((position.col / GRID_COLS) - 0.5) * 1.8;
-        mainGain.connect(panner).connect(ctx.destination);
+        mainGain.connect(panner).connect(this.ctx.destination);
 
-        // --- Create Oscillator ---
-        const osc = ctx.createOscillator();
+        const osc = this.ctx.createOscillator();
         osc.type = settings.wave;
         osc.frequency.setValueAtTime(settings.baseFreq, now);
         osc.detune.setValueAtTime((Math.random() - 0.5) * 100, now);
@@ -156,55 +169,49 @@ class AudioManager {
             osc.frequency.setValueAtTime(settings.baseFreq * 1.5, now);
             osc.frequency.exponentialRampToValueAtTime(settings.baseFreq, now + totalDuration * 0.8);
         }
-
         osc.connect(mainGain);
         
-        // --- Create Noise Layer (if applicable) ---
         if (settings.noise) {
-            const noise = ctx.createBufferSource();
-            const bufferSize = ctx.sampleRate * 0.2;
-            const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const noise = this.ctx.createBufferSource();
+            const bufferSize = this.ctx.sampleRate * 0.2;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
             noise.buffer = buffer;
-
-            const filter = ctx.createBiquadFilter();
+            const filter = this.ctx.createBiquadFilter();
             filter.type = settings.noise.type;
             filter.frequency.value = settings.noise.freq;
             filter.Q.value = settings.noise.q;
-
             noise.connect(filter).connect(mainGain);
             noise.start(now);
             noise.stop(now + totalDuration);
         }
 
-        // --- Apply ADSR Envelope to the main gain node ---
         mainGain.gain.setValueAtTime(0, now);
         mainGain.gain.linearRampToValueAtTime(settings.vol, now + settings.attack);
         if (settings.sustain > 0) {
             mainGain.gain.linearRampToValueAtTime(settings.vol * settings.sustain, now + settings.attack + settings.decay);
-            mainGain.gain.setTargetAtTime(0, now + settings.attack + settings.decay, settings.release / 3); // Exponential-like release
+            mainGain.gain.setTargetAtTime(0, now + settings.attack + settings.decay, settings.release / 3);
         } else {
-            mainGain.gain.exponentialRampToValueAtTime(0.0001, now + settings.attack + settings.decay + settings.release);
+            mainGain.gain.exponentialRampToValueAtTime(0.0001, now + totalDuration);
         }
 
-        // Start and stop the main oscillator
         osc.start(now);
         osc.stop(now + totalDuration);
     }
     
-    public playSfx(sfxName: keyof typeof SFX_FILES, volume = 0.5) {
-        if (!this.isInitialized || this.isMuted) return;
+    private playSfx(sfxName: SoundEvent['kind'] extends 'sfx' ? SoundEvent['name'] : never, volume = 0.5) {
+        if (!this.ctx) return;
         const filename = SFX_FILES[sfxName];
         if (!filename) return;
 
-        loadAudioFile(`/audio/sfx/${filename}`).then(buffer => {
-            const ctx = getAudioContext();
-            const source = ctx.createBufferSource();
+        loadAudioFile(this.ctx, `/audio/sfx/${filename}`).then(buffer => {
+            if (!this.ctx) return;
+            const source = this.ctx.createBufferSource();
             source.buffer = buffer;
-            const gainNode = ctx.createGain();
-            gainNode.gain.setValueAtTime(volume, ctx.currentTime);
-            source.connect(gainNode).connect(ctx.destination);
+            const gainNode = this.ctx.createGain();
+            gainNode.gain.setValueAtTime(volume, this.ctx.currentTime);
+            source.connect(gainNode).connect(this.ctx.destination);
             source.start();
         }).catch(err => {});
     }

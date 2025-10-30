@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PoisonCloud } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PoisonCloud, SoundEvent } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -113,14 +113,8 @@ export default function SinglePlayerGame({
     useEffect(() => { poisonCloudsRef.current = poisonClouds; }, [poisonClouds]);
 
     useEffect(() => {
-        const onFirstPointer = async () => {
-            try {
-                await audioManager.init(); // AudioContext unlock
-                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
-            } catch {}
-            window.removeEventListener('pointerdown', onFirstPointer);
-            window.removeEventListener('touchstart', onFirstPointer);
-        };
+        audioManager.init();
+        const onFirstPointer = () => audioManager.primeHaptics();
         window.addEventListener('pointerdown', onFirstPointer, { once: true });
         window.addEventListener('touchstart', onFirstPointer, { once: true });
         return () => {
@@ -263,7 +257,7 @@ export default function SinglePlayerGame({
         const waveData = waves[currentWaveRef.current];
         if (!waveData) return;
         
-        audioManager.playSfx('wave_start', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'wave_start' });
         audioManager.playWaveMusic();
         const difficultyMod = difficultyModifiers[difficultyRef.current];
         const enemiesToSpawn = Array.from({ length: waveData.enemies.count }).map((_, i) => {
@@ -333,7 +327,7 @@ export default function SinglePlayerGame({
             return;
         }
         
-        audioManager.playSfx('build_tower', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'build_tower' });
         const newTower: PlacedTower = {
             ...towerSpec,
             id: `tower-${row}-${col}-${Date.now()}`,
@@ -369,7 +363,7 @@ export default function SinglePlayerGame({
             return;
         }
 
-        audioManager.playSfx('upgrade_tower', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
         const newPlacedTower: PlacedTower = { 
             ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth, id: focusedTower.id 
         };
@@ -385,7 +379,7 @@ export default function SinglePlayerGame({
         const player = localPlayerRef.current;
         if (!player || !focusedTower) return;
         
-        audioManager.playSfx('sell_tower', 0.5);
+        audioManager.play({ kind: 'sfx', name: 'sell_tower' });
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const refund = Math.round(focusedTower.cost * refundPercentage);
@@ -396,7 +390,7 @@ export default function SinglePlayerGame({
     }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
-        audioManager.playSfx('upgrade_tower', 0.8);
+        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
         setPlayers(prev => [{ ...prev[0], unlockedElements: Array.from(new Set([...prev[0].unlockedElements, element])) }]);
         setCurrentWave(prev => prev + 1);
         setIsIntermission(true);
@@ -417,7 +411,7 @@ export default function SinglePlayerGame({
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
         setSelectedTowerToBuild(tower);
-        audioManager.playSfx('ui_click', 0.7);
+        audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, []);
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
@@ -592,7 +586,6 @@ export default function SinglePlayerGame({
                     if (targets.length > 0) {
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
-                        audioManager.playAttackSound(tower.elements[0], tower.position);
                         
                         let enemiesForThisTick = [...currentEnemies];
                         for (const target of targets) {
@@ -603,6 +596,7 @@ export default function SinglePlayerGame({
                             allNewDamageNumbers.push(...result.damageNumbers);
                             allNewSplashRings.push(...result.splashRings);
                             allNewLifeGainVfx.push(...result.lifeGainVfx);
+                            result.soundEvents.forEach(ev => audioManager.play(ev));
                             if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
                             if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
@@ -629,7 +623,7 @@ export default function SinglePlayerGame({
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                 audioManager.playVibration('kill');
-                audioManager.playSfx('enemy_die', 0.4);
+                audioManager.play({ kind: 'sfx', name: 'enemy_die' });
                 continue;
               }
 
@@ -640,16 +634,40 @@ export default function SinglePlayerGame({
               
               let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-              const dotResult = tickDots(updatedEnemy, delta);
-              if (dotResult.totalDamage > 0) {
-                  gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'} as DamageNumber]);
-              }
-              if (dotResult.killed && !updatedEnemy.deathTimestamp) {
-                  updatedEnemy.deathTimestamp = now;
+              for (const cloud of activePoisonClouds) {
+                const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
+                if (distSq <= cloud.radius ** 2) {
+                    const existingPoison = updatedEnemy.effects.find(e => e.type === 'poison');
+                    if (!existingPoison) {
+                        updatedEnemy.effects.push({
+                            type: 'poison',
+                            expires: now + cloud.duration,
+                            potency: cloud.potency,
+                            duration: cloud.duration,
+                            lastTick: now,
+                        });
+                    }
+                }
               }
 
+              const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
+                const effect = updatedEnemy!.effects.find(e => e.type === type);
+                if (effect && (!effect.lastTick || now - effect.lastTick >= 1000)) {
+                    const damage = effect.potency ?? 0;
+                    updatedEnemy!.health -= damage;
+                    effect.lastTick = now;
+                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
+                    if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
+                      updatedEnemy!.deathTimestamp = now;
+                    }
+                }
+              }
+
+              processDoTEffect('burn', '#f97316');
+              processDoTEffect('poison', '#22c55e');
+
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-              if (stunEffect || updatedEnemy.deathTimestamp) {
+              if (stunEffect) {
                   nextEnemies.push(updatedEnemy);
                   continue;
               }
@@ -682,7 +700,7 @@ export default function SinglePlayerGame({
                       updatedEnemy.lastMove += stepMs;
                   } else {
                       livesLostThisTick++;
-                      audioManager.playSfx('enemy_leak', 0.5);
+                      audioManager.play({ kind: 'sfx', name: 'enemy_leak' });
                       updatedEnemy = null;
                       break;
                   }

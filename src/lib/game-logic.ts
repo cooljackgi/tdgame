@@ -1,6 +1,6 @@
 // src/lib/game-logic.ts
 import type {
-  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PoisonCloud, GravityWell
+  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PoisonCloud, GravityWell, SoundEvent
 } from '@/lib/game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors } from '@/lib/game-data/constants';
@@ -40,6 +40,7 @@ export function processAttack(
         lifeGainVfx: [],
         newPoisonClouds: [],
         newGravityWells: [],
+        soundEvents: [],
         resourcesGained: 0,
         livesGained: 0,
         killed: 0,
@@ -49,6 +50,9 @@ export function processAttack(
     if (!currentTarget || currentTarget.deathTimestamp) {
         return output; // Ziel ist bereits tot oder nicht mehr vorhanden
     }
+    
+    output.soundEvents.push({ kind: 'attack', element: tower.elements[0], x: tower.position.col, y: tower.position.row });
+
 
     const { effect } = tower;
     const isCrit = (tower.effect?.type === 'crit' && Math.random() < tower.effect.chance!);
@@ -90,6 +94,7 @@ export function processAttack(
     
     if (killed) {
         currentTarget.deathTimestamp = now;
+        output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: currentTarget.position.col, y: currentTarget.position.row });
         output.resourcesGained += currentTarget.bounty;
         output.killed++;
         if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 1)) {
@@ -134,6 +139,7 @@ export function processAttack(
                     output.damageNumbers.push({ id: crypto.randomUUID(), amount: splashDamageDealt, targetId: enemy.id, color: '#ffc107', isCrit: false });
                     if(splashKilled) {
                         enemy.deathTimestamp = now;
+                        output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: enemy.position.col, y: enemy.position.row });
                         output.resourcesGained += enemy.bounty;
                         output.killed++;
                     }
@@ -165,6 +171,7 @@ export function processAttack(
                 output.damageNumbers.push({ id: crypto.randomUUID(), amount: chainDamageDealt, targetId: nextTarget.id, color: '#2196f3', isCrit: false });
                 if(chainKilled) {
                     nextTarget.deathTimestamp = now;
+                    output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: nextTarget.position.col, y: nextTarget.position.row });
                     output.resourcesGained += nextTarget.bounty;
                     output.killed++;
                 }
