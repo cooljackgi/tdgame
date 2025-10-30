@@ -67,9 +67,6 @@ export type PersistentCloud = {
   expires: number; // When the cloud itself disappears.
 };
 
-// Deprecated, use PersistentCloud
-export type PoisonCloud = PersistentCloud & { effectType: 'poison' };
-
 
 export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison' | 'steam';
 

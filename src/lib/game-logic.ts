@@ -1,7 +1,7 @@
 // src/lib/game-logic.ts
 import type {
-  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PoisonCloud, GravityWell, SoundEvent
-} from '@/lib/game-data/types';
+  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent
+} from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 
@@ -38,7 +38,7 @@ export function processAttack(
         damageNumbers: [],
         splashRings: [],
         lifeGainVfx: [],
-        newPoisonClouds: [],
+        newPersistentClouds: [],
         newGravityWells: [],
         soundEvents: [],
         resourcesGained: 0,
@@ -55,7 +55,7 @@ export function processAttack(
 
 
     const { effect } = tower;
-    const isCrit = (tower.effect?.type === 'crit' && Math.random() < tower.effect.chance!);
+    const isCrit = (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0));
     const critMultiplier = isCrit ? (tower.effect?.potency ?? 2) : 1;
     
     let damageAmount = tower.damage * (isBuffed ? 1.15 : 1) * critMultiplier;
@@ -195,8 +195,9 @@ export function processAttack(
     
     // --- SPECIAL CASE: Persistent Cloud ---
     if (effect?.type === 'persistent_cloud' && effect.radius && effect.duration && effect.potency) {
-         output.newPoisonClouds.push({
+         output.newPersistentClouds.push({
             id: `cloud-${tower.id}-${now}`,
+            effectType: effect.cloudEffect || 'slow',
             x: currentTarget.position.col,
             y: currentTarget.position.row,
             radius: effect.radius,
