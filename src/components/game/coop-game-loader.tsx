@@ -20,6 +20,7 @@ import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
+import { waves } from '@/lib/game-data/enemies';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
@@ -939,7 +940,7 @@ export default function CoopGameLoader() {
                 isWsConnected={isConnected} 
                 onPing={sendPing}
                 hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                hostBytesSentPerSecond={stats.sentBytesPerSecond}
+                hostBytesSentPerSecond={stats.sentBytesSentPerSecond}
                 clientPacketsPerSecond={stats.packetsPerSecond}
                 clientBytesReceivedPerSecond={stats.bytesPerSecond}
                 averagePacketSize={stats.averagePacketSize}
