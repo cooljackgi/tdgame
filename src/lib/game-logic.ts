@@ -40,8 +40,8 @@ export async function onGameEnd(
 
 
 export type DamagePipelineOpts = {
-  minDamage?: number;             // z.B. 1
-  allowNegativeArmor?: boolean;   // falls true, negative Rüstung erhöht Schaden
+  minDamage?: number;
+  allowNegativeArmor?: boolean;
 };
 
 type ProcessAttackResult = {
@@ -51,6 +51,7 @@ type ProcessAttackResult = {
     splashRings: SplashRing[];
     lifeGainVfx: LifeGainVfx[];
     newPoisonClouds: PoisonCloud[];
+    newGravityWells: GravityWell[];
     resourcesGained: number;
     livesGained: number;
     killed: number;
@@ -72,15 +73,18 @@ export function processAttack(
         splashRings: [],
         lifeGainVfx: [],
         newPoisonClouds: [],
+        newGravityWells: [],
         resourcesGained: 0,
         livesGained: 0,
         killed: 0,
     };
     
-    const applyDamage = (enemy: Enemy, amount: number, isCrit: boolean = false): boolean => {
+    const applyDamage = (enemy: Enemy, amount: number, isCrit: boolean = false, armorPenFlat: number = 0): boolean => {
         if (enemy.deathTimestamp) return false;
         
-        const damageDealt = Math.max(1, amount - enemy.armor);
+        let effectiveArmor = Math.max(0, enemy.armor - armorPenFlat);
+        const damageDealt = Math.max(opts.minDamage ?? 1, Math.floor(amount - effectiveArmor));
+
         enemy.health -= damageDealt;
         enemy.wasHit = true;
 
@@ -107,8 +111,9 @@ export function processAttack(
     const baseDamage = tower.damage * (isBuffed ? 1.15 : 1);
     const isCrit = (effect?.type === 'crit' && Math.random() < (effect.chance ?? 0));
     const critDamage = isCrit ? baseDamage * (effect.potency ?? 2) : baseDamage;
+    const armorPenetration = effect?.type === 'armor_shred' ? critDamage * (effect.potency ?? 0) : 0;
 
-    const killedPrimary = applyDamage(target, critDamage, isCrit);
+    const killedPrimary = applyDamage(target, critDamage, isCrit, armorPenetration);
 
     // --- Process Effects ---
     if (effect && (!effect.chance || Math.random() < effect.chance)) {
@@ -216,6 +221,19 @@ export function processAttack(
                 }
                 break;
             }
+            case 'pull': {
+                 if (effect.radius && effect.duration && effect.potency) {
+                    output.newGravityWells.push({
+                        id: `well-${now}`,
+                        x: target.position.col,
+                        y: target.position.row,
+                        radius: effect.radius,
+                        potency: effect.potency,
+                        expires: now + effect.duration
+                    });
+                }
+                break;
+            }
         }
     }
 
@@ -229,9 +247,10 @@ export function tickDots(target: Enemy, deltaMs: number): { totalDamage: number,
   
   let totalDamage = 0;
   let wasKilled = false;
+  const now = Date.now();
 
   target.effects = target.effects.filter(effect => {
-    if(effect.expires <= Date.now()) return false;
+    if(effect.expires <= now) return false;
 
     if ((effect.type === 'burn' || effect.type === 'poison') && effect.potency) {
       const ticksDue = Math.floor((now - (effect.lastTick || (effect.expires - (effect.duration || 1000)))) / 1000);

@@ -1,4 +1,3 @@
-
 import type { Wave, WaveEnemyData, EnemyType } from './types';
 
 // Diese Formeln dienen jetzt als Basis für die *initiale* Generierung
@@ -11,9 +10,7 @@ export const waveFormulaCoefficients = {
   "count_base": 10,
   "count_increment": 1.5,
   "bounty_base": 10,
-  "bounty_exponent": 1.02,
-  "spawn_delay_base": 8000,
-  "spawn_delay_min": 250
+  "bounty_exponent": 1.02
 };
 
 export function generateProceduralWave(waveNumber: number, formulas: typeof waveFormulaCoefficients): Wave {
@@ -46,9 +43,9 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     const enemies: WaveEnemyData = {
       type: type,
       count: finalCount,
-      spawnDelay: Math.max(f.spawn_delay_min, f.spawn_delay_base / finalCount),
+      spawnDelay: Math.max(200, 3000 / finalCount),
       health: finalHealth,
-      armor: Math.round(finalHealth * params.armorFactor * 0.5), // Reduced armor globally
+      armor: Math.round(finalHealth * params.armorFactor),
       speed: parseFloat((speed * params.speedFactor).toFixed(2)),
       damage: Math.round(finalHealth / 10), // Damage is relative to health
       bounty: Math.round(bounty * params.bountyFactor),
@@ -182,7 +179,7 @@ export let waves: Wave[] = [
       "count": 1,
       "spawnDelay": 8000,
       "health": 2799,
-      "armor": 420,
+      "armor": 119,
       "speed": 1.09,
       "damage": 280,
       "bounty": 92
@@ -312,7 +309,7 @@ export let waves: Wave[] = [
       "count": 2,
       "spawnDelay": 4000,
       "health": 7979,
-      "armor": 1197,
+      "armor": 496,
       "speed": 1.18,
       "damage": 798,
       "bounty": 131
@@ -442,7 +439,7 @@ export let waves: Wave[] = [
       "count": 3,
       "spawnDelay": 2667,
       "health": 28522,
-      "armor": 4278,
+      "armor": 1278,
       "speed": 1.25,
       "damage": 2852,
       "bounty": 142
@@ -572,7 +569,7 @@ export let waves: Wave[] = [
       "count": 4,
       "spawnDelay": 2000,
       "health": 88915,
-      "armor": 13337,
+      "armor": 3337,
       "speed": 1.31,
       "damage": 8892,
       "bounty": 173
@@ -689,7 +686,7 @@ export let waves: Wave[] = [
       "count": 74,
       "spawnDelay": 250,
       "health": 24669,
-      "armor": 1233,
+      "armor": 633,
       "speed": 1.52,
       "damage": 2467,
       "bounty": 31
@@ -709,4 +706,3 @@ export let waves: Wave[] = [
     }
   }
 ];
-
