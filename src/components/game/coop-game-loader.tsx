@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -9,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PoisonCloud, AuraBuffs, DoTEffect, DamageApplicationResult, ProcessAttackResult, SoundEvent } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, AuraBuffs, DoTEffect, DamageApplicationResult, ProcessAttackResult, SoundEvent } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -19,8 +20,6 @@ import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
-import { waves } from '@/lib/game-data/enemies';
-import type { GameBoardHandle } from './game-board';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
@@ -52,7 +51,7 @@ export default function CoopGameLoader() {
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
   const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
-  const [poisonClouds, setPoisonClouds] = useState<PoisonCloud[]>([]);
+  const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
   const [fps, setFps] = useState(0);
 
   
@@ -344,7 +343,7 @@ export default function CoopGameLoader() {
         setTotalKilled(payload.totalKilled);
         setTotalLeaked(payload.totalLeaked);
         setGravityWells(payload.gravityWells || []);
-        setPoisonClouds(payload.poisonClouds || []);
+        setPersistentClouds(payload.persistentClouds || []);
         if (payload.fps !== undefined) setFps(payload.fps);
         break;
       case 'AUDIO_EVENT':
@@ -488,11 +487,11 @@ export default function CoopGameLoader() {
             currentWave, isIntermission, waveStartCountdown, gameStatus,
             totalKilled, totalLeaked,
             gravityWells,
-            poisonClouds,
+            persistentClouds,
             fps,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, poisonClouds, fps]);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, persistentClouds, fps]);
     
     useEffect(() => {
         if (!isGameHost || hostRevision === 0) return;
@@ -639,7 +638,7 @@ export default function CoopGameLoader() {
           let allNewLifeGainVfx: LifeGainVfx[] = [];
           let allSoundEvents: SoundEvent[] = [];
           let newGravityWells: GravityWell[] = [];
-          let newPoisonClouds: PoisonCloud[] = [];
+          let newPersistentClouds: PersistentCloud[] = [];
           
           let currentEnemies = enemies.map(e => ({...e, wasHit: false }));
           
@@ -705,7 +704,7 @@ export default function CoopGameLoader() {
                       allNewSplashRings.push(...result.splashRings);
                       allNewLifeGainVfx.push(...result.lifeGainVfx);
                       allSoundEvents.push(...result.soundEvents);
-                      if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
+                      if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
                       if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                       if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
@@ -746,7 +745,7 @@ export default function CoopGameLoader() {
 
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
-          const activePoisonClouds = [...(poisonClouds || []), ...newPoisonClouds].filter(c => c.expires > now);
+          const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > now);
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
@@ -810,7 +809,7 @@ export default function CoopGameLoader() {
           
           setEnemies(stillAlive);
           setGravityWells(activeGravityWells);
-          setPoisonClouds(activePoisonClouds);
+          setPersistentClouds(activePersistentClouds);
 
           if (livesLostThisTick > 0) {
               setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLostThisTick) }));
@@ -854,7 +853,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, poisonClouds, startWave]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPathRef, players, gravityWells, persistentClouds, startWave]);
 
 
   useEffect(() => {
@@ -906,7 +905,7 @@ export default function CoopGameLoader() {
                 enemies={enemies} 
                 damageNumbers={[]} 
                 splashRings={[]}
-                poisonClouds={poisonClouds}
+                persistentClouds={persistentClouds}
                 currentPath={currentPath} 
                 handlePlaceTower={handlePlaceTower}
                 onFocusTower={onFocusTower} 

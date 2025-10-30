@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PoisonCloud } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -50,7 +50,7 @@ export default function SinglePlayerGame({
     const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
     const [isIntermission, setIsIntermission] = useState(true);
     const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
-    const [poisonClouds, setPoisonClouds] = useState<PoisonCloud[]>([]);
+    const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -97,7 +97,7 @@ export default function SinglePlayerGame({
     const currentPathRef = useRef(currentPath);
     const isIntermissionRef = useRef(isIntermission);
     const gravityWellsRef = useRef(gravityWells);
-    const poisonCloudsRef = useRef(poisonClouds);
+    const persistentCloudsRef = useRef(persistentClouds);
 
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
@@ -110,7 +110,7 @@ export default function SinglePlayerGame({
     useEffect(() => { currentPathRef.current = currentPath; }, [currentPath]);
     useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
     useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
-    useEffect(() => { poisonCloudsRef.current = poisonClouds; }, [poisonClouds]);
+    useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
 
     useEffect(() => {
         const onFirstPointer = async () => {
@@ -263,7 +263,7 @@ export default function SinglePlayerGame({
         const waveData = waves[currentWaveRef.current];
         if (!waveData) return;
         
-        audioManager.playSfx('wave_start', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'wave_start' });
         audioManager.playWaveMusic();
         const difficultyMod = difficultyModifiers[difficultyRef.current];
         const enemiesToSpawn = Array.from({ length: waveData.enemies.count }).map((_, i) => {
@@ -333,7 +333,7 @@ export default function SinglePlayerGame({
             return;
         }
         
-        audioManager.playSfx('build_tower', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'build_tower' });
         const newTower: PlacedTower = {
             ...towerSpec,
             id: `tower-${row}-${col}-${Date.now()}`,
@@ -369,7 +369,7 @@ export default function SinglePlayerGame({
             return;
         }
 
-        audioManager.playSfx('upgrade_tower', 0.6);
+        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
         const newPlacedTower: PlacedTower = { 
             ...focusedTower, ...upgradeTowerSpec, specId: upgradeTowerSpec.id, health: upgradeTowerSpec.maxHealth, id: focusedTower.id 
         };
@@ -385,7 +385,7 @@ export default function SinglePlayerGame({
         const player = localPlayerRef.current;
         if (!player || !focusedTower) return;
         
-        audioManager.playSfx('sell_tower', 0.5);
+        audioManager.play({ kind: 'sfx', name: 'sell_tower' });
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
         const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
         const refund = Math.round(focusedTower.cost * refundPercentage);
@@ -396,7 +396,7 @@ export default function SinglePlayerGame({
     }, [focusedTower]);
     
     const handleElementPick = useCallback((element: Element) => {
-        audioManager.playSfx('upgrade_tower', 0.8);
+        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
         setPlayers(prev => [{ ...prev[0], unlockedElements: Array.from(new Set([...prev[0].unlockedElements, element])) }]);
         setCurrentWave(prev => prev + 1);
         setIsIntermission(true);
@@ -417,7 +417,7 @@ export default function SinglePlayerGame({
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
         setSelectedTowerToBuild(tower);
-        audioManager.playSfx('ui_click', 0.7);
+        audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, []);
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
@@ -539,7 +539,7 @@ export default function SinglePlayerGame({
             let allNewDamageNumbers: DamageNumber[] = [];
             let allNewSplashRings: SplashRing[] = [];
             let allNewLifeGainVfx: LifeGainVfx[] = [];
-            let newPoisonClouds: PoisonCloud[] = [];
+            let newPersistentClouds: PersistentCloud[] = [];
             let firingIds = new Set<string>();
             let resourcesGainedThisTick = 0;
             let livesGainedThisTick = 0;
@@ -602,22 +602,14 @@ export default function SinglePlayerGame({
                             allNewDamageNumbers.push(...result.damageNumbers);
                             allNewSplashRings.push(...result.splashRings);
                             allNewLifeGainVfx.push(...result.lifeGainVfx);
-                            if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
+                            result.soundEvents.forEach(ev => audioManager.play(ev));
+                            if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
+                            if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                             if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
                             if (result.killed > 0) killedThisTick += result.killed;
                             if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
                             
-                            if (tower.effect?.type === 'pull' && tower.effect.radius && tower.effect.duration && tower.effect.potency) {
-                                newGravityWells.push({
-                                    id: `well-${now}`,
-                                    x: target.position.col,
-                                    y: target.position.row,
-                                    radius: tower.effect.radius,
-                                    potency: tower.effect.potency,
-                                    expires: now + tower.effect.duration
-                                });
-                            }
                         }
                         currentEnemies = enemiesForThisTick;
                     }
@@ -633,12 +625,12 @@ export default function SinglePlayerGame({
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
-            const activePoisonClouds = [...poisonCloudsRef.current.filter(w => w.expires > now), ...newPoisonClouds];
+            const activePersistentClouds = [...persistentCloudsRef.current.filter(w => w.expires > now), ...newPersistentClouds];
             
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
                 audioManager.playVibration('kill');
-                audioManager.playSfx('enemy_die', 0.4);
+                audioManager.play({ kind: 'sfx', name: 'enemy_die' });
                 continue;
               }
 
@@ -649,13 +641,13 @@ export default function SinglePlayerGame({
               
               let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-              for (const cloud of activePoisonClouds) {
+              for (const cloud of activePersistentClouds) {
                 const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
                 if (distSq <= cloud.radius ** 2) {
-                    const existingPoison = updatedEnemy.effects.find(e => e.type === 'poison');
-                    if (!existingPoison) {
+                    const existingEffect = updatedEnemy.effects.find(e => e.type === cloud.effectType);
+                    if (!existingEffect) {
                         updatedEnemy.effects.push({
-                            type: 'poison',
+                            type: cloud.effectType,
                             expires: now + cloud.duration,
                             potency: cloud.potency,
                             duration: cloud.duration,
@@ -715,7 +707,7 @@ export default function SinglePlayerGame({
                       updatedEnemy.lastMove += stepMs;
                   } else {
                       livesLostThisTick++;
-                      audioManager.playSfx('enemy_leak', 0.5);
+                      audioManager.play({ kind: 'sfx', name: 'enemy_leak' });
                       updatedEnemy = null;
                       break;
                   }
@@ -731,7 +723,7 @@ export default function SinglePlayerGame({
             
             setEnemies(nextEnemies);
             setGravityWells(activeGravityWells);
-            setPoisonClouds(activePoisonClouds);
+            setPersistentClouds(activePersistentClouds);
 
             if (livesLostThisTick > 0) {
                 setTotalLeaked(prev => prev + livesLostThisTick);
@@ -807,7 +799,7 @@ export default function SinglePlayerGame({
                     enemies={enemies} 
                     damageNumbers={damageNumbers} 
                     splashRings={splashRings}
-                    poisonClouds={poisonClouds}
+                    persistentClouds={persistentClouds}
                     currentPath={currentPath} 
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
