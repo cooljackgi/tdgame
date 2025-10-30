@@ -26,14 +26,12 @@ export default function SinglePlayerGame({
     difficulty: initialDifficulty,
     onExit,
     initialSavedGame,
-    isCheating = false,
     startWithTutorial = false,
     user
 }: {
     difficulty: Difficulty,
     onExit: () => void,
     initialSavedGame: GameSaveState | null,
-    isCheating?: boolean,
     startWithTutorial?: boolean,
     user: User | null
 }) {
@@ -63,6 +61,7 @@ export default function SinglePlayerGame({
     const [isMuted, setIsMuted] = useState(false);
     const [finalGameResult, setFinalGameResult] = useState<any | null>(null);
     const [fps, setFps] = useState(0);
+    const isCheating = useMemo(() => difficulty === 'Chaos', [difficulty]);
 
 
     // --- VFX State ---
@@ -112,11 +111,6 @@ export default function SinglePlayerGame({
     useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
     useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
     useEffect(() => { poisonCloudsRef.current = poisonClouds; }, [poisonClouds]);
-
-    const STORAGE_KEY = useMemo(
-      () => (isCheating ? `${LOCAL_STORAGE_KEY}:chaos` : LOCAL_STORAGE_KEY),
-      [isCheating]
-    );
 
     useEffect(() => {
         const onFirstPointer = async () => {
@@ -182,26 +176,25 @@ export default function SinglePlayerGame({
     
     useEffect(() => {
       const saveGame = () => {
-        if (gameStatusRef.current === 'tutorial') return;
+        if (gameStatusRef.current === 'tutorial' || gameStatusRef.current === 'gameover') return;
 
         const player1 = playersRef.current[0];
         if (!player1) return;
 
-        const saveState: GameSaveState & { isCheating?: boolean; _v?: number; _savedAt?: number; } = {
+        const saveState: GameSaveState & { _v?: number; _savedAt?: number; } = {
           players: { player1, player2: null },
           gameState: gameStateRef.current,
           towersByCell: towersByCellRef.current,
           enemies: enemiesRef.current,
           currentWave: currentWaveRef.current,
           difficulty: difficultyRef.current,
-          isCheating: isCheating,
           _v: 1,
           _savedAt: Date.now(),
         };
 
         try {
           const json = JSON.stringify(saveState);
-          localStorage.setItem(STORAGE_KEY, json);
+          localStorage.setItem(LOCAL_STORAGE_KEY, json);
         } catch (e) {
           console.error('Save failed', e);
         }
@@ -218,7 +211,7 @@ export default function SinglePlayerGame({
         document.removeEventListener('visibilitychange', onVis);
         window.removeEventListener('beforeunload', saveGame);
       };
-    }, [isCheating, STORAGE_KEY]);
+    }, []);
 
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
@@ -256,7 +249,7 @@ export default function SinglePlayerGame({
             finalTowers: towersByCellRef.current 
         };
         
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
         if (user?.uid && !isCheating) {
              try {
                 await onGameEnd(`sp-${user.uid}-${Date.now()}`, user, result.difficulty, result.wave, won, result.finalTowers);
@@ -264,7 +257,7 @@ export default function SinglePlayerGame({
         }
 
         setFinalGameResult({ ...result, date: new Date().toISOString() });
-    }, [user, isCheating, STORAGE_KEY]);
+    }, [user, isCheating]);
 
     const startWaveLogic = useCallback(() => {
         const waveData = waves[currentWaveRef.current];

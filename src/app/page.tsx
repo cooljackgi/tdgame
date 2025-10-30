@@ -27,7 +27,6 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loadSavedGame, setLoadSavedGame] = useState(false);
   const [startTutorial, setStartTutorial] = useState(false);
-  const [startAsCheating, setStartAsCheating] = useState(false);
   
   const { toast } = useToast();
 
@@ -57,12 +56,10 @@ export default function Home() {
   const startGame = useCallback((
       mode: "singleplayer" | "coop", 
       shouldLoadSaved: boolean = false, 
-      isTutorial: boolean = false, 
-      isCheating: boolean = false
+      isTutorial: boolean = false
   ) => {
     setLoadSavedGame(shouldLoadSaved);
     setStartTutorial(isTutorial);
-    setStartAsCheating(isCheating);
     if (isTutorial) setDifficulty('Einfach');
     setActiveGame(mode);
   }, []);
@@ -148,7 +145,6 @@ export default function Home() {
             difficulty={difficulty}
             onExit={() => setActiveGame(null)}
             initialSavedGame={loadSavedGame ? savedGame : null}
-            isCheating={startAsCheating}
             startWithTutorial={startTutorial}
             user={user}
           />
@@ -205,17 +201,13 @@ export default function Home() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <Button onClick={() => startGame('singleplayer', false, false, difficulty === 'Chaos')} className="w-full" size="lg">
+                        <Button onClick={() => startGame('singleplayer')} className="w-full" size="lg">
                             <Play className="mr-2" /> Neues Spiel starten
                         </Button>
                         {savedGame && (
                            <div className="space-y-2">
                             <Button 
-                                onClick={() => {
-                                    // @ts-expect-error isCheating is an extended property
-                                    const isChaosSave = savedGame.isCheating === true;
-                                    startGame('singleplayer', true, false, isChaosSave);
-                                }}
+                                onClick={() => startGame('singleplayer', true)}
                                 variant="outline" 
                                 className="w-full"
                             >
