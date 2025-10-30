@@ -633,7 +633,7 @@ export default function SinglePlayerGame({
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
             const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
-            const activePoisonClouds = [...poisonCloudsRef.current.filter(w => w.expires > now), ...newPoisonClouds];
+            const activePoisonClouds = [...poisonCloudsRef.current.filter(c => c.expires > now), ...newPoisonClouds];
             
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
