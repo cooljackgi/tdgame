@@ -123,12 +123,12 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
             for (let i = 0; i < cracks; i++) {
                 const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
                 const rad = angle * Math.PI / 180;
-                const len = maxRadius * (0.5 + Math.random() * 0.5) * easeOutT;
+                const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
                 ctx.beginPath();
                 ctx.moveTo(pos.x, pos.y);
                 ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
                 ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
-                ctx.lineWidth = 1 + (1 - t) * (s.vfxType === 'magma' ? 2.5 : 1.5);
+                ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
                 ctx.stroke();
             }
              if (s.vfxType === 'magma') {
@@ -137,7 +137,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                       const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
                       const rad = angle * Math.PI / 180;
                       const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
-                      const size = maxRadius * 0.08 * (1 - t);
+                      const size = 3 * (1 - t);
                       ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
                       ctx.beginPath();
                       ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
@@ -151,13 +151,13 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
             for (let i = 0; i < shards; i++) {
                 const angle = baseAngle + (i * (360 / shards));
                 const rad = angle * Math.PI / 180;
-                const len = maxRadius * (0.4 + tRoot * 0.6);
-                const shardSize = maxRadius * 0.2 * (1-t);
+                const len = maxRadius * (0.5 + tRoot * 0.5);
+                const shardSize = 15 * (1-t);
                 ctx.beginPath();
                 ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
                 ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
                 ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
-                ctx.lineWidth = 2 + (1 - t) * (maxRadius * 0.05);
+                ctx.lineWidth = 3 + (1 - t) * 3;
                 ctx.stroke();
             }
             break;
@@ -168,7 +168,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                   const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
                   const rad = angle * Math.PI / 180;
                   const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
-                  const particleSize = maxRadius * 0.1 * (1 - t);
+                  const particleSize = 6 * (1 - t);
                   
                   ctx.save();
                   ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
@@ -210,14 +210,14 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                   ctx.moveTo(pos.x, pos.y);
                   ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
                   ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
-                  ctx.lineWidth = 1.5;
+                  ctx.lineWidth = 2;
                   ctx.stroke();
               }
               break;
          }
           case 'light': {
               ctx.globalCompositeOperation = 'lighter';
-              const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.4;
+              const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
               const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
               coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
               coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
@@ -225,11 +225,11 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
               ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
   
               const glowRadius = maxRadius * easeOutT;
-              ctx.shadowBlur = 20;
+              ctx.shadowBlur = 30;
               ctx.shadowColor = s.color;
               ctx.beginPath();
               ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-              ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.7})`;
+              ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
               ctx.fill();
               break;
           }
@@ -247,20 +247,20 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
               ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
               ctx.fill();
   
-              ctx.shadowBlur = 10;
+              ctx.shadowBlur = 15;
               ctx.shadowColor = s.color;
               ctx.beginPath();
               ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
               ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
-              ctx.lineWidth = 2;
+              ctx.lineWidth = 3;
               ctx.stroke();
               break;
           }
         default: { // Default shockwave
           const shockwaveRadius = maxRadius * easeOutT;
           const shockwaveAlpha = 1 - tSquared;
-          const shockwaveWidth = (1.5 + (1 - t) * 3);
-          ctx.shadowBlur = 10;
+          const shockwaveWidth = (2 + (1 - t) * 4);
+          ctx.shadowBlur = 15;
           ctx.shadowColor = s.color;
           ctx.beginPath();
           ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
@@ -310,3 +310,4 @@ type DemoAttack = {
   projectile: 'beam' | 'arrow' | 'chain';
   elements: Tower['elements'];
 };
+

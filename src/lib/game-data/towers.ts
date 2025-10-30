@@ -24,7 +24,7 @@ export const towers: Tower[] = [
 {id:"earth-3",name:"Erdbeben-Generator",tier:3,isBase:false,elements:["earth"],cost:500,damage:70,range:4.5,attackSpeed:2000,maxHealth:400,description:"Zertrümmert Rüstung.",effect:{type:"armor_shred",duration:5000,potency:0.3,chance:0.3},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"air-3",name:"Sturmfront",tier:3,isBase:false,elements:["air"],cost:520,damage:35,range:5.2,attackSpeed:800,maxHealth:250,description:"Extrem schnelle Angriffe.",effect:{type:"chain",bounces:4,potency:0.5},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"nature-3",name:"Urwald",tier:3,isBase:false,elements:["nature"],cost:540,damage:55,range:5,attackSpeed:1600,maxHealth:350,description:"Starker Lebensraub.",effect:{type:"lifesteal",potency:0.1,chance:0.4},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
-{id:"light-3",name:"Supernova",tier:3,isBase:false,elements:["light"],cost:580,damage:80,range:5.8,attackSpeed:1800,maxHealth:280,description:"Sehr hohe Crit-Chance.",effect:{type:"crit",potency:2.5,chance:0.25},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
+{id:"light-3",name:"Supernova",tier:3,isBase:false,elements:["light"],cost:580,damage:80,range:5.8,attackSpeed:1800,maxHealth:280,description:"Sehr hohe Crit-Chance mit Flächenschaden.",effect:{type:"splash",radius:1.5,potency:0.5,chance:1,vfxType:"light" as SplashRingVfxType},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"dark-3",name:"Leere",tier:3,isBase:false,elements:["dark"],cost:580,damage:50,range:5,attackSpeed:1600,maxHealth:300,description:"Verstärkt den Fluch erheblich.",effect:{type:"vulnerability",duration:6000,potency:0.2,chance:0.3},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-fire-water",name:"Dampf-Turm",tier:3,isBase:false,elements:["fire","water"],cost:550,damage:40,range:3.8,attackSpeed:1200,maxHealth:320,description:"Flächenschaden, der verlangsamt.",effect:{type:"splash",radius:1.5,potency:0.7, vfxType: "steam" as SplashRingVfxType},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-fire-water-b",name:"Nebel-Turm",tier:3,isBase:false,elements:["fire","water"],cost:520,damage:0,range:3.5,attackSpeed:1000,maxHealth:300,description:"Verlangsamt und verbrennt im Bereich.",effect:{type:"aura",potency:0.15},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
@@ -37,3 +37,8 @@ export const towers: Tower[] = [
 {id:"combo-earth-dark",name:"Gravitations-Turm",tier:3,isBase:false,elements:["earth","dark"],cost:800,damage:120,range:4.8,attackSpeed:2500,maxHealth:550,description:"Hält starke Ziele fest.",effect:{type:"stun",duration:4000,chance:1},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-nature-light",name:"Sonnen-Turm",tier:3,isBase:false,elements:["light","nature"],cost:700,damage:0,range:4.8,attackSpeed:2000,maxHealth:450,description:"Verstärkt nahe Türme.",effect:{type:"aura",radius:4.5,potency:0.15},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } }
 ];
+
+    
+
+    
+
