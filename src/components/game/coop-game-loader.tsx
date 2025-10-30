@@ -898,9 +898,7 @@ export default function CoopGameLoader() {
   }
   
   const handlePlaceTower = (row: number, col: number) => {
-    if(selectedTowerToBuild) {
-        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
-    }
+    dispatchAction('build', { row, col, towerId: selectedTowerToBuild!.id });
   };
   const handleUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
@@ -908,6 +906,7 @@ export default function CoopGameLoader() {
   const handleStartNextWaveNow = () => dispatchAction('start_wave_now', {});
   
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+  const isPicking = gameStatus === 'picking-element' && (localPlayer?.unlockedElements.length ?? 0) < (1 + Math.floor(currentWave / 5));
 
   return (
     <div className="w-full h-full flex flex-col" onClick={() => { if (!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -957,7 +956,7 @@ export default function CoopGameLoader() {
                 playerRole={localPlayerId}
                 handleLoadTestLayout={() => {}} 
                 handleLoadAllTowersLayout={() => {}}
-                isCheating={false} 
+                isCheating={isCheating} 
                 cheat_unlockAll={() => {}}
                 firingTowerIds={firingTowerIds} 
                 allTowers={initialTowers}
@@ -972,7 +971,7 @@ export default function CoopGameLoader() {
             </div>
             {localPlayer && (
                 <ElementPickDialog
-                    isOpen={gameStatus === 'picking-element'}
+                    isOpen={isPicking}
                     onElementPick={onElementPick}
                     playerName={localPlayer.name}
                     currentWave={currentWave}
@@ -982,3 +981,6 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
+
+    
