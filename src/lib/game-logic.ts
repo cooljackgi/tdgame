@@ -11,7 +11,7 @@ import { elementProjectileColors } from '@/lib/game-data/constants';
  * Berechnet den Schaden basierend auf Rüstung, Verwundbarkeit und kritischen Treffern.
  */
 function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDealt: number, killed: boolean } {
-    const armorPen = (attack.armorPenFlat ?? 0);
+    const armorPen = attack.armorPenFlat ?? 0;
     const effectiveArmor = Math.max(0, enemy.armor - armorPen);
     const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
 
@@ -50,7 +50,7 @@ export function processAttack(
         return output; // Ziel ist bereits tot oder nicht mehr vorhanden
     }
 
-    const { effect, attackSpeed } = tower;
+    const { effect } = tower;
     const isCrit = (tower.effect?.type === 'crit' && Math.random() < tower.effect.chance!);
     const critMultiplier = isCrit ? (tower.effect?.potency ?? 2) : 1;
     
@@ -69,14 +69,14 @@ export function processAttack(
         elements: tower.elements,
         projectile: tower.id.includes('sniper') ? 'arrow' : 'beam',
         baseDamage: damageAmount,
-        armorPenFlat: 0, // Wird später für Effekte gesetzt
+        armorPenFlat: 0, 
     };
-
+    output.newAttacks.push(primaryAttack);
+    
+    // --- ARMOR SHRED ---
     if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
         primaryAttack.armorPenFlat = tower.damage * (effect.potency ?? 0);
     }
-
-    output.newAttacks.push(primaryAttack);
 
     const { damageDealt, killed } = applyDamage(damageAmount, currentTarget, primaryAttack);
     
@@ -97,6 +97,7 @@ export function processAttack(
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }
     } else {
+        // Apply non-lethal status effects
         if (effect?.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
             currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
         }
@@ -111,13 +112,14 @@ export function processAttack(
         }
     }
 
-    // Handle Splash Damage
-    if (effect?.type === 'splash' && effect.radius) {
+    // --- SECONDARY EFFECTS ---
+
+    if (effect?.type === 'splash') {
         output.splashRings.push({
             id: crypto.randomUUID(),
             x: currentTarget.position.col,
             y: currentTarget.position.row,
-            r: effect.radius,
+            r: effect.radius!,
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
             element: tower.elements[0],
             vfxType: effect.vfxType
@@ -140,7 +142,6 @@ export function processAttack(
         });
     }
 
-    // Handle Chain Lightning
     if (effect?.type === 'chain' && effect.bounces) {
         let lastTarget = currentTarget;
         for (let i = 0; i < effect.bounces; i++) {
@@ -184,6 +185,20 @@ export function processAttack(
             expires: now + effect.duration
         });
     }
+    
+    // --- SPECIAL CASE: Persistent Cloud ---
+    if (effect?.type === 'persistent_cloud' && effect.radius && effect.duration && effect.potency) {
+         output.newPoisonClouds.push({
+            id: `cloud-${tower.id}-${now}`,
+            x: currentTarget.position.col,
+            y: currentTarget.position.row,
+            radius: effect.radius,
+            potency: effect.potency,
+            duration: effect.duration,
+            expires: now + 10000, // The cloud itself lingers for 10s
+        });
+    }
+
 
     return output;
 }

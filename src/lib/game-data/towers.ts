@@ -30,7 +30,7 @@ export const towers: Tower[] = [
 {id:"combo-fire-water-b",name:"Nebel-Turm",tier:3,isBase:false,elements:["fire","water"],cost:520,damage:0,range:3.5,attackSpeed:1000,maxHealth:300,description:"Verlangsamt und verbrennt im Bereich.",effect:{type:"aura",potency:0.15},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-fire-earth",name:"Magma-Turm",tier:3,isBase:false,elements:["fire","earth"],cost:600,damage:65,range:3.2,attackSpeed:2000,maxHealth:450,description:"Schwerer Flächenschaden mit DoT.",effect:{type:"splash",radius:1.2,potency:0.8, vfxType: "magma" as SplashRingVfxType},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-water-earth",name:"Schlamm-Turm",tier:3,isBase:false,elements:["water","earth"],cost:500,damage:25,range:3.8,attackSpeed:1000,maxHealth:380,description:"Massive Verlangsamung im Bereich.",effect:{type:"splash",potency:0.3,duration:3000,radius:1.8,chance:1, vfxType: "ice" as SplashRingVfxType},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
-{id:"combo-fire-nature",name:"Sporen-Turm",tier:3,isBase:false,elements:["fire","nature"],cost:580,damage:35,range:4,attackSpeed:1300,maxHealth:340,description:"Erzeugt eine Giftwolke am Einschlagsort.",effect:{type:"splash", vfxType: "poison" as SplashRingVfxType, radius:1.5, potency: 25, duration: 5000},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
+{id:"combo-fire-nature",name:"Sporen-Turm",tier:3,isBase:false,elements:["fire","nature"],cost:580,damage:35,range:4,attackSpeed:1300,maxHealth:340,description:"Erzeugt eine Giftwolke am Einschlagsort.",effect:{type:"persistent_cloud",radius:1.8,potency:30,duration:5000},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-water-nature",name:"Algen-Turm",tier:3,isBase:false,elements:["water","nature"],cost:580,damage:35,range:4.2,attackSpeed:1200,maxHealth:350,description:"Verlangsamt und vergiftet Ziele.",effect:{type:"splash",potency:0.3,chance:1,targets:4, vfxType: "thorn" as SplashRingVfxType},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-air-light",name:"Blitz-Turm",tier:3,isBase:false,elements:["air","light"],cost:650,damage:55,range:5.2,attackSpeed:1300,maxHealth:280,description:"Kettenblitz mit vielen Sprüngen.",effect:{type:"chain",bounces:6,potency:0.6},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
 {id:"combo-air-dark",name:"Vakuum-Turm",tier:3,isBase:false,elements:["air","dark"],cost:620,damage:20,range:4.2,attackSpeed:600,maxHealth:320,description:"Zieht Gegner an und schwächt sie.",effect:{type:"pull", duration: 1500, radius: 1.8, potency: 0.1},upgradesTo:[], get dps() { return this.damage * (1000 / this.attackSpeed); } },
@@ -41,4 +41,5 @@ export const towers: Tower[] = [
     
 
     
+
 
