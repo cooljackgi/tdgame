@@ -143,7 +143,7 @@ class AudioManager {
         // Create main Gain and Panner nodes
         const mainGain = ctx.createGain();
         const panner = ctx.createStereoPanner();
-        panner.pan.value = ((position.x / GRID_COLS) - 0.5) * 1.8;
+        panner.pan.value = ((position.col / GRID_COLS) - 0.5) * 1.8;
         mainGain.connect(panner).connect(ctx.destination);
 
         // --- Create Oscillator ---
