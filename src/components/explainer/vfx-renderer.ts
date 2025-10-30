@@ -108,7 +108,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                 const angle = baseAngle + (i * 360/particles) + (easeOutT * 45);
                 const rad = angle * Math.PI / 180;
                 const dist = maxRadius * easeOutT * (0.6 + (i%2) * 0.4);
-                const size = 10 * (1 - t);
+                const size = maxRadius * 0.2 * (1 - t);
                 
                 ctx.fillStyle = `hsla(210, 30%, 80%, ${1-tSquared})`;
                 ctx.beginPath();
@@ -137,7 +137,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                       const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
                       const rad = angle * Math.PI / 180;
                       const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
-                      const size = 3 * (1 - t);
+                      const size = maxRadius * 0.08 * (1 - t);
                       ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
                       ctx.beginPath();
                       ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
@@ -152,12 +152,12 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                 const angle = baseAngle + (i * (360 / shards));
                 const rad = angle * Math.PI / 180;
                 const len = maxRadius * (0.4 + tRoot * 0.6);
-                const shardSize = 12 * (1 - t);
+                const shardSize = maxRadius * 0.2 * (1-t);
                 ctx.beginPath();
                 ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
                 ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
                 ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
-                ctx.lineWidth = 2 + (1 - t) * 2;
+                ctx.lineWidth = 2 + (1 - t) * (maxRadius * 0.05);
                 ctx.stroke();
             }
             break;
@@ -168,7 +168,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                   const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
                   const rad = angle * Math.PI / 180;
                   const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
-                  const particleSize = 5 * (1 - t);
+                  const particleSize = maxRadius * 0.1 * (1 - t);
                   
                   ctx.save();
                   ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
@@ -191,7 +191,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
                 const angle = baseAngle + (i * 360/bubbles) + (easeOutT * 20);
                 const rad = angle * Math.PI / 180;
                 const dist = maxRadius * Math.pow(easeOutT, 0.7) * (0.4 + (i%3) * 0.2);
-                const size = 5 * (1 - t) * (0.5 + Math.sin(i + t*Math.PI*2) * 0.5);
+                const size = maxRadius * 0.1 * (1 - t) * (0.5 + Math.sin(i + t*Math.PI*2) * 0.5);
 
                 ctx.fillStyle = `hsla(110, 80%, 40%, ${0.8 - tSquared})`;
                 ctx.beginPath();
