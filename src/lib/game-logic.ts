@@ -114,6 +114,18 @@ export function processAttack(
     const armorPenetration = effect?.type === 'armor_shred' ? critDamage * (effect.potency ?? 0) : 0;
 
     const killedPrimary = applyDamage(target, critDamage, isCrit, armorPenetration);
+    
+    const projectileType = tower.specId.includes('sniper') ? 'arrow' : 'beam';
+    output.newAttacks.push({
+        id: crypto.randomUUID(),
+        towerId: tower.id,
+        targetId: target.id,
+        targetPosition: target.position,
+        elements: tower.elements,
+        projectile: projectileType,
+        baseDamage: baseDamage
+    });
+
 
     // --- Process Effects ---
     if (effect && (!effect.chance || Math.random() < effect.chance)) {
@@ -121,7 +133,6 @@ export function processAttack(
             case 'burn':
             case 'slow':
             case 'vulnerability':
-            case 'armor_shred':
             case 'stun': {
                 const existingEffectIndex = target.effects.findIndex(e => e.type === effect.type);
                 if (existingEffectIndex !== -1) {
@@ -133,6 +144,10 @@ export function processAttack(
                         potency: effect.potency ?? 0,
                     });
                 }
+                break;
+            }
+            case 'armor_shred': {
+                // This is now handled via armorPenetration in applyDamage
                 break;
             }
             case 'splash': {
