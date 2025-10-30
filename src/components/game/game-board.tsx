@@ -316,7 +316,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     onPing,
 }, ref) => {
 
-  const fxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const groundFxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const airFxCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
   
   const incomingAttacksRef = useRef<Attack[]>([]);
@@ -445,18 +446,23 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, []);
 
   useEffect(() => {
-    const canvas = fxCanvasRef.current;
-    if (canvas) handleResize(canvas);
+    const groundCanvas = groundFxCanvasRef.current;
+    if (groundCanvas) handleResize(groundCanvas);
+    const airCanvas = airFxCanvasRef.current;
+    if (airCanvas) handleResize(airCanvas);
   }, [handleResize]);
 
   useEffect(() => {
-    const canvas = fxCanvasRef.current;
-    if (!canvas) return;
+    const groundCanvas = groundFxCanvasRef.current;
+    const airCanvas = airFxCanvasRef.current;
+    if (!groundCanvas || !airCanvas) return;
 
     const ro = new ResizeObserver(() => {
-        handleResize(canvas);
+        handleResize(groundCanvas);
+        handleResize(airCanvas);
     });
-    ro.observe(canvas);
+    ro.observe(groundCanvas);
+    ro.observe(airCanvas);
 
     return () => ro.disconnect();
   }, [handleResize]);
@@ -467,21 +473,69 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     if (now - lastTsRef.current < fpsCapMs) return;
     lastTsRef.current = now;
 
-    const canvas = fxCanvasRef.current;
-    if (!canvas || !document.contains(canvas)) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const groundCanvas = groundFxCanvasRef.current;
+    const airCanvas = airFxCanvasRef.current;
+    if (!groundCanvas || !airCanvas || !document.contains(groundCanvas)) return;
+    
+    const groundCtx = groundCanvas.getContext('2d');
+    const airCtx = airCanvas.getContext('2d');
+    if (!groundCtx || !airCtx) return;
 
     try {
         const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        [groundCtx, airCtx].forEach(ctx => {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); 
+            ctx.scale(dpr, dpr);
+            ctx.translate(panRef.current.x, panRef.current.y);
+            ctx.scale(zoomRef.current, zoomRef.current);
+        });
         
-        ctx.scale(dpr, dpr);
-        
-        ctx.translate(panRef.current.x, panRef.current.y);
-        ctx.scale(zoomRef.current, zoomRef.current);
-        
+        // --- Ground Layer (groundCtx) ---
+        for (const cloud of poisonClouds) {
+            const center = gridToPx({ row: cloud.y, col: cloud.x });
+            let radiusPx = cloud.radius * CELL_SIZE;
+            const VISUAL_SCALE = 0.45;
+            radiusPx = radiusPx * VISUAL_SCALE;
+
+            const remaining = Math.max(0, cloud.expires - now);
+            const t = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
+
+            const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+            const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
+            grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`);
+            grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
+
+            groundCtx.save();
+            groundCtx.fillStyle = grad;
+            groundCtx.beginPath();
+            groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+            groundCtx.fill();
+            groundCtx.restore();
+        }
+
+        splashRingsPoolRef.current.forEachActive(s => {
+            const t = clamp((now - s.start) / s.life, 0, 1);
+            if (t >= 1) { splashRingsPoolRef.current.free(s); return; }
+            
+            const pos = gridToPx({ row: s.y, col: s.x });
+            const maxRadius = s.r * CELL_SIZE;
+            const easeOutT = 1 - (1 - t) * (1 - t);
+            const tSquared = t * t;
+            
+            groundCtx.save();
+            groundCtx.globalAlpha = 1 - tSquared;
+            groundCtx.beginPath();
+            groundCtx.arc(pos.x, pos.y, maxRadius * easeOutT, 0, Math.PI * 2);
+            groundCtx.strokeStyle = s.color;
+            groundCtx.lineWidth = 1.5 + (1-t) * 3;
+            groundCtx.shadowBlur = 10;
+            groundCtx.shadowColor = s.color;
+            groundCtx.stroke();
+            groundCtx.restore();
+        });
+
+        // --- Air Layer (airCtx) ---
         const currentEnemyIds = new Set(enemies.map(e => e.id));
         for (const id of interpolatedEnemyPositions.keys()) {
             if (!currentEnemyIds.has(id)) {
@@ -496,14 +550,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         const towersMap = new Map(placedTowers.map(t => [t.id, t]));
 
-        {
+        { // Attack processing
             const q = incomingAttacksRef.current;
             if (q.length) {
                 for (const a of q) {
-                    const enemyTarget = enemiesById.get(a.targetId);
-                    // Don't discard if target is gone, fly to last known spot
-                    // if (!enemyTarget) continue;
-
                     let fromPx: {x:number, y:number} | null = null;
                     const tower = towersMap.get(a.towerId);
                     if (!tower) continue;
@@ -522,11 +572,11 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         const size = CELL_SIZE * 0.8;
                         const xOffset = (muzzle.x / 100) * size - (size / 2);
                         const yOffset = (muzzle.y / 100) * size - (size / 2);
-
                         fromPx = { x: towerCenter.x + xOffset, y: towerCenter.y + yOffset };
                     }
                     if (!fromPx) continue;
                     
+                    const enemyTarget = enemiesById.get(a.targetId);
                     const toPx = enemyTarget 
                         ? getEnemyWorldPos(enemyTarget, now, enemyTarget.path || currentPath)
                         : interpolatedEnemyPositions.get(a.targetId) ?? gridToPx(a.targetPosition);
@@ -546,16 +596,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 q.length = 0;
             }
         }
-        {
-            const q = incomingRingsRef.current;
-            if (q.length) { 
-                for (let i = 0; i < q.length; i++) {
-                    splashRingsPoolRef.current.alloc({ ...q[i], start: now, life: 600 }); 
-                }
-                q.length = 0; 
-            }
-        }
-        {
+        { // Damage Numbers processing
             const q = incomingDmgRef.current;
             if (q.length) { 
                 for (let i = 0; i < q.length; i++) {
@@ -565,7 +606,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                 q.length = 0; 
             }
         }
-        {
+        { // Life Gain processing
           const q = incomingLifeGainRef.current;
           if(q.length > 0) {
             for(const vfx of q) {
@@ -586,263 +627,78 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const t = clamp((now - start) / life, 0, 1);
             if (t >= 1) { attacksPoolRef.current.free(attack); return; }
 
-            ctx.save();
+            airCtx.save();
             const primaryElement = attack.elements?.[0] ?? 'neutral';
             const baseColor = elementProjectileColors[primaryElement] ?? '#9ca3af';
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = baseColor;
+            airCtx.shadowBlur = 8;
+            airCtx.shadowColor = baseColor;
             
+            const easeT = t * (2 - t);
+            const dx = currentToPx.x - fromPx.x;
+            const dy = currentToPx.y - fromPx.y;
+
             if (attack.projectile === 'arrow') {
-                const easeT = t * (2 - t);
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
                 const headX = fromPx.x + dx * easeT;
                 const headY = fromPx.y + dy * easeT;
-                
                 const angle = Math.atan2(dy, dx);
                 const length = 14;
 
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = 1 - t*t;
+                airCtx.strokeStyle = baseColor;
+                airCtx.lineWidth = 3;
+                airCtx.globalAlpha = 1 - t*t;
                 
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
-                ctx.stroke();
-
-            } else if (attack.projectile === 'chain') {
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
-                const segments = 5;
-                const randomness = 15;
-                ctx.lineWidth = 3.5;
-                ctx.globalAlpha = (1 - t*t);
-                ctx.strokeStyle = baseColor;
-                ctx.shadowBlur = 12;
-
-                ctx.beginPath();
-                ctx.moveTo(fromPx.x, fromPx.y);
-
-                for (let i = 1; i < segments; i++) {
-                    const progress = i / segments;
-                    const currentX = fromPx.x + dx * progress;
-                    const currentY = fromPx.y + dy * progress;
-                    ctx.lineTo(
-                        currentX + (Math.random() - 0.5) * randomness,
-                        currentY + (Math.random() - 0.5) * randomness
-                    );
-                }
-                ctx.lineTo(currentToPx.x, currentToPx.y);
-                ctx.stroke();
-            } else { // BEAM
-                const easeT = t * (2-t);
-                const dx = currentToPx.x - fromPx.x;
-                const dy = currentToPx.y - fromPx.y;
-
+                airCtx.beginPath();
+                airCtx.moveTo(headX, headY);
+                airCtx.lineTo(headX - length * Math.cos(angle), headY - length * Math.sin(angle));
+                airCtx.stroke();
+            } else { // BEAM or CHAIN
                 const headX = fromPx.x + dx * easeT;
                 const headY = fromPx.y + dy * easeT;
                 const tailT = Math.max(0, easeT - 0.15);
                 const tailX = fromPx.x + dx * tailT;
                 const tailY = fromPx.y + dy * tailT;
                 
-                ctx.strokeStyle = baseColor;
-                ctx.lineWidth = 3;
-                ctx.globalAlpha = (1 - t*t);
+                airCtx.strokeStyle = baseColor;
+                airCtx.lineWidth = 3;
+                airCtx.globalAlpha = (1 - t*t);
                 
-                ctx.beginPath();
-                ctx.moveTo(headX, headY);
-                ctx.lineTo(tailX, tailY);
-                ctx.stroke();
+                airCtx.beginPath();
+                airCtx.moveTo(headX, headY);
+                airCtx.lineTo(tailX, tailY);
+                airCtx.stroke();
 
                 if (attack.projectile === "beam") {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.shadowColor = '#ffffff';
-                    ctx.shadowBlur = 12;
-                    ctx.beginPath();
-                    ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
-                    ctx.fill();
+                    airCtx.fillStyle = '#ffffff';
+                    airCtx.shadowColor = '#ffffff';
+                    airCtx.shadowBlur = 12;
+                    airCtx.beginPath();
+                    airCtx.arc(headX, headY, 2.5, 0, Math.PI * 2);
+                    airCtx.fill();
                 }
             }
-            ctx.restore();
+            airCtx.restore();
         });
 
-        splashRingsPoolRef.current.forEachActive(s => {
-            const t = clamp((now - s.start) / s.life, 0, 1);
-            if (t >= 1) { splashRingsPoolRef.current.free(s); return; }
-            
-            const pos = gridToPx({ row: s.y, col: s.x });
-            const maxRadius = s.r * CELL_SIZE;
-            const easeOutT = 1 - (1 - t) * (1 - t);
-            const tSquared = t * t;
-            const tRoot = Math.sqrt(t);
-            const baseAngle = s.id.charCodeAt(0) % 360; 
-        
-            ctx.save();
-            ctx.globalAlpha = 1 - tSquared;
-        
-            switch(s.vfxType) {
-                case 'magma':
-                case 'flame': {
-                    const cracks = s.vfxType === 'magma' ? 5 : 7;
-                    for (let i = 0; i < cracks; i++) {
-                        const angle = baseAngle + (i * (360 / cracks)) + (Math.sin(t * Math.PI * 2) * 10);
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * (0.7 + Math.random() * 0.3) * easeOutT;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(30, 100%, ${60 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2 + (1 - t) * (s.vfxType === 'magma' ? 3 : 2);
-                        ctx.stroke();
-                    }
-                    if (s.vfxType === 'magma') {
-                        const particles = 8;
-                        for (let i = 0; i < particles; i++) {
-                            const angle = (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / particles));
-                            const rad = angle * Math.PI / 180;
-                            const dist = maxRadius * easeOutT * (0.5 + (i % 2) * 0.4);
-                            const size = 3 * (1 - t);
-                            ctx.fillStyle = `hsla(35, 100%, ${60 - t * 15}%, ${1 - tSquared * 0.5})`;
-                            ctx.beginPath();
-                            ctx.arc(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                    break;
-                }
-                case 'ice': {
-                    const shards = 8;
-                    for (let i = 0; i < shards; i++) {
-                        const angle = baseAngle + (i * (360 / shards));
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * (0.5 + tRoot * 0.5);
-                        const shardSize = 15 * (1 - t);
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(200, 100%, ${70 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 3 + (1 - t) * 3;
-                        ctx.stroke();
-                    }
-                    break;
-                }
-                case 'rock': {
-                    const fragments = 8;
-                    for (let i = 0; i < fragments; i++) {
-                        const angle = baseAngle + (s.id.charCodeAt(i % s.id.length) / 255) * 360 + (i * (360 / fragments));
-                        const rad = angle * Math.PI / 180;
-                        const dist = maxRadius * t * (0.8 + Math.random() * 0.4);
-                        const particleSize = 6 * (1 - t);
-                        
-                        ctx.save();
-                        ctx.translate(pos.x + Math.cos(rad) * dist, pos.y + Math.sin(rad) * dist);
-                        ctx.rotate(angle * Math.PI / 180);
-                        
-                        ctx.fillStyle = `hsla(25, 60%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -particleSize);
-                        ctx.lineTo(particleSize, particleSize);
-                        ctx.lineTo(-particleSize, particleSize);
-                        ctx.closePath();
-                        ctx.fill();
-                        ctx.restore();
-                    }
-                    break;
-                }
-                case 'thorn': {
-                    const spikes = 12;
-                    for (let i = 0; i < spikes; i++) {
-                        const angle = baseAngle + (i * (360 / spikes));
-                        const rad = angle * Math.PI / 180;
-                        const len = maxRadius * tRoot;
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-                        ctx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
-                        ctx.strokeStyle = `hsla(140, 80%, ${50 - t * 20}%, ${1 - tSquared})`;
-                        ctx.lineWidth = 2;
-                        ctx.stroke();
-                    }
-                    break;
-                }
-                case 'light': {
-                    ctx.globalCompositeOperation = 'lighter';
-                    const coreRadius = maxRadius * Math.sin(t * Math.PI) * 0.5;
-                    const coreGradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, coreRadius);
-                    coreGradient.addColorStop(0, `hsla(50, 100%, 95%, ${Math.sin(t * Math.PI)})`);
-                    coreGradient.addColorStop(1, `hsla(50, 100%, 70%, 0)`);
-                    ctx.fillStyle = coreGradient;
-                    ctx.fillRect(pos.x - coreRadius, pos.y - coreRadius, coreRadius * 2, coreRadius * 2);
-        
-                    const glowRadius = maxRadius * easeOutT;
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, glowRadius, 0, Math.PI * 2);
-                    ctx.fillStyle = `hsla(50, 100%, 80%, ${Math.sin(t * Math.PI) * 0.8})`;
-                    ctx.fill();
-                    break;
-                }
-                case 'dark': {
-                    const pullRadius = maxRadius * (1 - easeOutT);
-                    const implosionRadius = maxRadius * (1 - t);
-                    
-                    const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, implosionRadius);
-                    gradient.addColorStop(0, 'rgba(128, 0, 128, 0)');
-                    gradient.addColorStop(0.8, 'rgba(128, 0, 128, 0.4)');
-                    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, implosionRadius, 0, Math.PI*2);
-                    ctx.fill();
-        
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, pullRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = `hsla(270, 90%, 70%, ${1 - t})`;
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
-                    break;
-                }
-                default: { // Default shockwave
-                    const shockwaveRadius = maxRadius * easeOutT;
-                    const shockwaveAlpha = 1 - tSquared;
-                    const shockwaveWidth = (2 + (1 - t) * 4);
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = s.color;
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, shockwaveRadius, 0, Math.PI * 2);
-                    ctx.strokeStyle = s.color;
-                    ctx.lineWidth = shockwaveWidth;
-                    ctx.globalAlpha = shockwaveAlpha;
-                    ctx.stroke();
-                }
-            }
-            ctx.restore();
-        });
-
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
+        airCtx.globalAlpha = 1;
+        airCtx.shadowBlur = 0;
 
         damageNumbersPoolRef.current.forEachActive(dn => {
             const t = clamp((now - dn.start) / dn.life, 0, 1);
             if (t >= 1) { damageNumbersPoolRef.current.free(dn); return; }
             
             let p = interpolatedEnemyPositions.get(dn.targetId!);
-            if (!p) return; // Don't draw damage numbers for dead enemies
+            if (!p) return;
 
             const yOffset = dn.isCrit ? 25 : 15;
             const size = dn.isCrit ? 16 : 12;
 
-            ctx.font = `bold ${size}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = dn.color;
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = dn.isCrit ? 4 : 2;
-            ctx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
+            airCtx.font = `bold ${size}px system-ui, sans-serif`;
+            airCtx.textAlign = "center";
+            airCtx.globalAlpha = 1 - t;
+            airCtx.fillStyle = dn.color;
+            airCtx.shadowColor = 'black';
+            airCtx.shadowBlur = dn.isCrit ? 4 : 2;
+            airCtx.fillText(Math.round(dn.amount).toString(), p.x, p.y - yOffset - (t * 20));
         });
 
         lifeGainPoolRef.current.forEachActive(lg => {
@@ -851,13 +707,13 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
             const endNodePos = gridToPx({row: GRID_ROWS, col: GRID_COLS});
 
-            ctx.font = `bold 16px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.globalAlpha = 1 - t;
-            ctx.fillStyle = '#22c55e'; // Green
-            ctx.shadowColor = 'black';
-            ctx.shadowBlur = 4;
-            ctx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
+            airCtx.font = `bold 16px system-ui, sans-serif`;
+            airCtx.textAlign = "center";
+            airCtx.globalAlpha = 1 - t;
+            airCtx.fillStyle = '#22c55e'; // Green
+            airCtx.shadowColor = 'black';
+            airCtx.shadowBlur = 4;
+            airCtx.fillText(`+${lg.amount} ❤️`, endNodePos.x, endNodePos.y - 15 - (t * 30));
         });
         
         const primaryColor = cssVar('--primary');
@@ -870,27 +726,21 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           const t = Math.max(0, 1 - age/ttl);
           const pingColor = p.from === 'player1' ? primaryColor : destructiveColor;
           
-          ctx.save();
-          
-          // Draw Circle
-          ctx.strokeStyle = pingColor;
-          ctx.globalAlpha = 0.25 + 0.5*t;
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
-          ctx.stroke();
-
-          // Draw Text
-          const text = pingTextMap[p.kind] || p.kind;
-          ctx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillStyle = pingColor;
-          ctx.globalAlpha = 1 - (age / ttl);
-          ctx.shadowColor = "black";
-          ctx.shadowBlur = 4;
-          ctx.fillText(text, x, y - CELL_SIZE * 0.8);
-          
-          ctx.restore();
+          airCtx.save();
+          airCtx.strokeStyle = pingColor;
+          airCtx.globalAlpha = 0.25 + 0.5*t;
+          airCtx.lineWidth = 3;
+          airCtx.beginPath();
+          airCtx.arc(x, y, CELL_SIZE * (0.6 + 0.4 * (1-t)), 0, Math.PI*2);
+          airCtx.stroke();
+          airCtx.font = `bold 14px "Space Grotesk", system-ui, sans-serif`;
+          airCtx.textAlign = "center";
+          airCtx.fillStyle = pingColor;
+          airCtx.globalAlpha = 1 - (age / ttl);
+          airCtx.shadowColor = "black";
+          airCtx.shadowBlur = 4;
+          airCtx.fillText(pingTextMap[p.kind] || p.kind, x, y - CELL_SIZE * 0.8);
+          airCtx.restore();
         });
 
 
@@ -903,7 +753,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, poisonClouds]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -1225,6 +1075,11 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
+        <canvas 
+            ref={groundFxCanvasRef} 
+            className="absolute inset-0 pointer-events-none" 
+            style={{ zIndex: 5, left: 0, top: 0, width: '100%', height: '100%' }}
+        />
         <div 
           ref={worldRef}
           className="absolute inset-0"
@@ -1500,7 +1355,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         </div>
         
         <canvas 
-            ref={fxCanvasRef} 
+            ref={airFxCanvasRef} 
             className="absolute inset-0 pointer-events-none" 
             style={{ zIndex: 20, left: 0, top: 0, width: '100%', height: '100%' }}
         />
