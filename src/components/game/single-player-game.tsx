@@ -604,21 +604,11 @@ export default function SinglePlayerGame({
                             allNewSplashRings.push(...result.splashRings);
                             allNewLifeGainVfx.push(...result.lifeGainVfx);
                             if (result.newPoisonClouds.length > 0) newPoisonClouds.push(...result.newPoisonClouds);
+                            if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                             if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
                             if (result.killed > 0) killedThisTick += result.killed;
                             if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
-                            
-                            if (tower.effect?.type === 'pull' && tower.effect.radius && tower.effect.duration && tower.effect.potency) {
-                                newGravityWells.push({
-                                    id: `well-${now}`,
-                                    x: target.position.col,
-                                    y: target.position.row,
-                                    radius: tower.effect.radius,
-                                    potency: tower.effect.potency,
-                                    expires: now + tower.effect.duration
-                                });
-                            }
                         }
                         currentEnemies = enemiesForThisTick;
                     }
@@ -650,40 +640,16 @@ export default function SinglePlayerGame({
               
               let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
 
-              for (const cloud of activePoisonClouds) {
-                const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
-                if (distSq <= cloud.radius ** 2) {
-                    const existingPoison = updatedEnemy.effects.find(e => e.type === 'poison');
-                    if (!existingPoison) {
-                        updatedEnemy.effects.push({
-                            type: 'poison',
-                            expires: now + cloud.duration,
-                            potency: cloud.potency,
-                            duration: cloud.duration,
-                            lastTick: now,
-                        });
-                    }
-                }
+              const dotResult = tickDots(updatedEnemy, delta);
+              if (dotResult.totalDamage > 0) {
+                  gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'} as DamageNumber]);
               }
-
-              const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
-                const effect = updatedEnemy!.effects.find(e => e.type === type);
-                if (effect && (!effect.lastTick || now - effect.lastTick >= 1000)) {
-                    const damage = effect.potency ?? 0;
-                    updatedEnemy!.health -= damage;
-                    effect.lastTick = now;
-                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
-                    if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
-                      updatedEnemy!.deathTimestamp = now;
-                    }
-                }
+              if (dotResult.killed && !updatedEnemy.deathTimestamp) {
+                  updatedEnemy.deathTimestamp = now;
               }
-
-              processDoTEffect('burn', '#f97316');
-              processDoTEffect('poison', '#22c55e');
 
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-              if (stunEffect) {
+              if (stunEffect || updatedEnemy.deathTimestamp) {
                   nextEnemies.push(updatedEnemy);
                   continue;
               }

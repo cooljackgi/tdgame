@@ -1,111 +1,212 @@
 // src/lib/game-logic.ts
 import type {
-  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult
+  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PoisonCloud, GravityWell
 } from '@/lib/game-data/types';
+import { audioManager } from '@/lib/audio/audio-manager';
+import { elementProjectileColors } from '@/lib/game-data/constants';
 
-export type DamagePipelineOpts = {
-  minDamage?: number;             // z.B. 1
-  allowNegativeArmor?: boolean;   // falls true, negative Rüstung erhöht Schaden
-};
 
-type AttackContext = {
-  baseDamage: number;             // Turmbasis + Auren/Upgrades
-  critChance: number;             // 0..1
-  critMult: number;               // z.B. 2.0
-  vulnerabilityPct: number;       // z.B. 0.25 = +25%
-  armorPenFlat: number;           // flache Rüstungsreduktion
-  dots: DoTEffect[];              // zu applizierende DoTs (brennen/gift), leer wenn keine
-  element?: Element;
-};
+/**
+ * Wendet den Schaden eines Angriffs auf ein einzelnes Ziel an.
+ * Berechnet den Schaden basierend auf Rüstung, Verwundbarkeit und kritischen Treffern.
+ */
+function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDealt: number, killed: boolean } {
+    const armorPen = (attack.armorPenFlat ?? 0);
+    const effectiveArmor = Math.max(0, enemy.armor - armorPen);
+    const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
+
+    enemy.health -= damageDealt;
+
+    return {
+        damageDealt,
+        killed: enemy.health <= 0,
+    };
+}
+
 
 export function processAttack(
-  attackerId: string,
+  tower: PlacedTower,
   target: Enemy,
-  atk: Attack,
-  auras: AuraBuffs | null,
-  opts: DamagePipelineOpts = { minDamage: 1, allowNegativeArmor: false }
-): DamageApplicationResult {
+  allEnemies: Enemy[], // Wird für Flächenschaden etc. benötigt
+  now: number,
+  isBuffed: boolean,
+): ProcessAttackResult {
 
-  // --- Schritt 1: Roher Grundschaden (Base + Auren) ---
-  let damage = atk.baseDamage;
-  if (auras?.damageFlat) damage += auras.damageFlat;
-  if (auras?.damageMult) damage *= (1 + auras.damageMult);
+    const output: ProcessAttackResult = {
+        updatedEnemies: [...allEnemies],
+        newAttacks: [],
+        damageNumbers: [],
+        splashRings: [],
+        lifeGainVfx: [],
+        newPoisonClouds: [],
+        newGravityWells: [],
+        resourcesGained: 0,
+        livesGained: 0,
+        killed: 0,
+    };
+    
+    let currentTarget = output.updatedEnemies.find(e => e.id === target.id);
+    if (!currentTarget || currentTarget.deathTimestamp) {
+        return output; // Ziel ist bereits tot oder nicht mehr vorhanden
+    }
 
-  // --- Schritt 2: Krit-Check ---
-  const rolled = Math.random();
-  const isCrit = rolled < (atk.critChance ?? 0);
-  if (isCrit) {
-    damage *= (atk.critMult ?? 2.0);
-  }
+    const { effect, attackSpeed } = tower;
+    const isCrit = (tower.effect?.type === 'crit' && Math.random() < tower.effect.chance!);
+    const critMultiplier = isCrit ? (tower.effect?.potency ?? 2) : 1;
+    
+    let damageAmount = tower.damage * (isBuffed ? 1.15 : 1) * critMultiplier;
+    
+    const vulnerability = currentTarget.effects.find(e => e.type === 'vulnerability');
+    if (vulnerability) {
+        damageAmount *= (1 + vulnerability.potency);
+    }
+    
+    const primaryAttack: Attack = {
+        id: crypto.randomUUID(),
+        towerId: tower.id,
+        targetId: currentTarget.id,
+        targetPosition: { ...currentTarget.position },
+        elements: tower.elements,
+        projectile: tower.id.includes('sniper') ? 'arrow' : 'beam',
+        baseDamage: damageAmount,
+        armorPenFlat: 0, // Wird später für Effekte gesetzt
+    };
 
-  // --- Schritt 3: Verwundbarkeit vor Rüstung ---
-  const vulnPct = target.debuffs?.vulnerabilityPct ?? 0;
-  const totalVulnPct = (atk.vulnerabilityPct ?? 0) + vulnPct;
-  if (totalVulnPct !== 0) {
-    damage *= (1 + totalVulnPct);
-  }
+    if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
+        primaryAttack.armorPenFlat = tower.damage * (effect.potency ?? 0);
+    }
 
-  // --- Schritt 4: Vereinfachte Rüstung (linear) ---
-  const baseArmor = target.armor ?? 0;
-  const flatPen = (atk.armorPenFlat ?? 0) + (target.debuffs?.armorReductionFlat ?? 0);
-  let effectiveArmor = baseArmor - flatPen;
+    output.newAttacks.push(primaryAttack);
 
-  if (!opts.allowNegativeArmor) {
-    if (effectiveArmor < 0) effectiveArmor = 0;
-  }
-  let postArmorDamage = damage - effectiveArmor;
-  if (opts.minDamage !== undefined) {
-    postArmorDamage = Math.max(opts.minDamage, Math.floor(postArmorDamage));
-  } else {
-    postArmorDamage = Math.floor(postArmorDamage);
-  }
+    const { damageDealt, killed } = applyDamage(damageAmount, currentTarget, primaryAttack);
+    
+    output.damageNumbers.push({
+        id: crypto.randomUUID(),
+        amount: damageDealt,
+        targetId: currentTarget.id,
+        color: isCrit ? '#ffeb3b' : '#ffffff',
+        isCrit,
+    });
+    
+    if (killed) {
+        currentTarget.deathTimestamp = now;
+        output.resourcesGained += currentTarget.bounty;
+        output.killed++;
+        if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 1)) {
+            output.livesGained += (tower.effect.potency ?? 0);
+            output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
+        }
+    } else {
+        if (effect?.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
+            currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
+        }
+        if (effect?.type === 'stun' && Math.random() < (effect.chance ?? 1)) {
+            currentTarget.effects.push({ type: 'stun', expires: now + (effect.duration ?? 500), potency: 1 });
+        }
+        if (effect?.type === 'burn' && Math.random() < (effect.chance ?? 1)) {
+            currentTarget.effects.push({ type: 'burn', expires: now + (effect.duration ?? 3000), potency: (effect.potency ?? 0) * damageAmount, lastTick: now });
+        }
+        if (effect?.type === 'vulnerability' && Math.random() < (effect.chance ?? 1)) {
+            currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
+        }
+    }
 
-  // --- Schritt 5: DoTs anwenden (Snapshotted) ---
-  // DoTs werden jetzt „angeklebt“, die Ticks laufen im Main-Loop.
-  // Wichtig: Snapshot der Schadenshöhe bei Anwendung, unabhängig von späteren Buffs/Nerfs.
-  const appliedDots = (atk.dots ?? []).map(dot => snapshotDot(dot, { damage, isCrit, totalVulnPct }));
+    // Handle Splash Damage
+    if (effect?.type === 'splash' && effect.radius) {
+        output.splashRings.push({
+            id: crypto.randomUUID(),
+            x: currentTarget.position.col,
+            y: currentTarget.position.row,
+            r: effect.radius,
+            color: elementProjectileColors[tower.elements[0] || 'neutral'],
+            element: tower.elements[0],
+            vfxType: effect.vfxType
+        });
+        
+        output.updatedEnemies.forEach(enemy => {
+            if (enemy.id !== currentTarget!.id && !enemy.deathTimestamp) {
+                const distSq = (enemy.position.col - currentTarget!.position.col)**2 + (enemy.position.row - currentTarget!.position.row)**2;
+                if (distSq <= effect.radius!**2) {
+                    const splashDmg = damageAmount * (effect.potency ?? 0.5);
+                    const { damageDealt: splashDamageDealt, killed: splashKilled } = applyDamage(splashDmg, enemy, { ...primaryAttack, baseDamage: splashDmg });
+                    output.damageNumbers.push({ id: crypto.randomUUID(), amount: splashDamageDealt, targetId: enemy.id, color: '#ffc107', isCrit: false });
+                    if(splashKilled) {
+                        enemy.deathTimestamp = now;
+                        output.resourcesGained += enemy.bounty;
+                        output.killed++;
+                    }
+                }
+            }
+        });
+    }
 
-  // Ziel sofort Schaden zufügen, DoTs registrieren
-  target.health -= postArmorDamage;
-  for (const d of appliedDots) {
-    target.activeDots = target.activeDots ?? [];
-    target.activeDots.push(d);
-  }
+    // Handle Chain Lightning
+    if (effect?.type === 'chain' && effect.bounces) {
+        let lastTarget = currentTarget;
+        for (let i = 0; i < effect.bounces; i++) {
+            let nextTarget: Enemy | null = null;
+            let minDistanceSq = Infinity;
 
-  return {
-    immediateDamage: postArmorDamage,
-    crit: isCrit,
-    vulnerabilityAppliedPct: totalVulnPct,
-    effectiveArmor,
-    dotsApplied: appliedDots,
-    killed: target.health <= 0
-  };
+            output.updatedEnemies.forEach(enemy => {
+                if (enemy.id !== lastTarget.id && !enemy.deathTimestamp && !output.newAttacks.some(a => a.targetId === enemy.id)) {
+                    const distSq = (enemy.position.col - lastTarget.position.col)**2 + (enemy.position.row - lastTarget.position.row)**2;
+                    if (distSq < minDistanceSq) {
+                        minDistanceSq = distSq;
+                        nextTarget = enemy;
+                    }
+                }
+            });
+
+            if (nextTarget) {
+                const chainDmg = damageAmount * ((effect.potency ?? 0.7) ** (i + 1));
+                const { damageDealt: chainDamageDealt, killed: chainKilled } = applyDamage(chainDmg, nextTarget, { ...primaryAttack, baseDamage: chainDmg });
+                output.newAttacks.push({ ...primaryAttack, id: crypto.randomUUID(), targetId: nextTarget.id, targetPosition: { ...nextTarget.position }, isChain: true, chainSourceId: lastTarget.id });
+                output.damageNumbers.push({ id: crypto.randomUUID(), amount: chainDamageDealt, targetId: nextTarget.id, color: '#2196f3', isCrit: false });
+                if(chainKilled) {
+                    nextTarget.deathTimestamp = now;
+                    output.resourcesGained += nextTarget.bounty;
+                    output.killed++;
+                }
+                lastTarget = nextTarget;
+            } else {
+                break;
+            }
+        }
+    }
+    
+     if (effect?.type === 'pull' && effect.radius && effect.duration && effect.potency) {
+        output.newGravityWells.push({
+            id: `well-${now}`,
+            x: target.position.col,
+            y: target.position.row,
+            radius: effect.radius,
+            potency: effect.potency,
+            expires: now + effect.duration
+        });
+    }
+
+    return output;
 }
 
-function snapshotDot(dot: DoTEffect, snapshot: { damage: number; isCrit: boolean; totalVulnPct: number }): DoTEffect {
-  // Beispiel: Dot skaliert prozentual vom gesnapshotteten Schaden oder hat Flat-Wert
-  const basePerTick = dot.flatPerTick ?? (dot.scalePctOfHit ?? 0) * snapshot.damage;
-  return {
-    ...dot,
-    // Snapshotwert fest einfrieren:
-    flatPerTick: Math.max(1, Math.floor(basePerTick)),
-    // Optional: Krits verstärken auch DoTs leicht (Game-Design-Entscheidung):
-    critScaled: snapshot.isCrit ? true : false,
-    // Merker, dass dieser DoT bereits gesnapshottet wurde
-    snapshotted: true
-  };
-}
 
 // --- Main-Loop Tick für DoTs (separat, unverändert zum Angriffs-Tempo) ---
-export function tickDots(target: Enemy): number {
-  if (!target.activeDots?.length) return 0;
-  let total = 0;
-  target.activeDots = target.activeDots.filter(dot => {
-    const tickDmg = Math.max(1, Math.floor(dot.flatPerTick ?? 0));
-    target.health -= tickDmg;
-    total += tickDmg;
-    dot.remainingMs -= dot.tickMs;
-    return dot.remainingMs > 0;
-  });
-  return total;
+export function tickDots(target: Enemy, delta: number): { totalDamage: number, killed: boolean } {
+  if (!target.effects?.length || target.deathTimestamp) return { totalDamage: 0, killed: false };
+  
+  let totalDamage = 0;
+  
+  for (const effect of target.effects) {
+    if ((effect.type === 'burn' || effect.type === 'poison') && effect.expires > Date.now()) {
+        const ticksSinceLast = delta / 1000;
+        const damageThisFrame = (effect.potency ?? 0) * ticksSinceLast;
+        target.health -= damageThisFrame;
+        totalDamage += damageThisFrame;
+    }
+  }
+
+  if (target.health <= 0) {
+    return { totalDamage, killed: true };
+  }
+  
+  return { totalDamage, killed: false };
 }
