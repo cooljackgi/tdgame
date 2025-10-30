@@ -749,11 +749,28 @@ export default function CoopGameLoader() {
               }
           }
           
-          if (firingIds.size > 0) setFiringTowerIds(firingIds);
-          if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
-          if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
-          if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
-          if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
+          // --- BROADCAST VFX ---
+          if (firingIds.size > 0) {
+            setFiringTowerIds(firingIds);
+            sendGameDataRef.current('VFX_TOWER_FIRING', Array.from(firingIds));
+            setTimeout(() => setFiringTowerIds(new Set()), 150);
+          }
+          if (allNewAttacks.length > 0) {
+            gameBoardRef.current?.queueAttacks(allNewAttacks);
+            sendGameDataRef.current('VFX_ATTACK', allNewAttacks);
+          }
+          if (allNewDamageNumbers.length > 0) {
+            gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+            sendGameDataRef.current('VFX_DAMAGE_NUMBER', allNewDamageNumbers);
+          }
+          if (allNewSplashRings.length > 0) {
+            gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+            sendGameDataRef.current('VFX_SPLASH', allNewSplashRings);
+          }
+          if (allNewLifeGainVfx.length > 0) {
+            gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
+            sendGameDataRef.current('VFX_LIFE_GAIN', allNewLifeGainVfx);
+          }
 
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
@@ -775,6 +792,7 @@ export default function CoopGameLoader() {
               const dotResult = tickDots(updatedEnemy, delta);
               if (dotResult.totalDamage > 0) {
                   gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'} as DamageNumber]);
+                  sendGameDataRef.current('VFX_DAMAGE_NUMBER', [{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'} as DamageNumber]);
               }
               if (dotResult.killed && !updatedEnemy.deathTimestamp) {
                   updatedEnemy.deathTimestamp = now;
@@ -964,5 +982,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-    
