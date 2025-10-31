@@ -26,7 +26,7 @@ import type {
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
-type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element';
+type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
 
 interface MobileLayoutProps {
   players: Player[];
@@ -47,6 +47,7 @@ interface MobileLayoutProps {
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
+  portalEntrance: Node | null;
   focusedTower: PlacedTower | null;
   gameBoardRef: React.RefObject<GameBoardHandle>;
   interactionPrompt: string | null;
@@ -55,6 +56,7 @@ interface MobileLayoutProps {
   gameStatus: GameStatus;
   resetGame: () => void;
   onSelectTowerToBuild: (tower: Tower | null) => void;
+  onEnterPortalMode: () => void;
   handleUpgradeTower: (upgradeId: string) => void;
   handleSellTower: () => void;
   setFocusedTower: (tower: PlacedTower | null) => void;
@@ -101,9 +103,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
     workers, ghosts,
     damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
-    focusedTower, gameBoardRef, interactionPrompt,
+    portalEntrance, focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
-    onSelectTowerToBuild, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
+    onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     justPlacedTowerId,
     isCoop, playerRole, handleLoadTestLayout, handleLoadAllTowersLayout, isCheating, cheat_addResources, cheat_skipWaves, cheat_heal,
@@ -281,6 +283,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           onFocusTower={handleFocusTower} // Use the new handler
           cancelInteractions={cancelInteractions}
           selectedTowerToBuild={selectedTowerToBuild}
+          portalEntrance={portalEntrance}
           focusedTower={focusedTower}
           lastUpgradedTowerId={lastUpgradedTowerId}
           justPlacedTowerId={justPlacedTowerId}
@@ -361,6 +364,10 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                       <TowerSelection
                         allTowers={allTowers}
                         onSelectTower={handleSelectAndClose}
+                        onEnterPortalMode={() => {
+                            onEnterPortalMode();
+                            setIsBuildSheetOpen(false);
+                        }}
                         focusedTower={focusedTower}
                         selectedTowerToBuild={selectedTowerToBuild}
                         onUpgradeTower={handleUpgrade}

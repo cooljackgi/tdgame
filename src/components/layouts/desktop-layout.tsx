@@ -19,7 +19,7 @@ import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
 
-type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element';
+type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
 
 interface DesktopLayoutProps {
   players: Player[];
@@ -45,11 +45,13 @@ interface DesktopLayoutProps {
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
+  portalEntrance: Node | null;
   focusedTower: PlacedTower | null;
   gameBoardRef: React.RefObject<GameBoardHandle>;
   interactionPrompt: string | null;
   cancelInteractions: () => void;
   onSelectTowerToBuild: (tower: Tower | null) => void;
+  onEnterPortalMode: () => void;
   handleUpgradeTower: (upgradeId: string) => void;
   handleSellTower: () => void;
   setFocusedTower: (tower: PlacedTower | null) => void;
@@ -90,9 +92,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
     resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, damageNumbers, splashRings,
     persistentClouds,
-    currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, focusedTower,
+    currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
-    onSelectTowerToBuild, handleUpgradeTower, handleSellTower,
+    onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     justPlacedTowerId,
     isCoop,
@@ -249,6 +251,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 onFocusTower={onFocusTower}
                 cancelInteractions={cancelInteractions}
                 selectedTowerToBuild={selectedTowerToBuild}
+                portalEntrance={portalEntrance}
                 focusedTower={focusedTower}
                 lastUpgradedTowerId={lastUpgradedTowerId}
                 justPlacedTowerId={justPlacedTowerId}
@@ -271,6 +274,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
               <TowerSelection
                 allTowers={allTowers}
                 onSelectTower={onSelectTowerToBuild}
+                onEnterPortalMode={onEnterPortalMode}
                 focusedTower={focusedTower}
                 selectedTowerToBuild={selectedTowerToBuild}
                 onUpgradeTower={handleUpgradeTower}

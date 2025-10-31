@@ -17,7 +17,7 @@ import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
 import { onGameEnd } from '@/lib/game-end';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
+import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/lib/commands';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -58,6 +58,8 @@ export default function SinglePlayerGame({
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+    const [isPlacingPortalEntrance, setIsPlacingPortalEntrance] = useState(false);
+    const [portalEntrance, setPortalEntrance] = useState<Node | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
@@ -325,34 +327,28 @@ export default function SinglePlayerGame({
     }, [startWaveLogic]);
     
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        if (selectedTowerToBuild) {
-            const state: GameSessionState = {
-                players: playersRef.current,
-                gameState: gameStateRef.current,
-                towersByCell: towersByCellRef.current,
-                enemies: enemiesRef.current,
-                currentWave: currentWaveRef.current,
-                difficulty: difficultyRef.current,
-                gameStatus: gameStatusRef.current,
-                currentPath: currentPathRef.current,
-                waveStartCountdown: 0,
-                isIntermission: isIntermissionRef.current,
-                workers: workersRef.current,
-                ghosts: ghostsRef.current,
-            };
-
+        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
+        if (isPlacingPortalEntrance) {
+            if (portalEntrance) { // Second click: place exit
+                const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
+                setPlayers(newState.players);
+                setWorkers(newState.workers);
+                setPortalEntrance(null);
+                setIsPlacingPortalEntrance(false);
+            } else { // First click: place entrance
+                setPortalEntrance({ row, col });
+            }
+        } else if (selectedTowerToBuild) {
             const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
-
             setPlayers(newState.players);
             setGhosts(newState.ghosts);
             setWorkers(newState.workers);
             setCurrentPath(newState.currentPath);
         } else {
-            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current };
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
         }
-    }, [selectedTowerToBuild]);
+    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalEntrance]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -407,19 +403,34 @@ export default function SinglePlayerGame({
 
     const onFocusTower = useCallback((tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
         setFocusedTower(tower);
     }, []);
     
     const cancelInteractions = useCallback(() => {
         setSelectedTowerToBuild(null);
         setFocusedTower(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
     }, []);
 
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
         setSelectedTowerToBuild(tower);
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, []);
+    
+    const onEnterPortalMode = useCallback(() => {
+        setFocusedTower(null);
+        setSelectedTowerToBuild(null);
+        setIsPlacingPortalEntrance(true);
+        setPortalEntrance(null); // Reset entrance on mode entry
+        audioManager.play({ kind: 'sfx', name: 'ui_click' });
+    }, []);
+
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         const mazePath: Node[] = [
@@ -789,7 +800,13 @@ export default function SinglePlayerGame({
     
     if (!localPlayer) return null;
 
-    const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
+    const interactionPrompt = isPlacingPortalEntrance
+      ? (portalEntrance ? 'Wähle den Ausgang des Portals' : 'Wähle den Eingang des Portals')
+      : selectedTowerToBuild
+      ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
+      : focusedTower
+      ? `Fokus: ${focusedTower?.name}`
+      : 'Wähle einen Turm zum Bauen oder einen Arbeiter';
 
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -820,11 +837,13 @@ export default function SinglePlayerGame({
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
+                    portalEntrance={portalEntrance}
                     focusedTower={focusedTower}
                     gameBoardRef={gameBoardRef}
                     interactionPrompt={interactionPrompt} 
                     cancelInteractions={cancelInteractions}
-                    onSelectTowerToBuild={onSelectTowerToBuild} 
+                    onSelectTowerToBuild={onSelectTowerToBuild}
+                    onEnterPortalMode={onEnterPortalMode}
                     handleUpgradeTower={handleUpgradeTower}
                     handleSellTower={handleSellTower}
                     setFocusedTower={setFocusedTower}
