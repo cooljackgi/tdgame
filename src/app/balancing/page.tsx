@@ -33,6 +33,32 @@ import { Input } from '@/components/ui/input';
 import { saveBalancingData } from '@/ai/flows/save-balancing-flow';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+
+const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
+    'slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 
+    'pull', 'vulnerability', 'aura', 'armor_shred', 'lifesteal', 'crit', 
+    'persistent_cloud', 'poison'
+];
+
+const defaultEffectValues: Record<TowerEffect['type'], Omit<TowerEffect, 'type'>> = {
+    slow: { potency: 0.3, duration: 2000, chance: 1 },
+    stun: { potency: 1, duration: 500, chance: 0.15 },
+    burn: { potency: 20, duration: 3000 },
+    pushback: { distance: 0.5, chance: 1 },
+    splash: { radius: 1.2, potency: 0.5 },
+    multishot: { targets: 3 },
+    chain: { bounces: 3, potency: 0.6 },
+    pull: { radius: 1.5, potency: 0.1, duration: 1000 },
+    vulnerability: { potency: 0.15, duration: 5000 },
+    aura: { radius: 4, potency: 0.1 },
+    armor_shred: { potency: 0.25, duration: 4000, chance: 1 },
+    lifesteal: { potency: 0.1, chance: 0.2 },
+    crit: { potency: 2, chance: 0.15 },
+    persistent_cloud: { radius: 1.5, potency: 50, duration: 5000, cloudEffect: 'poison' },
+    poison: { potency: 25, duration: 5000 },
+};
+
 
 const EffectInput = ({ label, value, onChange, type = 'number', step = 0.1, min = 0 }: { label: string, value: number, onChange: (e: ChangeEvent<HTMLInputElement>) => void, type?: string, step?: number, min?: number }) => (
     <div className="grid grid-cols-2 items-center gap-2">
@@ -49,7 +75,7 @@ const EffectInput = ({ label, value, onChange, type = 'number', step = 0.1, min 
     </div>
 );
 
-const EffectEditor = ({ tower, onEffectChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number) => void }) => {
+const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number) => void, onEffectTypeChange: (id: string, newType: TowerEffect['type']) => void }) => {
     if (!tower.effect) return <div className="text-xs text-muted-foreground">Kein Effekt</div>;
 
     const { type, ...params } = tower.effect;
@@ -111,7 +137,23 @@ const EffectEditor = ({ tower, onEffectChange }: { tower: Tower, onEffectChange:
         }
     }
     
-    return <div className="space-y-2">{renderInputs()}</div>;
+    return (
+        <div className="space-y-2">
+            <Select value={type} onValueChange={(newType: TowerEffect['type']) => onEffectTypeChange(tower.id, newType)}>
+                <SelectTrigger className="h-7 text-xs">
+                    <SelectValue placeholder="Effekt-Typ wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                    {ALL_EFFECT_TYPES.map(t => (
+                        <SelectItem key={t} value={t} className="text-xs capitalize">{t.replace('_', ' ')}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+            <div className="pl-1 border-l-2 border-muted/50 ml-2 mt-2 space-y-2">
+                {renderInputs()}
+            </div>
+        </div>
+    );
 };
 
 
@@ -173,6 +215,21 @@ export default function BalancingPage() {
         }
         return tower;
       })
+    );
+  };
+
+  const handleEffectTypeChange = (towerId: string, newType: TowerEffect['type']) => {
+    setTowers(currentTowers =>
+        currentTowers.map(tower => {
+            if (tower.id === towerId) {
+                const newEffect: TowerEffect = {
+                    type: newType,
+                    ...defaultEffectValues[newType],
+                };
+                return { ...tower, effect: newEffect };
+            }
+            return tower;
+        })
     );
   };
   
@@ -289,7 +346,7 @@ export default function BalancingPage() {
                   <TableHead className="w-[120px]">Leben</TableHead>
                   <TableHead className="w-[140px]">Angr./s (ms)</TableHead>
                   <TableHead className="w-[120px]">Reichw.</TableHead>
-                  <TableHead className="min-w-[180px]">Effekt-Werte</TableHead>
+                  <TableHead className="min-w-[220px]">Effekt-Werte</TableHead>
                   <TableHead className="text-right">DPS</TableHead>
                   <TableHead className="text-right">DPS/Kosten</TableHead>
                 </TableRow>
@@ -356,7 +413,7 @@ export default function BalancingPage() {
                       />
                     </TableCell>
                     <TableCell>
-                        <EffectEditor tower={tower} onEffectChange={handleEffectChange} />
+                        <EffectEditor tower={tower} onEffectChange={handleEffectChange} onEffectTypeChange={handleEffectTypeChange} />
                     </TableCell>
                     <TableCell className="text-right font-semibold">{tower.dps.toFixed(2)}</TableCell>
                     <TableCell className={cn("text-right font-bold", dpcColor)}>{dpc.toFixed(4)}</TableCell>
@@ -370,4 +427,3 @@ export default function BalancingPage() {
     </main>
   );
 }
-
