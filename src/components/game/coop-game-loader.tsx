@@ -20,7 +20,6 @@ import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
-import { waves } from '@/lib/game-data/enemies';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
@@ -611,12 +610,14 @@ export default function CoopGameLoader() {
               resources: p.resources + (p.incomePerSecond * (delta / 1000)),
           })));
 
+          const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+          const newState = tickWorkers(state, delta, now);
+          setWorkers(newState.workers);
+          setGhosts(newState.ghosts);
+          setTowersByCell(newState.towersByCell);
+          setCurrentPath(newState.currentPath);
+
           if (isIntermission) {
-              const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-              const newState = tickWorkers(state, delta, now);
-              setWorkers(newState.workers);
-              setGhosts(newState.ghosts);
-              setTowersByCell(newState.towersByCell);
               setHostRevision(r => r + 1);
               return;
           }
@@ -805,13 +806,6 @@ export default function CoopGameLoader() {
           setGravityWells(activeGravityWells);
           setPersistentClouds(activePersistentClouds);
           
-          const state: GameSessionState = { players, gameState, towersByCell, enemies: stillAlive, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-          const newState = tickWorkers(state, delta, now);
-          setWorkers(newState.workers);
-          setGhosts(newState.ghosts);
-          setTowersByCell(newState.towersByCell);
-          setCurrentPath(newState.currentPath);
-
 
           if (livesLostThisTick > 0) {
               setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLostThisTick) }));
@@ -855,7 +849,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPath, players, gravityWells, persistentClouds, startWave, startWave, gameState, workers, ghosts]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPath, players, gravityWells, persistentClouds, startWave, gameState, workers, ghosts]);
 
 
   useEffect(() => {
@@ -905,6 +899,8 @@ export default function CoopGameLoader() {
                 setTowers={() => {}} 
                 placedTowers={placedTowers} 
                 enemies={enemies} 
+                workers={workers}
+                ghosts={ghosts}
                 damageNumbers={[]} 
                 splashRings={[]}
                 persistentClouds={persistentClouds}
