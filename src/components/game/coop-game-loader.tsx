@@ -570,19 +570,20 @@ export default function CoopGameLoader() {
     }, [user, gameId, router, toast]);
 
     useEffect(() => {
-        if (!isGameHost || gameStatus !== 'playing') {
-            if (countdownRef.current) window.clearInterval(countdownRef.current);
-            countdownRef.current = null;
+        if (!isGameHost) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
             return;
         }
+
+        if(gameStatus !== 'playing') return;
 
         if(isIntermission) {
             countdownRef.current = window.setInterval(() => {
                 setWaveStartCountdown(prev => {
                     const newTime = Math.max(0, prev - 1);
                     if (newTime === 0) {
-                        window.clearInterval(countdownRef.current!);
-                        countdownRef.current = null;
+                        if (countdownRef.current) clearInterval(countdownRef.current);
+                        countdownRef.current = undefined;
                         startWave(currentWave);
                     }
                     setHostRevision(r => r + 1);
@@ -592,8 +593,8 @@ export default function CoopGameLoader() {
         }
 
         return () => {
-            if (countdownRef.current) window.clearInterval(countdownRef.current);
-            countdownRef.current = null;
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            countdownRef.current = undefined;
         };
     }, [isGameHost, isIntermission, gameStatus, startWave, currentWave]);
   

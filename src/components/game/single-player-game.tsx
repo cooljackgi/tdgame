@@ -333,8 +333,7 @@ export default function SinglePlayerGame({
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
                 setPlayers(newState.players);
                 setWorkers(newState.workers);
-                setPortalEntrance(null);
-                setIsPlacingPortalEntrance(false);
+                cancelInteractions(); // Exit portal mode after placing
             } else { // First click: place entrance
                 setPortalEntrance({ row, col });
             }
@@ -348,7 +347,7 @@ export default function SinglePlayerGame({
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
         }
-    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalEntrance]);
+    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalEntrance, cancelInteractions]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -652,7 +651,7 @@ export default function SinglePlayerGame({
             
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
-                // Sound is played on kill, not on disappearance
+                // Sound and vibration are now handled in processAttack/tickDots
                 continue;
               }
 
@@ -679,23 +678,19 @@ export default function SinglePlayerGame({
                 }
               }
 
-              const processDoTEffect = (type: 'burn' | 'poison', color: string) => {
-                const effect = updatedEnemy!.effects.find(e => e.type === type);
-                if (effect && (!effect.lastTick || now - effect.lastTick >= 1000)) {
-                    const damage = effect.potency ?? 0;
-                    updatedEnemy!.health -= damage;
-                    effect.lastTick = now;
-                    gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
-                    if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
-                      updatedEnemy!.deathTimestamp = now;
-                       audioManager.play({ kind: 'sfx', name: 'enemy_die' });
-                       audioManager.playVibration('kill');
-                    }
-                }
+              const { totalDamage, killed } = tickDots(updatedEnemy, delta);
+              if (totalDamage > 0) {
+                 gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: totalDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
               }
-
-              processDoTEffect('burn', '#f97316');
-              processDoTEffect('poison', '#22c55e');
+              if (killed && !updatedEnemy.deathTimestamp) {
+                updatedEnemy.deathTimestamp = now;
+                audioManager.play({kind: 'sfx', name: 'enemy_die'});
+                audioManager.playVibration('kill');
+              }
+              if(updatedEnemy.deathTimestamp) {
+                nextEnemies.push(updatedEnemy);
+                continue;
+              }
 
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
@@ -740,8 +735,8 @@ export default function SinglePlayerGame({
                if (updatedEnemy) {
                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                       updatedEnemy.deathTimestamp = now;
-                      audioManager.play({ kind: 'sfx', name: 'enemy_die' });
-                      audioManager.playVibration('kill');
+                       audioManager.play({ kind: 'sfx', name: 'enemy_die' });
+                       audioManager.playVibration('kill');
                  }
                  nextEnemies.push(updatedEnemy);
                }
