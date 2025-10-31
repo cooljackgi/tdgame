@@ -148,6 +148,16 @@ export function processAttack(
         });
     }
 
+    // Special combo logic for Algae Tower
+    if (tower.specId === 'combo-water-nature') {
+        const slowPotency = 0.25;
+        const poisonPotency = 15; // Dmg per second
+        const effectDuration = 3000;
+
+        currentTarget.effects.push({ type: 'slow', expires: now + effectDuration, potency: slowPotency });
+        currentTarget.effects.push({ type: 'poison', expires: now + effectDuration, potency: poisonPotency, lastTick: now });
+    }
+
     if (effect?.type === 'chain' && effect.bounces) {
         let lastTarget = currentTarget;
         for (let i = 0; i < effect.bounces; i++) {
