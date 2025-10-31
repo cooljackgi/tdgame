@@ -9,7 +9,7 @@ import { towers } from './game-data/towers';
 import { findPath } from './pathfinding';
 
 const TILE_SIZE = 64;
-const centerOf = (row: number, col: number) => ({
+export const centerOf = (row: number, col: number) => ({
   x: (col - 1) * TILE_SIZE + TILE_SIZE / 2,
   y: (row - 1) * TILE_SIZE + TILE_SIZE / 2,
 });
@@ -87,12 +87,12 @@ export function processAttack(
         baseDamage: damageAmount,
         armorPenFlat: 0, 
     };
-    output.newAttacks.push(primaryAttack);
     
     const armorShredEffect = effects?.find(e => e.type === 'armor_shred');
     if (armorShredEffect && Math.random() < (armorShredEffect.chance ?? 1)) {
         primaryAttack.armorPenFlat = tower.damage * (armorShredEffect.potency ?? 0);
     }
+    output.newAttacks.push(primaryAttack);
 
     const { damageDealt, killed } = applyDamage(damageAmount, currentTarget, primaryAttack);
     
@@ -263,6 +263,13 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
 // --- Worker Logic ---
 
 export function startNextOrder(state: GameSessionState, w: Worker): GameSessionState {
+  // If there's a manual move target, prioritize it
+  if (w.moveTarget) {
+    w.state = "moving";
+    w.current = undefined; // Not a build order
+    return state;
+  }
+  
   const next = w.queue.shift();
   if (!next) { 
     w.state = "idle";
@@ -284,13 +291,17 @@ export function tickWorkers(state: GameSessionState, dtMs: number, now: number):
 }
 
 function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: number): GameSessionState {
-  if (!w.current) {
-    if (w.queue.length > 0) return startNextOrder(state, w);
+  if (w.state === "idle") {
+    if (w.moveTarget || w.queue.length > 0) {
+      return startNextOrder(state, w);
+    }
     return state;
   }
 
   if (w.state === "moving") {
-    const { targetX, targetY } = w.current;
+    const targetX = w.moveTarget ? w.moveTarget.x : w.current!.targetX;
+    const targetY = w.moveTarget ? w.moveTarget.y : w.current!.targetY;
+    
     const dx = targetX - w.x, dy = targetY - w.y;
     const dist = Math.hypot(dx, dy);
     const step = (w.speed * dtMs) / 1000;
@@ -300,10 +311,17 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
     if (dist <= step) {
       w.x = targetX;
       w.y = targetY;
-      // bauen starten
-      w.state = "building";
-      w.current.startedAt = now;
-      w.current.eta = now + w.current.order.buildTimeMs;
+
+      if (w.moveTarget) {
+        // Arrived at manual move destination
+        w.moveTarget = null;
+        w.state = "idle"; // Will pick up queue next tick if available
+      } else {
+        // Arrived at build site
+        w.state = "building";
+        w.current!.startedAt = now;
+        w.current!.eta = now + w.current!.order.buildTimeMs;
+      }
     } else {
       w.x += (dx / dist) * step;
       w.y += (dy / dist) * step;
@@ -312,6 +330,17 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
   }
 
   if (w.state === "building") {
+    // If a move command comes in, interrupt building and go back to moving
+    if (w.moveTarget) {
+      w.state = "moving";
+      // The ghost remains, building will resume when a worker comes back
+      return state;
+    }
+    if (!w.current) { // Should not happen, but safeguard
+      w.state = "idle";
+      return state;
+    }
+    
     const { order, startedAt, eta } = w.current;
     const p = Math.min(1, (now - (startedAt ?? now)) / (order.buildTimeMs || 1));
     const ghost = state.ghosts.find(g => g.row === order.row && g.col === order.col);
@@ -334,10 +363,6 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
 
   const towerSpec = towers.find(t => t.id === order.towerId)!;
   
-  // Find the player who owns this worker.
-  // In single player, there's only 'player1'. In coop, there might be 'player1' and 'player2'.
-  // We assume worker ID "worker-1" belongs to the first player, "worker-2" to the second.
-  // This logic is more robust than assuming player1/player2 directly.
   const owner = newState.players.find(p => p.id.includes(w.id.split('-')[1]));
 
   const newTower: PlacedTower = {
@@ -347,7 +372,7 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
     position: { row: order.row, col: order.col },
     lastAttack: 0,
     health: towerSpec.maxHealth,
-    ownerId: owner ? owner.id : 'player1', // Fallback to player1, but should always find an owner.
+    ownerId: owner ? owner.id : 'player1',
   };
 
   const cellKey = `${order.row}_${order.col}`;

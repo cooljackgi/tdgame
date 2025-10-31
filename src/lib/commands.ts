@@ -2,8 +2,8 @@
 import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
 import { GRID_ROWS, GRID_COLS } from './game-data/constants';
-import type { GameSessionState, BuildOrder } from './game-data/types';
-import { startNextOrder } from './game-logic';
+import type { GameSessionState, BuildOrder, Worker } from './game-data/types';
+import { startNextOrder, centerOf } from './game-logic';
 
 function tierToBuildTime(tier: number) {
   if (tier <= 0) return 1200;
@@ -11,6 +11,22 @@ function tierToBuildTime(tier: number) {
   if (tier === 2) return 2200;
   return 3000; // tier 3+
 }
+
+export function enqueueMoveOrder(state: GameSessionState, workerId: string, row: number, col: number): GameSessionState {
+    const worker = state.workers.find(w => w.id === workerId);
+    if (!worker) return state;
+
+    // Set a direct move target. This will be picked up by the worker logic.
+    worker.moveTarget = centerOf(row, col);
+
+    // If the worker is idle, this makes it start moving immediately.
+    if (worker.state === 'idle') {
+        worker.state = 'moving';
+    }
+    
+    return { ...state };
+}
+
 
 export function enqueueBuildOrder(
   state: GameSessionState,
@@ -66,9 +82,8 @@ export function enqueueBuildOrder(
   };
   worker.queue.push(order);
 
-  if (worker.state === "idle" && !worker.current) {
-    return startNextOrder(state, worker);
-  }
+  // If worker is idle, it will pick up the new order in the next tick via startNextOrder.
+  // We don't need to call it here, the main loop will handle it.
   
   return state;
 }

@@ -360,6 +360,7 @@ export interface Worker {
     startedAt?: number;
     eta?: number;
   };
+  moveTarget?: { x: number, y: number } | null;
 }
 
 export interface GhostFoundation {

@@ -24,7 +24,7 @@ import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder } from '@/lib/commands';
+import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { onGameEnd } from '@/lib/game-end';
 import type { GameBoardHandle } from './game-board';
 
@@ -170,15 +170,24 @@ export default function CoopGameLoader() {
 
     }, [isGameHost, difficulty]);
 
-    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now', payload:any) => {
+    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker', payload:any) => {
         if (!isGameHost) return;
         
         switch(action){
+            case 'move_worker': {
+                const { row, col, playerId } = payload;
+                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+                const updatedState = enqueueMoveOrder(state, workerId, row, col);
+                setWorkers(updatedState.workers);
+                break;
+            }
             case 'build': {
                  // Use enqueueBuildOrder instead
                 const { row, col, towerId, playerId } = payload;
+                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-                const updatedState = enqueueBuildOrder(state, playerId === 'player1' ? 'worker-1' : 'worker-2', row, col, towerId, Date.now());
+                const updatedState = enqueueBuildOrder(state, workerId, row, col, towerId, Date.now());
 
                 setPlayers(updatedState.players);
                 setGhosts(updatedState.ghosts);
@@ -287,7 +296,7 @@ export default function CoopGameLoader() {
                 break;
         }
         setHostRevision(r => r + 1);
-    }, [players, towersByCell, hostCanPlace, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, gameState, difficulty, currentPath, waveStartCountdown]);
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, gameState, difficulty, currentPath, waveStartCountdown]);
     
   // --- WebRTC Logic ---
   
@@ -376,6 +385,7 @@ export default function CoopGameLoader() {
                 return;
             }
             case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
+            case 'MOVE_WORKER_REQUEST':      onHostAction('move_worker', payload); return;
             case 'UPGRADE_TOWER_REQUEST':    onHostAction('upgrade', payload); return;
             case 'SELL_TOWER_REQUEST':       onHostAction('sell', payload); return;
             case 'PICK_ELEMENT_REQUEST':     onHostAction('pick_element', payload); return;
@@ -415,11 +425,12 @@ export default function CoopGameLoader() {
       }
   }, [isConnected, isGameHost, localPlayerId]);
 
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker', payload: any) => {
       if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
       
       const actionTypeMap = {
         build: 'BUILD_TOWER_REQUEST',
+        move_worker: 'MOVE_WORKER_REQUEST',
         upgrade: 'UPGRADE_TOWER_REQUEST',
         sell: 'SELL_TOWER_REQUEST',
         pick_element: 'PICK_ELEMENT_REQUEST',
@@ -429,7 +440,7 @@ export default function CoopGameLoader() {
       sendActionRef.current(actionType, { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost]);
   
-  const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now', payload: any) => {
+  const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker', payload: any) => {
       const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
       if (isGameHost) {
           onHostAction(action, finalPayload);
@@ -533,8 +544,8 @@ export default function CoopGameLoader() {
                 setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                 setGameStatus(data.gameStatus || 'waiting');
                 setWorkers(data.workers || [
-                  { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [] },
-                  { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [] }
+                  { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
+                  { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                 ]);
                 setGhosts(data.ghosts || []);
             }
@@ -558,24 +569,26 @@ export default function CoopGameLoader() {
     }, [user, gameId, router, toast]);
 
     useEffect(() => {
-        if (!isGameHost || !isIntermission || gameStatus !== 'playing') {
+        if (!isGameHost || gameStatus !== 'playing') {
             if (countdownRef.current) window.clearInterval(countdownRef.current);
             countdownRef.current = null;
             return;
         }
 
-        countdownRef.current = window.setInterval(() => {
-            setWaveStartCountdown(prev => {
-                const newTime = Math.max(0, prev - 1);
-                if (newTime === 0) {
-                    window.clearInterval(countdownRef.current!);
-                    countdownRef.current = null;
-                    startWave(currentWave);
-                }
-                setHostRevision(r => r + 1);
-                return newTime;
-            });
-        }, 1000);
+        if(isIntermission) {
+            countdownRef.current = window.setInterval(() => {
+                setWaveStartCountdown(prev => {
+                    const newTime = Math.max(0, prev - 1);
+                    if (newTime === 0) {
+                        window.clearInterval(countdownRef.current!);
+                        countdownRef.current = null;
+                        startWave(currentWave);
+                    }
+                    setHostRevision(r => r + 1);
+                    return newTime;
+                });
+            }, 1000);
+        }
 
         return () => {
             if (countdownRef.current) window.clearInterval(countdownRef.current);
@@ -603,7 +616,13 @@ export default function CoopGameLoader() {
             lastFpsUpdateRef.current = now;
           }
 
-          if (gameStatus !== 'playing') return;
+          if (gameStatus !== 'playing') {
+               const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+               const newState = tickWorkers(state, delta * (gameStatus === 'paused' ? 0.1 : 1), now);
+               setWorkers(newState.workers);
+               setGhosts(newState.ghosts);
+               return;
+          }
 
           setPlayers(ps => ps.map(p => ({
               ...p,
@@ -871,7 +890,11 @@ export default function CoopGameLoader() {
   }
   
   const handlePlaceTower = (row: number, col: number) => {
-    dispatchAction('build', { row, col, towerId: selectedTowerToBuild!.id });
+    if (selectedTowerToBuild) {
+        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
+    } else {
+        dispatchAction('move_worker', { row, col });
+    }
   };
   const handleUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
@@ -936,7 +959,7 @@ export default function CoopGameLoader() {
                 isWsConnected={isConnected} 
                 onPing={sendPing}
                 hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                hostBytesSentPerSecond={stats.sentBytesSentPerSecond}
+                hostBytesSentPerSecond={stats.sentBytesPerSecond}
                 clientPacketsPerSecond={stats.packetsPerSecond}
                 clientBytesReceivedPerSecond={stats.bytesPerSecond}
                 averagePacketSize={stats.averagePacketSize}

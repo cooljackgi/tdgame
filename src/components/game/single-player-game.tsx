@@ -17,7 +17,7 @@ import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
 import { onGameEnd } from '@/lib/game-end';
 import { processAttack, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder } from '@/lib/commands';
+import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -183,7 +183,8 @@ export default function SinglePlayerGame({
                 id: "worker-1",
                 x: 64, y: 64, speed: 260,
                 state: "idle",
-                queue: []
+                queue: [],
+                moveTarget: null,
             }]);
             setGhosts([]);
         }
@@ -323,8 +324,22 @@ export default function SinglePlayerGame({
         }
     }, [startWaveLogic]);
     
+    const handleMoveWorker = (row: number, col: number) => {
+        setWorkers(prevWorkers => {
+            const worker = prevWorkers[0];
+            if (worker) {
+                const newWorker = { ...worker, moveTarget: { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 } };
+                return [newWorker, ...prevWorkers.slice(1)];
+            }
+            return prevWorkers;
+        });
+    };
+
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        if (!selectedTowerToBuild) return;
+        if (!selectedTowerToBuild) {
+            handleMoveWorker(row, col);
+            return;
+        };
 
         const state: GameSessionState = {
             players: playersRef.current,
@@ -497,7 +512,18 @@ export default function SinglePlayerGame({
                 lastFpsUpdateRef.current = now;
             }
 
-            if (gameStatusRef.current !== 'playing') return;
+            if (gameStatusRef.current !== 'playing') {
+                 if (gameStatusRef.current === 'paused') {
+                    // Tick workers even when paused, but with a smaller delta to slow them down
+                     const state: GameSessionState = {
+                         players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current,
+                     };
+                     const newState = tickWorkers(state, delta * 0.1, now); // 10% speed
+                     setWorkers(newState.workers);
+                     setGhosts(newState.ghosts);
+                }
+                return;
+            };
 
             setPlayers(prev => prev.map(p => ({
                 ...p,
