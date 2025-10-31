@@ -326,6 +326,13 @@ export default function SinglePlayerGame({
         }
     }, [startWaveLogic]);
     
+    const cancelInteractions = useCallback(() => {
+        setSelectedTowerToBuild(null);
+        setFocusedTower(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
+    }, []);
+    
     const handlePlaceTower = useCallback((row: number, col: number) => {
         const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
         if (isPlacingPortalEntrance) {
@@ -333,7 +340,7 @@ export default function SinglePlayerGame({
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
                 setPlayers(newState.players);
                 setWorkers(newState.workers);
-                cancelInteractions(); // Exit portal mode after placing
+                cancelInteractions();
             } else { // First click: place entrance
                 setPortalEntrance({ row, col });
             }
@@ -407,13 +414,6 @@ export default function SinglePlayerGame({
         setFocusedTower(tower);
     }, []);
     
-    const cancelInteractions = useCallback(() => {
-        setSelectedTowerToBuild(null);
-        setFocusedTower(null);
-        setIsPlacingPortalEntrance(false);
-        setPortalEntrance(null);
-    }, []);
-
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
         setIsPlacingPortalEntrance(false);
@@ -651,7 +651,6 @@ export default function SinglePlayerGame({
             
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
-                // Sound and vibration are now handled in processAttack/tickDots
                 continue;
               }
 
@@ -735,8 +734,6 @@ export default function SinglePlayerGame({
                if (updatedEnemy) {
                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                       updatedEnemy.deathTimestamp = now;
-                       audioManager.play({ kind: 'sfx', name: 'enemy_die' });
-                       audioManager.playVibration('kill');
                  }
                  nextEnemies.push(updatedEnemy);
                }
