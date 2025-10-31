@@ -652,8 +652,7 @@ export default function SinglePlayerGame({
             
             for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
-                audioManager.playVibration('kill');
-                audioManager.play({ kind: 'sfx', name: 'enemy_die' });
+                // Sound is played on kill, not on disappearance
                 continue;
               }
 
@@ -689,6 +688,8 @@ export default function SinglePlayerGame({
                     gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: damage, targetId: updatedEnemy!.id, color } as DamageNumber]);
                     if (updatedEnemy!.health <= 0 && !updatedEnemy!.deathTimestamp) {
                       updatedEnemy!.deathTimestamp = now;
+                       audioManager.play({ kind: 'sfx', name: 'enemy_die' });
+                       audioManager.playVibration('kill');
                     }
                 }
               }
@@ -739,6 +740,8 @@ export default function SinglePlayerGame({
                if (updatedEnemy) {
                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
                       updatedEnemy.deathTimestamp = now;
+                      audioManager.play({ kind: 'sfx', name: 'enemy_die' });
+                      audioManager.playVibration('kill');
                  }
                  nextEnemies.push(updatedEnemy);
                }
@@ -867,6 +870,7 @@ export default function SinglePlayerGame({
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
                     attacks={attacks}
+                    isPlacingPortalEntrance={isPlacingPortalEntrance}
                 />
             </div>
 

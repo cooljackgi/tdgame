@@ -2,7 +2,7 @@
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState, TowerEffect, WorkerOrder, PlacePortalOrder
+  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
@@ -111,6 +111,7 @@ export function processAttack(
     if (killed) {
         currentTarget.deathTimestamp = now;
         output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: currentTarget.position.col, y: currentTarget.position.row });
+        audioManager.playVibration('kill');
         output.resourcesGained += currentTarget.bounty;
         output.killed++;
         const lifestealEffect = effects?.find(e => e.type === 'lifesteal');
@@ -160,6 +161,7 @@ export function processAttack(
                     if(splashKilled) {
                         enemy.deathTimestamp = now;
                         output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: enemy.position.col, y: enemy.position.row });
+                        audioManager.playVibration('kill');
                         output.resourcesGained += enemy.bounty;
                         output.killed++;
                     }
@@ -202,6 +204,7 @@ export function processAttack(
                 if(chainKilled) {
                     nextTarget.deathTimestamp = now;
                     output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: nextTarget.position.col, y: nextTarget.position.row });
+                    audioManager.playVibration('kill');
                     output.resourcesGained += nextTarget.bounty;
                     output.killed++;
                 }
@@ -350,7 +353,7 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
     
     const { order, startedAt, eta } = w.current;
     const p = Math.min(1, (now - (startedAt ?? now)) / (eta! - (startedAt ?? now) || 1));
-    const ghost = state.ghosts.find(g => g.row === (order as BuildTowerOrder).row && g.col === (order as BuildTowerOrder).col);
+    const ghost = state.ghosts.find(g => g.row === (order as any).row && g.col === (order as any).col);
     if(ghost) ghost.progress = p;
 
     if (now >= (eta ?? now)) {
@@ -392,7 +395,7 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker, o: PlacePo
 }
 
 function completeConstruction(state: GameSessionState, w: Worker): GameSessionState {
-  const { order } = w.current! as { order: BuildTowerOrder };
+  const { order } = w.current! as { order: WorkerOrder & { type: 'build_tower' } };
   
   const newState = { ...state };
   
@@ -415,6 +418,8 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
   const cellKey = `${order.row}_${order.col}`;
   newState.towersByCell = { ...newState.towersByCell, [cellKey]: newTower };
   newState.currentPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(newState.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+
+  audioManager.play({kind: 'sfx', name: 'build_tower'});
 
   w.current = undefined;
   w.state = "idle";

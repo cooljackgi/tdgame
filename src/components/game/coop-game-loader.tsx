@@ -618,26 +618,23 @@ export default function CoopGameLoader() {
           }
 
           const currentStatus = gameStatus;
-          if (currentStatus !== 'playing' && currentStatus !== 'waiting') {
-               const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-               const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
-               setWorkers(newState.workers);
-               setGhosts(newState.ghosts);
-               return;
+          const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+          const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
+          setWorkers(newState.workers);
+          setGhosts(newState.ghosts);
+          setTowersByCell(newState.towersByCell);
+          setCurrentPath(newState.currentPath);
+
+          if (currentStatus !== 'playing') {
+            return;
           }
+
 
           setPlayers(ps => ps.map(p => ({
               ...p,
               resources: p.resources + (p.incomePerSecond * (delta / 1000)),
           })));
           
-          const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-          const newState = tickWorkers(state, delta, now);
-          setWorkers(newState.workers);
-          setGhosts(newState.ghosts);
-          setTowersByCell(newState.towersByCell);
-          setCurrentPath(newState.currentPath);
-
           if (isIntermission) {
               setHostRevision(r => r + 1);
               return;
@@ -923,7 +920,7 @@ export default function CoopGameLoader() {
                 towers={initialTowers} 
                 setTowers={() => {}} 
                 placedTowers={placedTowers} 
-                enemies={enemies} 
+                enemies={enemies}
                 workers={workers}
                 ghosts={ghosts}
                 damageNumbers={[]} 
@@ -933,11 +930,13 @@ export default function CoopGameLoader() {
                 handlePlaceTower={handlePlaceTower}
                 onFocusTower={onFocusTower} 
                 selectedTowerToBuild={selectedTowerToBuild}
+                portalEntrance={null}
                 focusedTower={focusedTower}
                 gameBoardRef={gameBoardRef}
                 interactionPrompt={""} 
                 cancelInteractions={cancelInteractions}
-                onSelectTowerToBuild={onSelectTowerToBuild} 
+                onSelectTowerToBuild={onSelectTowerToBuild}
+                onEnterPortalMode={()=>{}}
                 handleUpgradeTower={handleUpgradeTower}
                 handleSellTower={handleSellTower}
                 setFocusedTower={setFocusedTower}
