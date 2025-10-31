@@ -59,6 +59,7 @@ export default function SinglePlayerGame({
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
     const [isPlacingPortalEntrance, setIsPlacingPortalEntrance] = useState(false);
+    const [portalPhase, setPortalPhase] = useState<'idle' | 'entrance' | 'exit'>('idle');
     const [portalEntrance, setPortalEntrance] = useState<Node | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
@@ -331,18 +332,22 @@ export default function SinglePlayerGame({
         setFocusedTower(null);
         setIsPlacingPortalEntrance(false);
         setPortalEntrance(null);
+        setPortalPhase('idle');
     }, []);
-    
+
     const handlePlaceTower = useCallback((row: number, col: number) => {
         const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
         if (isPlacingPortalEntrance) {
-            if (portalEntrance) { // Second click: place exit
+            if (portalPhase === 'entrance') {
+                setPortalEntrance({ row, col });
+                setPortalPhase('exit');
+                return; // Wait for the second click
+            } else if (portalPhase === 'exit' && portalEntrance) {
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
                 setPlayers(newState.players);
                 setWorkers(newState.workers);
                 cancelInteractions();
-            } else { // First click: place entrance
-                setPortalEntrance({ row, col });
+                return;
             }
         } else if (selectedTowerToBuild) {
             const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
@@ -354,7 +359,7 @@ export default function SinglePlayerGame({
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
         }
-    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalEntrance, cancelInteractions]);
+    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalPhase, portalEntrance, cancelInteractions]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -411,24 +416,22 @@ export default function SinglePlayerGame({
         setSelectedTowerToBuild(null);
         setIsPlacingPortalEntrance(false);
         setPortalEntrance(null);
+        setPortalPhase('idle');
         setFocusedTower(tower);
     }, []);
     
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
-        setFocusedTower(null);
-        setIsPlacingPortalEntrance(false);
-        setPortalEntrance(null);
+        cancelInteractions();
         setSelectedTowerToBuild(tower);
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
-    }, []);
+    }, [cancelInteractions]);
     
     const onEnterPortalMode = useCallback(() => {
-        setFocusedTower(null);
-        setSelectedTowerToBuild(null);
+        cancelInteractions();
         setIsPlacingPortalEntrance(true);
-        setPortalEntrance(null); // Reset entrance on mode entry
+        setPortalPhase('entrance');
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
-    }, []);
+    }, [cancelInteractions]);
 
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
@@ -792,7 +795,7 @@ export default function SinglePlayerGame({
     if (!localPlayer) return null;
 
     const interactionPrompt = isPlacingPortalEntrance
-      ? (portalEntrance ? 'Wähle den Ausgang des Portals' : 'Wähle den Eingang des Portals')
+      ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
       : selectedTowerToBuild
       ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
       : focusedTower

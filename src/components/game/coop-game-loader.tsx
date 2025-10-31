@@ -24,7 +24,7 @@ import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
+import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/lib/commands';
 import { onGameEnd } from '@/lib/game-end';
 import type { GameBoardHandle } from './game-board';
 import { waves } from '@/lib/game-data/enemies';
@@ -62,6 +62,9 @@ export default function CoopGameLoader() {
   
   // UI State
   const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+  const [isPlacingPortalEntrance, setIsPlacingPortalEntrance] = useState(false);
+  const [portalPhase, setPortalPhase] = useState<'idle' | 'entrance' | 'exit'>('idle');
+  const [portalEntrance, setPortalEntrance] = useState<Node | null>(null);
   const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
   const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
   const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
@@ -100,11 +103,6 @@ export default function CoopGameLoader() {
     setSelectedTowerToBuild(null);
     setFocusedTower(tower);
   };
-
-  const cancelInteractions = () => {
-    setSelectedTowerToBuild(null);
-    setFocusedTower(null);
-  };
   
   const onExit = () => {
     router.push('/');
@@ -115,6 +113,14 @@ export default function CoopGameLoader() {
     setSelectedTowerToBuild(tower);
     audioManager.play({ kind: 'sfx', name: 'ui_click' });
   };
+  
+  const cancelInteractions = useCallback(() => {
+      setSelectedTowerToBuild(null);
+      setFocusedTower(null);
+      setIsPlacingPortalEntrance(false);
+      setPortalEntrance(null);
+      setPortalPhase('idle');
+  }, []);
 
   // --- Refs to hold stable function references ---
   const sendActionRef = useRef<(type: string, payload: any) => void>(() => {});
@@ -171,10 +177,19 @@ export default function CoopGameLoader() {
 
     }, [isGameHost, difficulty]);
 
-    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker', payload:any) => {
+    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost) return;
         
         switch(action){
+            case 'place_portal': {
+                const { entrance, exit, playerId } = payload;
+                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+                const updatedState = enqueuePlacePortalOrder(state, workerId, entrance, exit, Date.now());
+                setPlayers(updatedState.players);
+                setWorkers(updatedState.workers);
+                break;
+            }
             case 'move_worker': {
                 const { row, col, playerId } = payload;
                 const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
@@ -385,6 +400,7 @@ export default function CoopGameLoader() {
                 setHostRevision(r => r + 1);
                 return;
             }
+            case 'PLACE_PORTAL_REQUEST':   onHostAction('place_portal', payload); return;
             case 'BUILD_TOWER_REQUEST':      onHostAction('build', payload); return;
             case 'MOVE_WORKER_REQUEST':      onHostAction('move_worker', payload); return;
             case 'UPGRADE_TOWER_REQUEST':    onHostAction('upgrade', payload); return;
@@ -426,12 +442,13 @@ export default function CoopGameLoader() {
       }
   }, [isConnected, isGameHost, localPlayerId]);
 
-  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker', payload: any) => {
+  const onLocalAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker' | 'place_portal', payload: any) => {
       if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
       
       const actionTypeMap = {
         build: 'BUILD_TOWER_REQUEST',
         move_worker: 'MOVE_WORKER_REQUEST',
+        place_portal: 'PLACE_PORTAL_REQUEST',
         upgrade: 'UPGRADE_TOWER_REQUEST',
         sell: 'SELL_TOWER_REQUEST',
         pick_element: 'PICK_ELEMENT_REQUEST',
@@ -441,7 +458,7 @@ export default function CoopGameLoader() {
       sendActionRef.current(actionType, { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost]);
   
-  const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker', payload: any) => {
+  const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker' | 'place_portal', payload: any) => {
       const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
       if (isGameHost) {
           onHostAction(action, finalPayload);
@@ -623,8 +640,12 @@ export default function CoopGameLoader() {
           const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
           setWorkers(newState.workers);
           setGhosts(newState.ghosts);
-          setTowersByCell(newState.towersByCell);
-          setCurrentPath(newState.currentPath);
+          if(Object.keys(newState.towersByCell).length !== Object.keys(towersByCell).length) {
+              setTowersByCell(newState.towersByCell);
+          }
+          if(newState.currentPath.length !== currentPath.length) {
+              setCurrentPath(newState.currentPath);
+          }
 
           if (currentStatus !== 'playing') {
             return;
@@ -885,17 +906,30 @@ export default function CoopGameLoader() {
     });
   };
   
-  if (loading || !gameDataLoaded || !localPlayerId || !localPlayer) {
-    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
-  }
-  
-  const handlePlaceTowerClient = (row: number, col: number) => {
+  const handlePlaceTower = useCallback((row: number, col: number) => {
+    if (isPlacingPortalEntrance) {
+      if (portalPhase === 'entrance') {
+          setPortalEntrance({ row, col });
+          setPortalPhase('exit');
+          return;
+      } else if (portalPhase === 'exit' && portalEntrance) {
+          dispatchAction('place_portal', { entrance: portalEntrance, exit: { row, col } });
+          cancelInteractions();
+          return;
+      }
+    }
+    
     if (selectedTowerToBuild) {
         dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
     } else {
         dispatchAction('move_worker', { row, col });
     }
-  };
+  }, [isPlacingPortalEntrance, portalPhase, portalEntrance, selectedTowerToBuild, dispatchAction, cancelInteractions]);
+  
+  if (loading || !gameDataLoaded || !localPlayerId || !localPlayer) {
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
+  }
+  
   const handleUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
   const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
@@ -928,10 +962,10 @@ export default function CoopGameLoader() {
                 splashRings={[]}
                 persistentClouds={persistentClouds}
                 currentPath={currentPath} 
-                handlePlaceTower={handlePlaceTowerClient}
+                handlePlaceTower={handlePlaceTower}
                 onFocusTower={onFocusTower} 
                 selectedTowerToBuild={selectedTowerToBuild}
-                portalEntrance={null}
+                portalEntrance={portalEntrance}
                 focusedTower={focusedTower}
                 gameBoardRef={gameBoardRef}
                 interactionPrompt={""} 
