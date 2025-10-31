@@ -14,7 +14,7 @@ import type {Tower} from '@/lib/game-data/types';
 // Define a schema for a single tower that matches the structure in game-data.ts
 // but without the getter property, which can't be serialized.
 const TowerEffectSchema = z.object({
-  type: z.enum(['slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 'pull', 'vulnerability', 'aura', 'armor_shred', 'lifesteal', 'crit']),
+  type: z.enum(['slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 'pull', 'vulnerability', 'aura', 'armor_shred', 'lifesteal', 'crit', 'poison', 'persistent_cloud']),
   duration: z.number().optional(),
   potency: z.number().optional(),
   chance: z.number().optional(),
