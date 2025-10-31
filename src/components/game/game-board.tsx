@@ -162,6 +162,7 @@ type GameBoardProps = {
   onFocusTower: (tower: PlacedTower) => void;
   cancelInteractions: () => void;
   selectedTowerToBuild: Tower | null;
+  portalEntrance: Node | null;
   focusedTower: PlacedTower | null;
   lastUpgradedTowerId: string | null;
   justPlacedTowerId?: string | null;
@@ -307,6 +308,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     onFocusTower,
     cancelInteractions,
     selectedTowerToBuild,
+    portalEntrance,
     focusedTower, 
     lastUpgradedTowerId,
     justPlacedTowerId,
@@ -1013,8 +1015,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             handlePlaceTower(hoveredCell.row, hoveredCell.col); // This will trigger a move if no tower is selected
             lastClickTimeRef.current = 0; // Reset to prevent triple-click issues
         } else { // Single-click
-            if (selectedTowerToBuild) {
-                handlePlaceTower(hoveredCell.row, hoveredCell.col); // Place tower on single click if one is selected
+            if (selectedTowerToBuild || portalEntrance) {
+                handlePlaceTower(hoveredCell.row, hoveredCell.col);
             } else {
                 const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
                 if (towerAtCell) {
@@ -1138,7 +1140,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             lastTapTimeRef.current = 0;
         } else { // Single-tap
             if (hoveredCell) {
-                if (selectedTowerToBuild) {
+                if (selectedTowerToBuild || portalEntrance) {
                     handlePlaceTower(hoveredCell.row, hoveredCell.col);
                 } else {
                     const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
@@ -1203,7 +1205,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const isPlacementValid = useMemo(() => {
     return ghostTowerPath !== 'invalid';
   }, [ghostTowerPath]);
-
+  
   const auraTowers = useMemo(() => 
     placedTowers.filter(t => t.effect?.type === 'aura'), 
   [placedTowers]);
@@ -1488,6 +1490,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                             isUpgraded={!ghostTower.isBase}
                             size={CELL_SIZE * 0.8}
                         />
+                    </div>
+                )}
+                
+                {portalEntrance && (
+                    <div className="absolute z-30 pointer-events-none" style={{ left: gridToPx(portalEntrance).x, top: gridToPx(portalEntrance).y, transform: 'translate(-50%, -50%)' }}>
+                        <div className="w-16 h-16 rounded-full bg-blue-500/30 border-2 border-dashed border-blue-400 flex items-center justify-center animate-pulse">
+                            <span className="text-xs font-bold text-white">Eingang</span>
+                        </div>
                     </div>
                 )}
 

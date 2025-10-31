@@ -16,8 +16,8 @@ import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
 import { onGameEnd } from '@/lib/game-end';
-import { processAttack, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
+import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
+import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/lib/commands';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -58,6 +58,8 @@ export default function SinglePlayerGame({
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
+    const [isPlacingPortalEntrance, setIsPlacingPortalEntrance] = useState(false);
+    const [portalEntrance, setPortalEntrance] = useState<Node | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
     const [focusedTower, setFocusedTower] = useState<PlacedTower | null>(null);
     const [lastUpgradedTowerId, setLastUpgradedTowerId] = useState<string | null>(null);
@@ -324,46 +326,29 @@ export default function SinglePlayerGame({
         }
     }, [startWaveLogic]);
     
-    const handleMoveWorker = (row: number, col: number) => {
-        setWorkers(prevWorkers => {
-            const worker = prevWorkers[0];
-            if (worker) {
-                const newWorker = { ...worker, moveTarget: { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 } };
-                return [newWorker, ...prevWorkers.slice(1)];
-            }
-            return prevWorkers;
-        });
-    };
-
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        if (!selectedTowerToBuild) {
-            handleMoveWorker(row, col);
-            return;
-        };
-
-        const state: GameSessionState = {
-            players: playersRef.current,
-            gameState: gameStateRef.current,
-            towersByCell: towersByCellRef.current,
-            enemies: enemiesRef.current,
-            currentWave: currentWaveRef.current,
-            difficulty: difficultyRef.current,
-            gameStatus: gameStatusRef.current,
-            currentPath: currentPathRef.current,
-            waveStartCountdown: 0,
-            isIntermission: isIntermissionRef.current,
-            workers: workersRef.current,
-            ghosts: ghostsRef.current,
-        };
-
-        const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
-
-        setPlayers(newState.players);
-        setGhosts(newState.ghosts);
-        setWorkers(newState.workers);
-        setCurrentPath(newState.currentPath);
-
-    }, [selectedTowerToBuild]);
+        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
+        if (isPlacingPortalEntrance) {
+            if (portalEntrance) { // Second click: place exit
+                const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
+                setPlayers(newState.players);
+                setWorkers(newState.workers);
+                setPortalEntrance(null);
+                setIsPlacingPortalEntrance(false);
+            } else { // First click: place entrance
+                setPortalEntrance({ row, col });
+            }
+        } else if (selectedTowerToBuild) {
+            const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
+            setPlayers(newState.players);
+            setGhosts(newState.ghosts);
+            setWorkers(newState.workers);
+            setCurrentPath(newState.currentPath);
+        } else {
+            const newState = enqueueMoveOrder(state, 'worker-1', row, col);
+            setWorkers(newState.workers);
+        }
+    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalEntrance]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -418,19 +403,34 @@ export default function SinglePlayerGame({
 
     const onFocusTower = useCallback((tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
         setFocusedTower(tower);
     }, []);
     
     const cancelInteractions = useCallback(() => {
         setSelectedTowerToBuild(null);
         setFocusedTower(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
     }, []);
 
     const onSelectTowerToBuild = useCallback((tower: Tower | null) => {
         setFocusedTower(null);
+        setIsPlacingPortalEntrance(false);
+        setPortalEntrance(null);
         setSelectedTowerToBuild(tower);
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, []);
+    
+    const onEnterPortalMode = useCallback(() => {
+        setFocusedTower(null);
+        setSelectedTowerToBuild(null);
+        setIsPlacingPortalEntrance(true);
+        setPortalEntrance(null); // Reset entrance on mode entry
+        audioManager.play({ kind: 'sfx', name: 'ui_click' });
+    }, []);
+
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         const mazePath: Node[] = [
@@ -512,44 +512,23 @@ export default function SinglePlayerGame({
                 lastFpsUpdateRef.current = now;
             }
 
-            if (gameStatusRef.current !== 'playing') {
-                 if (gameStatusRef.current === 'paused') {
-                    // Tick workers even when paused, but with a smaller delta to slow them down
-                     const state: GameSessionState = {
-                         players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current,
-                     };
-                     const newState = tickWorkers(state, delta * 0.1, now); // 10% speed
-                     setWorkers(newState.workers);
-                     setGhosts(newState.ghosts);
-                }
+            const currentStatus = gameStatusRef.current;
+            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
+            const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
+            setWorkers(newState.workers);
+            setGhosts(newState.ghosts);
+            setTowersByCell(newState.towersByCell);
+            setCurrentPath(newState.currentPath);
+
+            if (currentStatus !== 'playing') {
                 return;
-            };
+            }
+
 
             setPlayers(prev => prev.map(p => ({
                 ...p,
                 resources: p.resources + (p.incomePerSecond * (delta / 1000)),
             })));
-            
-            const state: GameSessionState = {
-                players: playersRef.current,
-                gameState: gameStateRef.current,
-                towersByCell: towersByCellRef.current,
-                enemies: enemiesRef.current,
-                currentWave: currentWaveRef.current,
-                difficulty: difficultyRef.current,
-                gameStatus: gameStatusRef.current,
-                currentPath: currentPathRef.current,
-                waveStartCountdown: 0,
-                isIntermission: isIntermissionRef.current,
-                workers: workersRef.current,
-                ghosts: ghostsRef.current,
-            };
-
-            const newState = tickWorkers(state, delta, now);
-            setWorkers(newState.workers);
-            setGhosts(newState.ghosts);
-            setTowersByCell(newState.towersByCell);
-            setCurrentPath(newState.currentPath);
 
             if (isIntermissionRef.current) {
                 setWaveStartCountdown(prevTime => {
@@ -819,7 +798,13 @@ export default function SinglePlayerGame({
     
     if (!localPlayer) return null;
 
-    const interactionPrompt = selectedTowerToBuild ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}` : focusedTower ? `Fokus: ${focusedTower?.name}` : 'Wähle einen Turm zum Bauen';
+    const interactionPrompt = isPlacingPortalEntrance
+      ? (portalEntrance ? 'Wähle den Ausgang des Portals' : 'Wähle den Eingang des Portals')
+      : selectedTowerToBuild
+      ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
+      : focusedTower
+      ? `Fokus: ${focusedTower?.name}`
+      : 'Wähle einen Turm zum Bauen oder einen Arbeiter';
 
     return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -850,11 +835,13 @@ export default function SinglePlayerGame({
                     handlePlaceTower={handlePlaceTower}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
+                    portalEntrance={portalEntrance}
                     focusedTower={focusedTower}
                     gameBoardRef={gameBoardRef}
                     interactionPrompt={interactionPrompt} 
                     cancelInteractions={cancelInteractions}
-                    onSelectTowerToBuild={onSelectTowerToBuild} 
+                    onSelectTowerToBuild={onSelectTowerToBuild}
+                    onEnterPortalMode={onEnterPortalMode}
                     handleUpgradeTower={handleUpgradeTower}
                     handleSellTower={handleSellTower}
                     setFocusedTower={setFocusedTower}

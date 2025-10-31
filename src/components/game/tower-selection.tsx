@@ -6,7 +6,7 @@ import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
 import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna, Bot } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import TowerComponent from "@/components/game/Tower";
 type TowerSelectionProps = {
   allTowers: Tower[];
   onSelectTower: (tower: Tower | null) => void;
+  onEnterPortalMode: () => void;
   focusedTower: PlacedTower | null;
   selectedTowerToBuild: Tower | null;
   onUpgradeTower: (upgradeId: string) => void;
@@ -107,7 +108,7 @@ const StatDisplay = ({ icon: Icon, value, buff, label }: { icon: React.FC<any>, 
 );
 
 
-const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds }: TowerSelectionProps) {
+const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, onEnterPortalMode, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds }: TowerSelectionProps) {
   
   const unlockedElementsSet = React.useMemo(() => new Set(localPlayer.unlockedElements), [localPlayer.unlockedElements]);
   
@@ -204,6 +205,28 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
         </div>
       ) : (
         <ul className="space-y-2">
+          <li className="w-full">
+            <button
+                onClick={onEnterPortalMode}
+                disabled={localPlayer.resources < 150} // Placeholder cost
+                className="flex items-start gap-3 group w-full p-2 rounded-md transition-colors text-left bg-purple-900/40 hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <div className="flex-shrink-0 pt-1 h-8 w-8 flex items-center justify-center">
+                    <Bot className="h-6 w-6 text-cyan-300" />
+                </div>
+                <div className="flex-grow min-w-0">
+                    <h4 className="font-semibold">Portal bauen</h4>
+                    <p className="text-xs text-muted-foreground">Erschaffe eine Abkürzung für Gegner. Klicke 2x auf die Karte.</p>
+                </div>
+                <div className="flex-shrink-0 flex flex-col items-end gap-1.5 text-xs font-medium">
+                    <div className="flex items-center gap-1.5 text-yellow-400">
+                        <Coins className="h-3.5 w-3.5" />
+                        <span>150</span>
+                    </div>
+                </div>
+            </button>
+          </li>
+          <Separator />
           {availableTowers.length > 0 ? availableTowers.map((tower) => (
               <TowerCard 
                 key={tower.id}
