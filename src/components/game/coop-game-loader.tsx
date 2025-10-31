@@ -61,6 +61,7 @@ export default function CoopGameLoader() {
   const [fps, setFps] = useState(0);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
+  const [currentPath, setCurrentPath] = useState<Node[]>([]);
 
   
   // UI State
@@ -81,7 +82,6 @@ export default function CoopGameLoader() {
   
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
-  const currentPath = useMemo(() => findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, placedTowers.map(t => t.position), 12, 12) || [], [placedTowers]);
   
   const localPlayer = useMemo(() => {
     const p = players.find(p => p.id === localPlayerId);
@@ -573,6 +573,7 @@ export default function CoopGameLoader() {
                   { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                 ]);
                 setGhosts(data.ghosts || []);
+                setCurrentPath(findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, Object.values(data.towersByCell || {}).map(t => (t as PlacedTower).position), 12, 12) || []);
             }
             
             setPlayers(normalizePlayers(data.players));
@@ -625,7 +626,7 @@ export default function CoopGameLoader() {
   const lastFpsUpdateRef = useRef(Date.now());
   const frameCountRef = useRef(0);
   useEffect(() => {
-      if (!gameConfig) return;
+      if (!gameConfig || !isGameHost) return;
       let gameLoopRef: number;
       let lastTick = Date.now();
 
@@ -645,14 +646,15 @@ export default function CoopGameLoader() {
 
           const currentStatus = gameStatus;
           const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+          
           const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
           setWorkers(newState.workers);
           setGhosts(newState.ghosts);
-          if(Object.keys(newState.towersByCell).length !== Object.keys(towersByCell).length) {
-              setTowersByCell(newState.towersByCell);
+          if (Object.keys(newState.towersByCell).length !== Object.keys(towersByCell).length) {
+            setTowersByCell(newState.towersByCell);
           }
-          if(newState.currentPath.length !== currentPath.length) {
-              setCurrentPath(newState.currentPath);
+          if (newState.currentPath.length !== currentPath.length) {
+            setCurrentPath(newState.currentPath);
           }
 
           if (currentStatus !== 'playing') {
@@ -902,8 +904,8 @@ export default function CoopGameLoader() {
 
 
   useEffect(() => {
-    const isPicking = gameStatus === 'picking-element' && localPlayer && localPlayer.unlockedElements.length < 1 + Math.floor(currentWave / 5);
-    setIsPicking(isPicking);
+    const isPickingElement = gameStatus === 'picking-element' && localPlayer && localPlayer.unlockedElements.length < 1 + Math.floor(currentWave / 5);
+    setIsPicking(isPickingElement);
   }, [gameStatus, localPlayer, currentWave]);
 
   const toggleMute = () => {

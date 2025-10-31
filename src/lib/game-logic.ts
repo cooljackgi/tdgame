@@ -2,7 +2,7 @@
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState
+  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
