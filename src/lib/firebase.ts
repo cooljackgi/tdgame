@@ -77,4 +77,4 @@ export function getCurrentUser(): Promise<User> {
   });
 }
 
-export { app, db, auth, functions, onAuthStateChanged };
+export { app, db, auth, functions, onAuthStateChanged, type User };

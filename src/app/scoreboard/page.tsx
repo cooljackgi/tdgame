@@ -1,24 +1,45 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Home, Trophy, Loader2 } from 'lucide-react';
+import { Home, Trophy, Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import type { GameResultWithId } from '@/lib/game-data/types';
-import { collection, getDocs, query, orderBy, limit, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { collection, getDocs, query, orderBy, limit, Timestamp, doc, deleteDoc } from 'firebase/firestore';
+import { db, auth, onAuthStateChanged, type User } from '@/lib/firebase';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import ScoreboardMiniMap from '@/components/game/ScoreboardMiniMap';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
+
+const ADMIN_EMAILS = ['db@hudb.de', 'becker.bubenrod@gmail.com'];
 
 export default function ScoreboardPage() {
   const [results, setResults] = useState<GameResultWithId[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [scoreToDelete, setScoreToDelete] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  const isAdmin = user && ADMIN_EMAILS.includes(user.email || '');
 
   useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+    });
+
     const fetchScores = async () => {
         try {
             const scoresQuery = query(
@@ -50,10 +71,29 @@ export default function ScoreboardPage() {
     };
     
     fetchScores();
+
+    return () => unsubscribeAuth();
   }, []);
+
+  const handleDeleteScore = async () => {
+    if (!scoreToDelete) return;
+
+    try {
+        const scoreRef = doc(db, 'scores', scoreToDelete);
+        await deleteDoc(scoreRef);
+        setResults(prev => prev.filter(r => r.id !== scoreToDelete));
+        toast({ title: 'Erfolg', description: 'Eintrag wurde gelöscht.' });
+    } catch (e) {
+        toast({ title: 'Fehler', description: 'Eintrag konnte nicht gelöscht werden.', variant: 'destructive' });
+        console.error("Error deleting score:", e);
+    } finally {
+        setScoreToDelete(null);
+    }
+  };
 
 
   return (
+    <>
     <main className="mx-auto max-w-4xl px-4 py-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -111,6 +151,11 @@ export default function ScoreboardPage() {
                                   {result.won && <p className="text-xs text-green-400 font-semibold">GEWONNEN</p>}
                               </div>
                            </div>
+                           {isAdmin && (
+                                <Button variant="destructive" size="icon" onClick={() => setScoreToDelete(result.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                           )}
                        </li>
                    ))}
                 </ol>
@@ -118,5 +163,21 @@ export default function ScoreboardPage() {
          </CardContent>
       </Card>
     </main>
+
+    <AlertDialog open={!!scoreToDelete} onOpenChange={(open) => !open && setScoreToDelete(null)}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Bist du sicher?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Dieser Eintrag wird endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteScore}>Löschen</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
