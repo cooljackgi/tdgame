@@ -1,3 +1,4 @@
+
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent
@@ -145,7 +146,7 @@ export function processAttack(
                     }
                     // Special logic for splash that applies effects
                     if (tower.specId === 'dark-2b') { // Schatten-Balliste
-                        enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: 0.1 });
+                        enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: effect.potency ?? 0.1 });
                     }
                 }
             }
