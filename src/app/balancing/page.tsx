@@ -2,13 +2,13 @@
 // src/app/balancing/page.tsx
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, ChangeEvent } from 'react';
 import Link from 'next/link';
 import { Home, BarChart2, Zap, Save, Loader2, Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import type { Tower } from '@/lib/game-data/types';
+import type { Tower, TowerEffect } from '@/lib/game-data/types';
 import {
   Table,
   TableHeader,
@@ -32,6 +32,87 @@ import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { saveBalancingData } from '@/ai/flows/save-balancing-flow';
 import { useToast } from '@/hooks/use-toast';
+import { Label } from '@/components/ui/label';
+
+const EffectInput = ({ label, value, onChange, type = 'number', step = 0.1, min = 0 }: { label: string, value: number, onChange: (e: ChangeEvent<HTMLInputElement>) => void, type?: string, step?: number, min?: number }) => (
+    <div className="grid grid-cols-2 items-center gap-2">
+        <Label htmlFor={label} className="text-xs text-muted-foreground truncate">{label}</Label>
+        <Input
+            id={label}
+            type={type}
+            value={value}
+            onChange={onChange}
+            className="h-7"
+            step={step}
+            min={min}
+        />
+    </div>
+);
+
+const EffectEditor = ({ tower, onEffectChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number) => void }) => {
+    if (!tower.effect) return <div className="text-xs text-muted-foreground">Kein Effekt</div>;
+
+    const { type, ...params } = tower.effect;
+
+    const renderInputs = () => {
+        switch (type) {
+            case 'slow':
+            case 'vulnerability':
+                return (
+                    <>
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                    </>
+                );
+            case 'stun':
+            case 'crit':
+                return (
+                    <>
+                        <EffectInput label="Chance (%)" value={(params.chance ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'chance', parseFloat(e.target.value) / 100)} step={1} />
+                        {type === 'crit' && <EffectInput label="Multiplikator" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={0.1}/>}
+                        {type === 'stun' && <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />}
+                    </>
+                );
+            case 'burn':
+                 return (
+                    <>
+                        <EffectInput label="Schaden/s" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                    </>
+                 );
+            case 'splash':
+            case 'persistent_cloud':
+                 return (
+                    <>
+                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                    </>
+                 );
+            case 'chain':
+                return <EffectInput label="Sprünge" value={params.bounces ?? 0} onChange={(e) => onEffectChange(tower.id, 'bounces', parseInt(e.target.value))} type="number" step={1} />;
+            case 'multishot':
+                return <EffectInput label="Ziele" value={params.targets ?? 0} onChange={(e) => onEffectChange(tower.id, 'targets', parseInt(e.target.value))} type="number" step={1} />;
+            case 'armor_shred':
+                return (
+                     <>
+                        <EffectInput label="Reduk. (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                    </>
+                );
+            case 'aura':
+                 return (
+                    <>
+                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                    </>
+                 );
+            default:
+                return <div className="text-xs text-muted-foreground">{type}</div>;
+        }
+    }
+    
+    return <div className="space-y-2">{renderInputs()}</div>;
+};
 
 
 export default function BalancingPage() {
@@ -74,6 +155,21 @@ export default function BalancingPage() {
           if (isNaN(numericValue)) return tower;
           
           return { ...tower, [field]: numericValue };
+        }
+        return tower;
+      })
+    );
+  };
+  
+  const handleEffectChange = (towerId: string, field: keyof TowerEffect, value: string | number) => {
+    setTowers(currentTowers =>
+      currentTowers.map(tower => {
+        if (tower.id === towerId && tower.effect) {
+          const numericValue = typeof value === 'string' ? parseFloat(value) : value;
+          if (isNaN(numericValue)) return tower;
+
+          const newEffect = { ...tower.effect, [field]: numericValue };
+          return { ...tower, effect: newEffect };
         }
         return tower;
       })
@@ -182,89 +278,96 @@ export default function BalancingPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Turm</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead className="w-[120px]">Kosten</TableHead>
-                <TableHead className="w-[120px]">Schaden</TableHead>
-                <TableHead className="w-[120px]">Leben</TableHead>
-                <TableHead className="w-[140px]">Angr./s (ms)</TableHead>
-                <TableHead className="w-[120px]">Reichw.</TableHead>
-                <TableHead className="text-right">DPS</TableHead>
-                <TableHead className="text-right">DPS/Kosten</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {towerStats.map((tower) => {
-                const dpc = tower.dpsPerCost;
-                let dpcColor = "";
-                if (tower.damage > 0) {
-                  if (dpc > UPPER_THRESHOLD) dpcColor = "text-red-400";
-                  else if (dpc < LOWER_THRESHOLD) dpcColor = "text-blue-400";
-                }
-
-                return (
-                <TableRow key={tower.id}>
-                  <TableCell className="font-medium flex items-center gap-2">
-                     <div className="flex gap-1">
-                      {tower.elements.map(el => <Badge key={el} variant="outline" className="text-xs">{el}</Badge>)}
-                    </div>
-                    <span>{tower.name}</span>
-                  </TableCell>
-                  <TableCell>{tower.tier}</TableCell>
-                  <TableCell>
-                    <Input 
-                        type="number"
-                        value={tower.cost}
-                        onChange={(e) => handleTowerChange(tower.id, 'cost', e.target.value)}
-                        className="h-8"
-                    />
-                  </TableCell>
-                  <TableCell>
-                     <Input 
-                        type="number"
-                        value={tower.damage}
-                        onChange={(e) => handleTowerChange(tower.id, 'damage', e.target.value)}
-                        className="h-8"
-                        disabled={tower.damage === 0}
-                    />
-                  </TableCell>
-                  <TableCell>
-                     <Input 
-                        type="number"
-                        value={tower.maxHealth}
-                        onChange={(e) => handleTowerChange(tower.id, 'maxHealth', e.target.value)}
-                        className="h-8"
-                    />
-                  </TableCell>
-                   <TableCell>
-                     <Input 
-                        type="number"
-                        value={tower.attackSpeed}
-                        onChange={(e) => handleTowerChange(tower.id, 'attackSpeed', e.target.value)}
-                        className="h-8"
-                        disabled={tower.damage === 0}
-                    />
-                  </TableCell>
-                  <TableCell>
-                     <Input 
-                        type="number"
-                        value={tower.range}
-                        onChange={(e) => handleTowerChange(tower.id, 'range', e.target.value)}
-                        className="h-8"
-                        step={0.1}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">{tower.dps.toFixed(2)}</TableCell>
-                  <TableCell className={cn("text-right font-bold", dpcColor)}>{dpc.toFixed(4)}</TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[200px]">Turm</TableHead>
+                  <TableHead>Tier</TableHead>
+                  <TableHead className="w-[120px]">Kosten</TableHead>
+                  <TableHead className="w-[120px]">Schaden</TableHead>
+                  <TableHead className="w-[120px]">Leben</TableHead>
+                  <TableHead className="w-[140px]">Angr./s (ms)</TableHead>
+                  <TableHead className="w-[120px]">Reichw.</TableHead>
+                  <TableHead className="min-w-[180px]">Effekt-Werte</TableHead>
+                  <TableHead className="text-right">DPS</TableHead>
+                  <TableHead className="text-right">DPS/Kosten</TableHead>
                 </TableRow>
-              )})}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {towerStats.map((tower) => {
+                  const dpc = tower.dpsPerCost;
+                  let dpcColor = "";
+                  if (tower.damage > 0) {
+                    if (dpc > UPPER_THRESHOLD) dpcColor = "text-red-400";
+                    else if (dpc < LOWER_THRESHOLD) dpcColor = "text-blue-400";
+                  }
+
+                  return (
+                  <TableRow key={tower.id}>
+                    <TableCell className="font-medium flex items-center gap-2">
+                       <div className="flex gap-1">
+                        {tower.elements.map(el => <Badge key={el} variant="outline" className="text-xs">{el}</Badge>)}
+                      </div>
+                      <span>{tower.name}</span>
+                    </TableCell>
+                    <TableCell>{tower.tier}</TableCell>
+                    <TableCell>
+                      <Input 
+                          type="number"
+                          value={tower.cost}
+                          onChange={(e) => handleTowerChange(tower.id, 'cost', e.target.value)}
+                          className="h-8"
+                      />
+                    </TableCell>
+                    <TableCell>
+                       <Input 
+                          type="number"
+                          value={tower.damage}
+                          onChange={(e) => handleTowerChange(tower.id, 'damage', e.target.value)}
+                          className="h-8"
+                          disabled={tower.damage === 0 && tower.effect?.type !== 'aura'}
+                      />
+                    </TableCell>
+                    <TableCell>
+                       <Input 
+                          type="number"
+                          value={tower.maxHealth}
+                          onChange={(e) => handleTowerChange(tower.id, 'maxHealth', e.target.value)}
+                          className="h-8"
+                      />
+                    </TableCell>
+                     <TableCell>
+                       <Input 
+                          type="number"
+                          value={tower.attackSpeed}
+                          onChange={(e) => handleTowerChange(tower.id, 'attackSpeed', e.target.value)}
+                          className="h-8"
+                          disabled={tower.damage === 0 && tower.effect?.type !== 'aura'}
+                      />
+                    </TableCell>
+                    <TableCell>
+                       <Input 
+                          type="number"
+                          value={tower.range}
+                          onChange={(e) => handleTowerChange(tower.id, 'range', e.target.value)}
+                          className="h-8"
+                          step={0.1}
+                      />
+                    </TableCell>
+                    <TableCell>
+                        <EffectEditor tower={tower} onEffectChange={handleEffectChange} />
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">{tower.dps.toFixed(2)}</TableCell>
+                    <TableCell className={cn("text-right font-bold", dpcColor)}>{dpc.toFixed(4)}</TableCell>
+                  </TableRow>
+                )})}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </main>
   );
 }
+
