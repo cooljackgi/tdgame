@@ -143,6 +143,10 @@ export function processAttack(
                         output.resourcesGained += enemy.bounty;
                         output.killed++;
                     }
+                    // Special logic for splash that applies effects
+                    if (tower.specId === 'dark-2b') { // Schatten-Balliste
+                        enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: 0.1 });
+                    }
                 }
             }
         });
@@ -216,7 +220,6 @@ export function processAttack(
             expires: now + 10000, // The cloud itself lingers for 10s
         });
     }
-
 
     return output;
 }
