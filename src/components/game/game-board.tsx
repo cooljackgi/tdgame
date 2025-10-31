@@ -106,7 +106,7 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
 
       const dx = bx - ax;
       const dy = by - ay;
-
+      
       // Get perpendicular vector
       let pDx = -dy;
       let pDy = dx;
@@ -495,40 +495,54 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         // --- GROUND EFFECTS ---
         for (const cloud of persistentClouds) {
           const center = gridToPx({ row: cloud.y, col: cloud.x });
-          let radiusPx = cloud.radius * CELL_SIZE;
+          const radiusPx = cloud.radius * CELL_SIZE;
 
           const remaining = Math.max(0, cloud.expires - now);
-          const t = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
+          const fadeT = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
+          
+          groundCtx.save();
 
           if (cloud.effectType === 'slow') {
-              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * fadeT));
               const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-              grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * t})`);
+              grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * fadeT})`);
               grad.addColorStop(1, `rgba(56, 189, 248, 0)`);
+              
               groundCtx.fillStyle = grad;
               groundCtx.beginPath();
               groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
               groundCtx.fill();
           } else { // poison
-              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * fadeT));
               const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-              grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`);
+              grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * fadeT})`);
               grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
 
-              groundCtx.save();
               groundCtx.fillStyle = grad;
               groundCtx.beginPath();
               groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
               groundCtx.fill();
-              
-              groundCtx.globalCompositeOperation = 'lighter';
-              groundCtx.globalAlpha = 0.10 * t;
-              groundCtx.beginPath();
-              groundCtx.arc(center.x, center.y, radiusPx * 0.9, 0, Math.PI * 2);
-              groundCtx.fillStyle = 'rgba(34,197,94,0.25)';
-              groundCtx.fill();
-              groundCtx.restore();
+
+              // BUBBLES
+              const bubbleCount = 15;
+              const baseAngle = cloud.id.charCodeAt(0) % 360;
+              const easeOutT = 1 - fadeT * fadeT; // Just to make movement non-linear
+
+              for (let i = 0; i < bubbleCount; i++) {
+                  const angle = baseAngle + (i * 360/bubbleCount) + (easeOutT * 20) + (now * 0.01 * (i % 5 + 1));
+                  const rad = angle * Math.PI / 180;
+                  const dist = radiusPx * Math.pow(easeOutT, 0.7) * (0.4 + ((i*3)%7)/7 * 0.6);
+                  const size = radiusPx * 0.1 * fadeT * (0.5 + Math.sin(i + now * 0.002) * 0.5);
+
+                  if (size > 0.5) {
+                    groundCtx.fillStyle = `hsla(140, 80%, 40%, ${0.5 * fadeT})`;
+                    groundCtx.beginPath();
+                    groundCtx.arc(center.x + Math.cos(rad) * dist, center.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                    groundCtx.fill();
+                  }
+              }
           }
+          groundCtx.restore();
         }
 
         const currentEnemyIds = new Set(enemies.map(e => e.id));
