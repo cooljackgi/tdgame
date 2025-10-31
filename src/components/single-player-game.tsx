@@ -15,8 +15,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
-import { onGameEnd, processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
-import { enqueueBuildOrder } from '@/lib/commands';
+import { onGameEnd } from '@/lib/game-end';
+import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
+import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -182,7 +183,8 @@ export default function SinglePlayerGame({
                 id: "worker-1",
                 x: 64, y: 64, speed: 260,
                 state: "idle",
-                queue: []
+                queue: [],
+                moveTarget: null,
             }]);
             setGhosts([]);
         }
@@ -323,30 +325,33 @@ export default function SinglePlayerGame({
     }, [startWaveLogic]);
     
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        if (!selectedTowerToBuild) return;
+        if (selectedTowerToBuild) {
+            const state: GameSessionState = {
+                players: playersRef.current,
+                gameState: gameStateRef.current,
+                towersByCell: towersByCellRef.current,
+                enemies: enemiesRef.current,
+                currentWave: currentWaveRef.current,
+                difficulty: difficultyRef.current,
+                gameStatus: gameStatusRef.current,
+                currentPath: currentPathRef.current,
+                waveStartCountdown: 0,
+                isIntermission: isIntermissionRef.current,
+                workers: workersRef.current,
+                ghosts: ghostsRef.current,
+            };
 
-        const state: GameSessionState = {
-            players: playersRef.current,
-            gameState: gameStateRef.current,
-            towersByCell: towersByCellRef.current,
-            enemies: enemiesRef.current,
-            currentWave: currentWaveRef.current,
-            difficulty: difficultyRef.current,
-            gameStatus: gameStatusRef.current,
-            currentPath: currentPathRef.current,
-            waveStartCountdown: 0,
-            isIntermission: isIntermissionRef.current,
-            workers: workersRef.current,
-            ghosts: ghostsRef.current,
-        };
+            const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
 
-        const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
-
-        setPlayers(newState.players);
-        setGhosts(newState.ghosts);
-        setWorkers(newState.workers);
-        setCurrentPath(newState.currentPath);
-
+            setPlayers(newState.players);
+            setGhosts(newState.ghosts);
+            setWorkers(newState.workers);
+            setCurrentPath(newState.currentPath);
+        } else {
+            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current };
+            const newState = enqueueMoveOrder(state, 'worker-1', row, col);
+            setWorkers(newState.workers);
+        }
     }, [selectedTowerToBuild]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
@@ -496,33 +501,25 @@ export default function SinglePlayerGame({
                 lastFpsUpdateRef.current = now;
             }
 
-            if (gameStatusRef.current !== 'playing') return;
+            const currentStatus = gameStatusRef.current;
+            if (currentStatus !== 'playing' && currentStatus !== 'waiting' && currentStatus !== 'paused') return;
 
-            setPlayers(prev => prev.map(p => ({
-                ...p,
-                resources: p.resources + (p.incomePerSecond * (delta / 1000)),
-            })));
-            
             const state: GameSessionState = {
-                players: playersRef.current,
-                gameState: gameStateRef.current,
-                towersByCell: towersByCellRef.current,
-                enemies: enemiesRef.current,
-                currentWave: currentWaveRef.current,
-                difficulty: difficultyRef.current,
-                gameStatus: gameStatusRef.current,
-                currentPath: currentPathRef.current,
-                waveStartCountdown: 0,
-                isIntermission: isIntermissionRef.current,
-                workers: workersRef.current,
-                ghosts: ghostsRef.current,
+                players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current,
             };
-
             const newState = tickWorkers(state, delta, now);
             setWorkers(newState.workers);
             setGhosts(newState.ghosts);
             setTowersByCell(newState.towersByCell);
             setCurrentPath(newState.currentPath);
+
+            if (currentStatus !== 'playing') return;
+
+
+            setPlayers(prev => prev.map(p => ({
+                ...p,
+                resources: p.resources + (p.incomePerSecond * (delta / 1000)),
+            })));
 
             if (isIntermissionRef.current) {
                 setWaveStartCountdown(prevTime => {

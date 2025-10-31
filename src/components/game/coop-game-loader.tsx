@@ -27,6 +27,7 @@ import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { onGameEnd } from '@/lib/game-end';
 import type { GameBoardHandle } from './game-board';
+import { waves } from '@/lib/game-data/enemies';
 
 
 export default function CoopGameLoader() {
@@ -616,9 +617,10 @@ export default function CoopGameLoader() {
             lastFpsUpdateRef.current = now;
           }
 
-          if (gameStatus !== 'playing') {
+          const currentStatus = gameStatus;
+          if (currentStatus !== 'playing' && currentStatus !== 'waiting') {
                const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
-               const newState = tickWorkers(state, delta * (gameStatus === 'paused' ? 0.1 : 1), now);
+               const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
                setWorkers(newState.workers);
                setGhosts(newState.ghosts);
                return;
@@ -628,7 +630,7 @@ export default function CoopGameLoader() {
               ...p,
               resources: p.resources + (p.incomePerSecond * (delta / 1000)),
           })));
-
+          
           const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
           const newState = tickWorkers(state, delta, now);
           setWorkers(newState.workers);

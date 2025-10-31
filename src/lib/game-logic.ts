@@ -21,9 +21,12 @@ export const centerOf = (row: number, col: number) => ({
  * Berücksichtigt jetzt Rüstungsdurchdringung.
  */
 function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDealt: number, killed: boolean } {
+    const armorShredDebuff = enemy.effects.find(e => e.type === 'armor_shred');
+    const armorReduction = armorShredDebuff ? (armorShredDebuff.potency ?? 0) : 0;
+    const currentArmor = enemy.armor * (1 - armorReduction);
+    
     const armorPen = attack.armorPenFlat ?? 0;
-    // Rüstung kann nicht unter 0 fallen.
-    const effectiveArmor = Math.max(0, enemy.armor - armorPen);
+    const effectiveArmor = Math.max(0, currentArmor - armorPen);
     const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
 
     enemy.health -= damageDealt;
@@ -263,10 +266,9 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
 // --- Worker Logic ---
 
 export function startNextOrder(state: GameSessionState, w: Worker): GameSessionState {
-  // If there's a manual move target, prioritize it
   if (w.moveTarget) {
     w.state = "moving";
-    w.current = undefined; // Not a build order
+    w.current = undefined;
     return state;
   }
   
@@ -292,6 +294,7 @@ export function tickWorkers(state: GameSessionState, dtMs: number, now: number):
 
 function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: number): GameSessionState {
   if (w.state === "idle") {
+    // If worker is idle, it can always start a new order or a manual move.
     if (w.moveTarget || w.queue.length > 0) {
       return startNextOrder(state, w);
     }
@@ -330,13 +333,9 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
   }
 
   if (w.state === "building") {
-    // If a move command comes in, interrupt building and go back to moving
-    if (w.moveTarget) {
-      w.state = "moving";
-      // The ghost remains, building will resume when a worker comes back
-      return state;
-    }
-    if (!w.current) { // Should not happen, but safeguard
+    // A worker that is building will COMPLETE its task, even if a new move command is issued.
+    // The moveTarget will be handled once it becomes idle again.
+    if (!w.current) { // Safeguard
       w.state = "idle";
       return state;
     }
@@ -363,7 +362,7 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
 
   const towerSpec = towers.find(t => t.id === order.towerId)!;
   
-  const owner = newState.players.find(p => p.id.includes(w.id.split('-')[1]));
+  const owner = newState.players.find(p => p.id === (w.id.includes('1') ? 'player1' : 'player2'));
 
   const newTower: PlacedTower = {
     ...towerSpec,
@@ -380,6 +379,7 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
   newState.currentPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(newState.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
 
   w.current = undefined;
+  // State becomes idle, will pick up next move/build order in the next tick.
   w.state = "idle";
-  return startNextOrder(newState, w);
+  return newState;
 }
