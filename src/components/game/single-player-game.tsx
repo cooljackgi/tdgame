@@ -677,20 +677,18 @@ export default function SinglePlayerGame({
                 }
               }
 
-              const { totalDamage, killed } = tickDots(updatedEnemy, delta);
-              if (totalDamage > 0) {
-                 gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: totalDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
+              const dotResult = tickDots(updatedEnemy, delta);
+              if (dotResult.totalDamage > 0) {
+                 gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
               }
-              if (killed && !updatedEnemy.deathTimestamp) {
+              if (dotResult.killed && !updatedEnemy.deathTimestamp) {
                 updatedEnemy.deathTimestamp = now;
-                audioManager.play({kind: 'sfx', name: 'enemy_die'});
-                audioManager.playVibration('kill');
               }
               if(updatedEnemy.deathTimestamp) {
                 nextEnemies.push(updatedEnemy);
                 continue;
               }
-
+              
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
                   nextEnemies.push(updatedEnemy);

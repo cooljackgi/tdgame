@@ -889,7 +889,7 @@ export default function CoopGameLoader() {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Verbinde mit Spiel...</p></div>;
   }
   
-  const handlePlaceTower = (row: number, col: number) => {
+  const handlePlaceTowerClient = (row: number, col: number) => {
     if (selectedTowerToBuild) {
         dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
     } else {
@@ -928,7 +928,7 @@ export default function CoopGameLoader() {
                 splashRings={[]}
                 persistentClouds={persistentClouds}
                 currentPath={currentPath} 
-                handlePlaceTower={handlePlaceTower}
+                handlePlaceTower={handlePlaceTowerClient}
                 onFocusTower={onFocusTower} 
                 selectedTowerToBuild={selectedTowerToBuild}
                 portalEntrance={null}
