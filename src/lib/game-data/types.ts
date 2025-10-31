@@ -92,6 +92,7 @@ export type Tower = {
   damage: number;
   range: number; // in grid units
   attackSpeed: number; // milliseconds between attacks
+  buildTimeMs?: number; // Neu: Bauzeit
   description: string;
   maxHealth: number;
   isBlocker?: boolean;
@@ -328,3 +329,60 @@ export type ProcessAttackResult = {
   livesGained: number;              // ggf. Lifegain aufs Spielerleben
   killed: number;                   // in diesem Angriff getötete Gegner
 };
+
+
+// --- WORKER TYPES ---
+
+export type WorkerState = "idle" | "moving" | "building";
+
+export interface BuildOrder {
+  id: string;
+  row: number;
+  col: number;
+  towerId: string;
+  cost: number;
+  buildTimeMs: number;
+  createdAt: number;
+}
+
+export interface Worker {
+  id: string;
+  x: number;             // world coords
+  y: number;
+  z?: number;            // für Hover-VFX (optional)
+  speed: number;         // worldUnits / s
+  state: WorkerState;
+  queue: BuildOrder[];
+  current?: {
+    order: BuildOrder;
+    targetX: number;
+    targetY: number;
+    startedAt?: number;
+    eta?: number;
+  };
+}
+
+export interface GhostFoundation {
+  id: string;
+  row: number;
+  col: number;
+  towerId: string;
+  startedAt: number;
+  buildTimeMs: number;
+  progress: number; // 0..1
+}
+
+export interface GameSessionState {
+  players: Player[];
+  gameState: GameState;
+  towersByCell: Record<string, PlacedTower>;
+  enemies: Enemy[];
+  currentWave: number;
+  difficulty: Difficulty;
+  gameStatus: 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
+  currentPath: Node[];
+  waveStartCountdown: number;
+  isIntermission: boolean;
+  workers: Worker[];
+  ghosts: GhostFoundation[];
+}

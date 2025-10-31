@@ -1,10 +1,18 @@
-
 // src/lib/game-logic.ts
 import type {
-  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent
+  Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
+  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
-import { elementProjectileColors } from '@/lib/game-data/constants';
+import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
+import { towers } from './game-data/towers';
+import { findPath } from './pathfinding';
+
+const TILE_SIZE = 64;
+const centerOf = (row: number, col: number) => ({
+  x: (col - 1) * TILE_SIZE + TILE_SIZE / 2,
+  y: (row - 1) * TILE_SIZE + TILE_SIZE / 2,
+});
 
 
 /**
@@ -78,7 +86,6 @@ export function processAttack(
     };
     output.newAttacks.push(primaryAttack);
     
-    // --- ARMOR SHRED ---
     if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
         primaryAttack.armorPenFlat = tower.damage * (effect.potency ?? 0);
     }
@@ -103,7 +110,6 @@ export function processAttack(
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }
     } else {
-        // Apply non-lethal status effects
         if (effect?.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
             currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
         }
@@ -117,8 +123,6 @@ export function processAttack(
             currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
         }
     }
-
-    // --- SECONDARY EFFECTS ---
 
     if (effect?.type === 'splash') {
         output.splashRings.push({
@@ -144,8 +148,7 @@ export function processAttack(
                         output.resourcesGained += enemy.bounty;
                         output.killed++;
                     }
-                    // Special logic for splash that applies effects
-                    if (tower.specId === 'dark-2b') { // Schatten-Balliste
+                    if (tower.specId === 'dark-2b') {
                         enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: effect.potency ?? 0.1 });
                     }
                 }
@@ -153,12 +156,10 @@ export function processAttack(
         });
     }
 
-    // Special combo logic for Algae Tower
     if (tower.specId === 'combo-water-nature') {
         const slowPotency = 0.25;
-        const poisonPotency = 15; // Dmg per second
+        const poisonPotency = 15;
         const effectDuration = 3000;
-
         currentTarget.effects.push({ type: 'slow', expires: now + effectDuration, potency: slowPotency });
         currentTarget.effects.push({ type: 'poison', expires: now + effectDuration, potency: poisonPotency, lastTick: now });
     }
@@ -168,7 +169,6 @@ export function processAttack(
         for (let i = 0; i < effect.bounces; i++) {
             let nextTarget: Enemy | null = null;
             let minDistanceSq = Infinity;
-
             output.updatedEnemies.forEach(enemy => {
                 if (enemy.id !== lastTarget.id && !enemy.deathTimestamp && !output.newAttacks.some(a => a.targetId === enemy.id)) {
                     const distSq = (enemy.position.col - lastTarget.position.col)**2 + (enemy.position.row - lastTarget.position.row)**2;
@@ -178,7 +178,6 @@ export function processAttack(
                     }
                 }
             });
-
             if (nextTarget) {
                 const chainDmg = damageAmount * ((effect.potency ?? 0.7) ** (i + 1));
                 const { damageDealt: chainDamageDealt, killed: chainKilled } = applyDamage(chainDmg, nextTarget, { ...primaryAttack, baseDamage: chainDmg });
@@ -208,7 +207,6 @@ export function processAttack(
         });
     }
     
-    // --- SPECIAL CASE: Persistent Cloud ---
     if (effect?.type === 'persistent_cloud' && effect.radius && effect.duration && effect.potency) {
          output.newPersistentClouds.push({
             id: `cloud-${tower.id}-${now}`,
@@ -218,7 +216,7 @@ export function processAttack(
             radius: effect.radius,
             potency: effect.potency,
             duration: effect.duration,
-            expires: now + 10000, // The cloud itself lingers for 10s
+            expires: now + 10000,
         });
     }
 
@@ -226,7 +224,6 @@ export function processAttack(
 }
 
 
-// --- Main-Loop Tick für DoTs (separat, unverändert zum Angriffs-Tempo) ---
 export function tickDots(target: Enemy, delta: number): { totalDamage: number, killed: boolean } {
   if (!target.effects?.length || target.deathTimestamp) return { totalDamage: 0, killed: false };
   
@@ -246,4 +243,96 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
   }
   
   return { totalDamage, killed: false };
+}
+
+
+// --- Worker Logic ---
+
+export function startNextOrder(state: GameSessionState, w: Worker): GameSessionState {
+  const next = w.queue.shift();
+  if (!next) { 
+    w.state = "idle";
+    w.current = undefined;
+    return state;
+  }
+  const c = centerOf(next.row, next.col);
+  w.current = { order: next, targetX: c.x, targetY: c.y };
+  w.state = "moving";
+  return state;
+}
+
+export function tickWorkers(state: GameSessionState, dtMs: number, now: number): GameSessionState {
+  let newState = { ...state };
+  for (const w of newState.workers) {
+    newState = stepWorker(newState, w, dtMs, now);
+  }
+  return newState;
+}
+
+function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: number): GameSessionState {
+  if (!w.current) {
+    if (w.queue.length > 0) return startNextOrder(state, w);
+    return state;
+  }
+
+  if (w.state === "moving") {
+    const { targetX, targetY } = w.current;
+    const dx = targetX - w.x, dy = targetY - w.y;
+    const dist = Math.hypot(dx, dy);
+    const step = (w.speed * dtMs) / 1000;
+
+    w.z = 4 * Math.sin(now / 180);
+
+    if (dist <= step) {
+      w.x = targetX;
+      w.y = targetY;
+      w.state = "building";
+      w.current.startedAt = now;
+      w.current.eta = now + w.current.order.buildTimeMs;
+    } else {
+      w.x += (dx / dist) * step;
+      w.y += (dy / dist) * step;
+    }
+    return state;
+  }
+
+  if (w.state === "building") {
+    const { order, startedAt, eta } = w.current;
+    const p = Math.min(1, (now - (startedAt ?? now)) / (order.buildTimeMs || 1));
+    const ghost = state.ghosts.find(g => g.row === order.row && g.col === order.col);
+    if(ghost) ghost.progress = p;
+
+    if (now >= (eta ?? now)) {
+      return completeConstruction(state, w);
+    }
+    return state;
+  }
+  return state;
+}
+
+function completeConstruction(state: GameSessionState, w: Worker): GameSessionState {
+  const { order } = w.current!;
+  
+  const newState = { ...state };
+  
+  newState.ghosts = newState.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
+
+  const towerSpec = towers.find(t => t.id === order.towerId)!;
+  const newTower: PlacedTower = {
+    ...towerSpec,
+    id: `tower-${order.row}-${order.col}-${Date.now()}`,
+    specId: towerSpec.id,
+    position: { row: order.row, col: order.col },
+    lastAttack: 0,
+    health: towerSpec.maxHealth,
+    ownerId: w.id.includes('player1') ? 'player1' : 'player2', // Assumption
+  };
+
+  const cellKey = `${order.row}_${order.col}`;
+  newState.towersByCell = { ...newState.towersByCell, [cellKey]: newTower };
+  newState.currentPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(newState.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+
+  w.current = undefined;
+  w.state = "idle";
+  return startNextOrder(newState, w);
 }

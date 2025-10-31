@@ -178,8 +178,8 @@ export let waves: Wave[] = [
       "type": "boss",
       "count": 1,
       "spawnDelay": 8000,
-      "health": 2799,
-      "armor": 119,
+      "health": 1799,
+      "armor": 90,
       "speed": 1.09,
       "damage": 280,
       "bounty": 92
@@ -308,8 +308,8 @@ export let waves: Wave[] = [
       "type": "boss",
       "count": 2,
       "spawnDelay": 4000,
-      "health": 7979,
-      "armor": 496,
+      "health": 3979,
+      "armor": 264,
       "speed": 1.18,
       "damage": 798,
       "bounty": 131

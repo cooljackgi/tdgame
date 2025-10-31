@@ -5,6 +5,7 @@ import type { User } from 'firebase/auth';
 import type {
   PlacedTower, Difficulty
 } from './game-data/types';
+import { audioManager } from './audio/audio-manager';
 
 /**
  * Handles the logic for when a game ends, such as saving the score.
@@ -18,6 +19,12 @@ export async function onGameEnd(
     won: boolean,
     finalTowers: Record<string, PlacedTower>
 ) {
+    if (won) {
+      audioManager.play({ kind: 'sfx', name: 'wave_start' }); // Placeholder for victory sound
+    } else {
+      audioManager.play({ kind: 'sfx', name: 'enemy_leak' }); // Placeholder for defeat sound
+    }
+    
     if (!user || difficulty === 'Chaos') return; 
     
     try {
