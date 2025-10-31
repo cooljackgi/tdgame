@@ -165,8 +165,6 @@ export default function SinglePlayerGame({
                  setIsIntermission(true);
                  setWaveStartCountdown(INTERMISSION_TIME);
             }
-            const path = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(initialSavedGame.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
-            setCurrentPath(path);
         } else {
             const difficultyMod = difficultyModifiers[initialDifficulty];
             const player1: Player = {
@@ -187,7 +185,6 @@ export default function SinglePlayerGame({
             setGameStatus(startWithTutorial ? 'tutorial' : 'waiting');
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
-            setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
              setWorkers([{
                 id: "worker-1",
                 x: 64, y: 64, speed: 260,
@@ -199,6 +196,13 @@ export default function SinglePlayerGame({
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial, configLoading]);
     
+    // DER ENTSCHEIDENDE FIX: Pfad immer neu berechnen, wenn sich die Türme ändern.
+    useEffect(() => {
+      const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+      setCurrentPath(newPath);
+    }, [towersByCell]);
+
+
     useEffect(() => {
         const onFirstPointer = async () => {
             try {
@@ -377,7 +381,6 @@ export default function SinglePlayerGame({
             setPlayers(newState.players);
             setGhosts(newState.ghosts);
             setWorkers(newState.workers);
-            setCurrentPath(newState.currentPath);
         } else {
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
@@ -495,8 +498,6 @@ export default function SinglePlayerGame({
         }
 
         setTowersByCell(newTowersByCell);
-        const newPath = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, blockedPositions, GRID_ROWS, GRID_COLS) ?? [];
-        setCurrentPath(newPath);
     }, [gameConfig]);
 
     const handleLoadTestLayout = useCallback(() => {
@@ -540,15 +541,13 @@ export default function SinglePlayerGame({
             }
 
             const currentStatus = gameStatusRef.current;
-            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current };
-            const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
+            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
+            
+            const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
             setWorkers(newState.workers);
             setGhosts(newState.ghosts);
             if (Object.keys(newState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
               setTowersByCell(newState.towersByCell);
-            }
-            if (newState.currentPath.length !== currentPathRef.current.length) {
-              setCurrentPath(newState.currentPath);
             }
 
             if (currentStatus !== 'playing') {
