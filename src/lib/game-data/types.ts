@@ -54,7 +54,7 @@ export type GravityWell = {
   expires: number;
 };
 
-export type PersistentCloudEffect = 'poison' | 'slow';
+export type PersistentCloudEffect = 'poison' | 'slow' | 'burn';
 
 export type PersistentCloud = {
   id: string;

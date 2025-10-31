@@ -502,7 +502,25 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           
           groundCtx.save();
 
-          if (cloud.effectType === 'slow') {
+          if (cloud.effectType === 'burn') {
+            const easeOutT = 1 - fadeT * fadeT;
+            const bubbleCount = 12;
+            const baseAngle = cloud.id.charCodeAt(0) % 360;
+
+            for (let i = 0; i < bubbleCount; i++) {
+                const angle = baseAngle + (i * 360/bubbleCount) + (easeOutT * 25) + (now * 0.03 * (i % 5 + 1));
+                const rad = angle * Math.PI / 180;
+                const dist = radiusPx * Math.pow(Math.random(), 1.5);
+                const size = radiusPx * 0.15 * (1 - fadeT) * (0.5 + Math.sin(i + now * 0.003) * 0.5);
+                if (size > 1) {
+                  groundCtx.fillStyle = `hsla(30, 100%, ${50 + Math.random() * 15}%, ${0.6 * fadeT})`;
+                  groundCtx.beginPath();
+                  groundCtx.arc(center.x + Math.cos(rad) * dist, center.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
+                  groundCtx.fill();
+                }
+            }
+
+          } else if (cloud.effectType === 'slow') {
               const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * fadeT));
               const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
               grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * fadeT})`);
@@ -513,20 +531,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
               groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
               groundCtx.fill();
           } else { // poison
-              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * fadeT));
-              const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-              grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * fadeT})`);
-              grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
-
-              groundCtx.fillStyle = grad;
-              groundCtx.beginPath();
-              groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
-              groundCtx.fill();
-
-              // BUBBLES
+              const easeOutT = 1 - fadeT * fadeT;
               const bubbleCount = 15;
               const baseAngle = cloud.id.charCodeAt(0) % 360;
-              const easeOutT = 1 - fadeT * fadeT; // Just to make movement non-linear
 
               for (let i = 0; i < bubbleCount; i++) {
                   const angle = baseAngle + (i * 360/bubbleCount) + (easeOutT * 20) + (now * 0.01 * (i % 5 + 1));
@@ -1199,19 +1206,24 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const endPos = gridToPx({row:12, col:12});
 
   const onTowerClick = useCallback((e: React.MouseEvent, clickedTower: PlacedTower) => {
-    // Stop propagation to prevent board click handlers
     e.stopPropagation();
-    
-    // If we are in build mode, a click on another tower should do nothing
+  
+    // ignore if the pointer moved (drag vs. click)
+    const moved =
+      Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5;
+    if (moved) return;
+  
     if (selectedTowerToBuild) {
-        return; 
+      // exit build mode and select the tower that was tapped/clicked
+      cancelInteractions(); // this should clear the "build" selection
+      requestAnimationFrame(() => onFocusTower(clickedTower));
+      return;
     }
-
-    // If not in build mode, focus the clicked tower
-    if (Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) <= 5) {
-      onFocusTower(clickedTower);
-    }
-  }, [onFocusTower, selectedTowerToBuild]);
+  
+    // normal behavior when not building
+    onFocusTower(clickedTower);
+  }, [cancelInteractions, onFocusTower, selectedTowerToBuild]);
+  
 
   const handlePingSelect = (kind: PingKind) => {
     if (contextMenu && onPing) {
@@ -1565,3 +1577,4 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
