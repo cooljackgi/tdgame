@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud, Worker, GhostFoundation, GameSessionState } from '@/lib/game-data/types';
 import { towers as initialTowers } from '@/lib/game-data/towers';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
@@ -15,7 +15,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
-import { onGameEnd, processAttack, tickDots } from '@/lib/game-logic';
+import { onGameEnd } from '@/lib/game-end';
+import { processAttack, tickWorkers } from '@/lib/game-logic';
+import { enqueueBuildOrder } from '@/lib/commands';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
@@ -51,6 +53,8 @@ export default function SinglePlayerGame({
     const [isIntermission, setIsIntermission] = useState(true);
     const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
     const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
+    const [workers, setWorkers] = useState<Worker[]>([]);
+    const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -98,6 +102,8 @@ export default function SinglePlayerGame({
     const isIntermissionRef = useRef(isIntermission);
     const gravityWellsRef = useRef(gravityWells);
     const persistentCloudsRef = useRef(persistentClouds);
+    const workersRef = useRef(workers);
+    const ghostsRef = useRef(ghosts);
 
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
@@ -111,6 +117,8 @@ export default function SinglePlayerGame({
     useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
     useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
     useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
+    useEffect(() => { workersRef.current = workers; }, [workers]);
+    useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
 
     useEffect(() => {
         const onFirstPointer = async () => {
@@ -171,6 +179,13 @@ export default function SinglePlayerGame({
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
             setCurrentPath(findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) ?? []);
+             setWorkers([{
+                id: "worker-1",
+                x: 64, y: 64, speed: 260,
+                state: "idle",
+                queue: []
+            }]);
+            setGhosts([]);
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial]);
     
@@ -311,47 +326,29 @@ export default function SinglePlayerGame({
     const handlePlaceTower = useCallback((row: number, col: number) => {
         if (!selectedTowerToBuild) return;
 
-        const player = localPlayerRef.current;
-        const towerSpec = initialTowers.find(t => t.id === selectedTowerToBuild.id);
-
-        if (!player || !towerSpec) return;
-
-        const currentTowers = Object.values(towersByCellRef.current);
-        const cellKey = `${row}_${col}`;
-
-        if (currentTowers.some(t => t.position.row === row && t.position.col === col)) return;
-        if ((row === 1 && col === 1) || (row === GRID_ROWS && col === GRID_COLS)) return;
-        if (player.resources < towerSpec.cost) {
-            toast({ title: 'Nicht genügend Ressourcen', variant: 'destructive'});
-            return;
-        }
-
-        const newBlockedPositions = [...currentTowers.map(t => t.position), { row, col }];
-        const path = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, newBlockedPositions, GRID_ROWS, GRID_COLS);
-        if (!path) {
-            toast({ title: 'Pfad blockiert', description: 'Du kannst den Weg für die Gegner nicht komplett blockieren.', variant: 'destructive'});
-            return;
-        }
-        
-        audioManager.play({ kind: 'sfx', name: 'build_tower' });
-        const newTower: PlacedTower = {
-            ...towerSpec,
-            id: `tower-${row}-${col}-${Date.now()}`,
-            specId: towerSpec.id,
-            position: { row, col },
-            lastAttack: Date.now() - 99999,
-            health: towerSpec.maxHealth,
-            ownerId: player.id,
+        const state: GameSessionState = {
+            players: playersRef.current,
+            gameState: gameStateRef.current,
+            towersByCell: towersByCellRef.current,
+            enemies: enemiesRef.current,
+            currentWave: currentWaveRef.current,
+            difficulty: difficultyRef.current,
+            gameStatus: gameStatusRef.current,
+            currentPath: currentPathRef.current,
+            waveStartCountdown: 0,
+            isIntermission: isIntermissionRef.current,
+            workers: workersRef.current,
+            ghosts: ghostsRef.current,
         };
 
-        setTowersByCell(prev => ({ ...prev, [cellKey]: newTower }));
-        setPlayers(prev => [{ ...prev[0], resources: prev[0].resources - towerSpec.cost }]);
-        setCurrentPath(path);
-        setEnemies(prevEnemies => prevEnemies.map(e => ({ ...e, path })));
-        setJustPlacedTowerId(newTower.id);
-        setTimeout(() => setJustPlacedTowerId(null), 500);
+        const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
 
-    }, [selectedTowerToBuild, toast]);
+        setPlayers(newState.players);
+        setGhosts(newState.ghosts);
+        setWorkers(newState.workers);
+        setCurrentPath(newState.currentPath);
+
+    }, [selectedTowerToBuild]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
@@ -506,6 +503,27 @@ export default function SinglePlayerGame({
                 ...p,
                 resources: p.resources + (p.incomePerSecond * (delta / 1000)),
             })));
+            
+            const state: GameSessionState = {
+                players: playersRef.current,
+                gameState: gameStateRef.current,
+                towersByCell: towersByCellRef.current,
+                enemies: enemiesRef.current,
+                currentWave: currentWaveRef.current,
+                difficulty: difficultyRef.current,
+                gameStatus: gameStatusRef.current,
+                currentPath: currentPathRef.current,
+                waveStartCountdown: 0,
+                isIntermission: isIntermissionRef.current,
+                workers: workersRef.current,
+                ghosts: ghostsRef.current,
+            };
+
+            const newState = tickWorkers(state, delta, now);
+            setWorkers(newState.workers);
+            setGhosts(newState.ghosts);
+            setTowersByCell(newState.towersByCell);
+            setCurrentPath(newState.currentPath);
 
             if (isIntermissionRef.current) {
                 setWaveStartCountdown(prevTime => {
@@ -796,7 +814,9 @@ export default function SinglePlayerGame({
                     towers={initialTowers} 
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
-                    enemies={enemies} 
+                    enemies={enemies}
+                    workers={workers}
+                    ghosts={ghosts}
                     damageNumbers={damageNumbers} 
                     splashRings={splashRings}
                     persistentClouds={persistentClouds}

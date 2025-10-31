@@ -17,7 +17,8 @@ export function enqueueBuildOrder(
   workerId: string,
   row: number,
   col: number,
-  towerId: string
+  towerId: string,
+  now: number
 ): GameSessionState {
   const worker = state.workers.find(w => w.id === workerId);
   const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2'));
@@ -48,7 +49,7 @@ export function enqueueBuildOrder(
   
   player.resources -= cost;
 
-  const ghostId = `ghost-${row}-${col}-${Date.now()}`;
+  const ghostId = `ghost-${row}-${col}-${now}`;
   state.ghosts.push({
     id: ghostId,
     row: row,
@@ -60,8 +61,8 @@ export function enqueueBuildOrder(
   });
 
   const order: BuildOrder = {
-    id: `order-${row}-${col}-${Date.now()}`,
-    row, col, towerId, cost, buildTimeMs, createdAt: Date.now()
+    id: `order-${row}-${col}-${now}`,
+    row, col, towerId, cost, buildTimeMs, createdAt: now
   };
   worker.queue.push(order);
 

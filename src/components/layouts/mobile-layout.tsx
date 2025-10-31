@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, memo, useMemo, useRef, useEffect, useCallback } from 'react';
@@ -19,7 +20,8 @@ import { Separator } from '../ui/separator';
 
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
-  Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud
+  Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
+  Worker, GhostFoundation
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -36,6 +38,8 @@ interface MobileLayoutProps {
   difficulty: Difficulty;
   placedTowers: PlacedTower[];
   enemies: Enemy[];
+  workers: Worker[];
+  ghosts: GhostFoundation[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
@@ -95,6 +99,7 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
+    workers, ghosts,
     damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
@@ -265,6 +270,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           ref={gameBoardRef}
           placedTowers={placedTowers}
           enemies={enemies}
+          workers={workers}
+          ghosts={ghosts}
           attacks={attacks}
           damageNumbers={damageNumbers}
           splashRings={splashRings}

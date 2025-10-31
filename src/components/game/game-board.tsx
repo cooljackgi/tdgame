@@ -4,16 +4,17 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud, Worker, GhostFoundation } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Target, RefreshCcw, Hand, AlertTriangle, Shield, Swords } from 'lucide-react';
+import { Target, RefreshCcw, Hand, AlertTriangle, Shield, Swords, Bot } from 'lucide-react';
 import TowerComponent, { TOWER_MUZZLE_POINTS } from "@/components/game/Tower";
 import EnemyComponent from "@/components/game/Enemy";
 import { Button } from '@/components/ui/button';
 import { findPath } from '@/lib/pathfinding';
 import TowerContextMenu from './TowerContextMenu';
+import { Progress } from '../ui/progress';
 
 const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
@@ -151,6 +152,8 @@ function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number;
 type GameBoardProps = {
   placedTowers: PlacedTower[];
   enemies: Enemy[];
+  workers: Worker[];
+  ghosts: GhostFoundation[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
@@ -293,6 +296,8 @@ const pingTextMap: Record<PingKind, string> = {
 const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({ 
     placedTowers, 
     enemies, 
+    workers,
+    ghosts,
     attacks = [], // default to empty array
     damageNumbers,
     splashRings,
@@ -1389,6 +1394,24 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         )
                       })}
                       
+                      {ghosts?.map(g => {
+                        const {x, y} = gridToPx({row: g.row, col: g.col});
+                        return (
+                          <div key={g.id} style={{ position: 'absolute', left: x, top: y, width:CELL_SIZE, height:CELL_SIZE, transform: 'translate(-50%,-50%)'}}>
+                            <div className="relative w-full h-full flex items-center justify-center">
+                              <TowerComponent element="neutral" size={CELL_SIZE*0.8} className="opacity-30 animate-pulse"/>
+                              <Progress value={g.progress*100} className="absolute bottom-0 h-1.5 w-10"/>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {workers?.map(w => (
+                         <div key={w.id} style={{position: 'absolute', left: w.x, top: w.y - (w.z || 0), transform: 'translate(-50%,-50%)' }}>
+                            <Bot className="h-6 w-6 text-cyan-300 drop-shadow-lg animate-bounce" />
+                         </div>
+                      ))}
+                      
                       <div className="absolute flex items-center justify-center pointer-events-auto" style={{ left: startPos.x, top: startPos.y, width: CELL_SIZE, height: CELL_SIZE, transform: 'translate(-50%, -50%)'}}>
                             <div className="relative h-10 w-10">
                                 <svg className="h-full w-full absolute" viewBox="0 0 100 100">
@@ -1577,4 +1600,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-

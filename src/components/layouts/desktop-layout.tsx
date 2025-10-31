@@ -14,7 +14,7 @@ import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -36,6 +36,8 @@ interface DesktopLayoutProps {
   setTowers: React.Dispatch<React.SetStateAction<Tower[]>>;
   placedTowers: PlacedTower[];
   enemies: Enemy[];
+  workers: Worker[];
+  ghosts: GhostFoundation[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
@@ -86,7 +88,7 @@ interface DesktopLayoutProps {
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
-    resetGame, towers, setTowers, placedTowers, enemies, damageNumbers, splashRings,
+    resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, damageNumbers, splashRings,
     persistentClouds,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
@@ -236,6 +238,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 ref={gameBoardRef}
                 placedTowers={placedTowers}
                 enemies={enemies}
+                workers={workers}
+                ghosts={ghosts}
                 attacks={attacks}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
