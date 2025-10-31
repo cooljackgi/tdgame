@@ -85,6 +85,7 @@ interface DesktopLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
+  isPlacingPortalEntrance?: boolean;
 }
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
@@ -116,6 +117,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
+    isPlacingPortalEntrance
   } = props;
   
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -172,7 +174,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
             <p className="text-sm font-medium flex-grow">
             {interactionPrompt}
             </p>
-            {(selectedTowerToBuild || focusedTower) && !isSpectator && (
+            {(selectedTowerToBuild || focusedTower || isPlacingPortalEntrance) && !isSpectator && (
             <Button variant="ghost" size="icon" onClick={cancelInteractions} className="h-7 w-7">
                 <X className="h-4 w-4" />
             </Button>
@@ -252,6 +254,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 cancelInteractions={cancelInteractions}
                 selectedTowerToBuild={selectedTowerToBuild}
                 portalEntrance={portalEntrance}
+                isPlacingPortalEntrance={isPlacingPortalEntrance}
                 focusedTower={focusedTower}
                 lastUpgradedTowerId={lastUpgradedTowerId}
                 justPlacedTowerId={justPlacedTowerId}

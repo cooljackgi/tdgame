@@ -92,6 +92,7 @@ interface MobileLayoutProps {
   clientPacketsPerSecond?: number;
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
+  isPlacingPortalEntrance?: boolean;
 }
 
 const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
@@ -120,6 +121,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
+    isPlacingPortalEntrance
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
@@ -284,6 +286,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           cancelInteractions={cancelInteractions}
           selectedTowerToBuild={selectedTowerToBuild}
           portalEntrance={portalEntrance}
+          isPlacingPortalEntrance={isPlacingPortalEntrance}
           focusedTower={focusedTower}
           lastUpgradedTowerId={lastUpgradedTowerId}
           justPlacedTowerId={justPlacedTowerId}
@@ -321,7 +324,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             <div className="bg-card/90 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-md">
                 <MessageCircle className="h-5 w-5 text-accent flex-shrink-0" />
                 <p className="text-xs font-medium truncate flex-grow">{interactionPrompt}</p>
-                {(selectedTowerToBuild || focusedTower) && !isSpectator && (
+                {(selectedTowerToBuild || focusedTower || isPlacingPortalEntrance) && !isSpectator && (
                 <Button variant="ghost" size="icon" onClick={cancelInteractions} className="h-7 w-7">
                     <X className="h-4 w-4" />
                 </Button>

@@ -176,6 +176,7 @@ type GameBoardProps = {
   localPlayer: {id: string, resources: number, unlockedElements: Element[]} | undefined;
   attacks?: Attack[];
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
+  isPlacingPortalEntrance?: boolean;
 };
 
 
@@ -321,6 +322,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     allTowers,
     localPlayer,
     onPing,
+    isPlacingPortalEntrance = false,
 }, ref) => {
 
   const vfxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1015,7 +1017,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             handlePlaceTower(hoveredCell.row, hoveredCell.col); // This will trigger a move if no tower is selected
             lastClickTimeRef.current = 0; // Reset to prevent triple-click issues
         } else { // Single-click
-            if (selectedTowerToBuild || portalEntrance) {
+            if (selectedTowerToBuild || isPlacingPortalEntrance) {
                 handlePlaceTower(hoveredCell.row, hoveredCell.col);
             } else {
                 const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
@@ -1140,7 +1142,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             lastTapTimeRef.current = 0;
         } else { // Single-tap
             if (hoveredCell) {
-                if (selectedTowerToBuild || portalEntrance) {
+                if (selectedTowerToBuild || isPlacingPortalEntrance) {
                     handlePlaceTower(hoveredCell.row, hoveredCell.col);
                 } else {
                     const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
@@ -1257,13 +1259,35 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     closeContextMenu();
   };
 
+  const portalPreview = useMemo(() => {
+    if (!isPlacingPortalEntrance || !hoveredCell) return null;
+    
+    let text = "Eingang";
+    let color = "hsl(188 85% 53%)"; // Primary color
+
+    if (portalEntrance) { // If entrance is set, we are placing the exit
+      text = "Ausgang";
+      color = "hsl(271 91% 65%)"; // Dark element color
+    }
+    
+    const pos = gridToPx(hoveredCell);
+    
+    return {
+      x: pos.x,
+      y: pos.y,
+      text,
+      color,
+    }
+
+  }, [isPlacingPortalEntrance, portalEntrance, hoveredCell]);
+
   return (
     <TooltipProvider>
       <Card 
         ref={containerRef}
         className={cn(
           "absolute inset-0 z-0 overflow-hidden",
-          selectedTowerToBuild ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing",
+          selectedTowerToBuild || isPlacingPortalEntrance ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing",
           "border-slate-800 border"
         )}
         style={{ touchAction: 'none' }}
@@ -1493,12 +1517,32 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     </div>
                 )}
                 
-                {portalEntrance && (
-                    <div className="absolute z-30 pointer-events-none" style={{ left: gridToPx(portalEntrance).x, top: gridToPx(portalEntrance).y, transform: 'translate(-50%, -50%)' }}>
-                        <div className="w-16 h-16 rounded-full bg-blue-500/30 border-2 border-dashed border-blue-400 flex items-center justify-center animate-pulse">
-                            <span className="text-xs font-bold text-white">Eingang</span>
-                        </div>
+                {portalPreview && (
+                  <div
+                    className="absolute z-30 pointer-events-none"
+                    style={{ left: portalPreview.x, top: portalPreview.y, transform: `translate(-50%, -50%)` }}
+                  >
+                    <div
+                      className="w-16 h-16 rounded-full border-2 border-dashed flex items-center justify-center animate-pulse"
+                      style={{ borderColor: portalPreview.color, background: `${portalPreview.color}20` }}
+                    >
+                      <span className="font-bold text-xs" style={{ color: portalPreview.color }}>{portalPreview.text}</span>
                     </div>
+                  </div>
+                )}
+                 {portalEntrance && (
+                  <div
+                    className="absolute z-10 pointer-events-none"
+                    style={{
+                      left: gridToPx(portalEntrance).x,
+                      top: gridToPx(portalEntrance).y,
+                      transform: `translate(-50%, -50%)`,
+                    }}
+                  >
+                    <div className="w-16 h-16 rounded-full bg-blue-500/30 border-2 border-dashed border-blue-400 flex items-center justify-center">
+                      <span className="text-xs font-bold text-white">Eingang</span>
+                    </div>
+                  </div>
                 )}
 
                 {focusedTower && (
