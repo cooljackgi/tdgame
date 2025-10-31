@@ -502,7 +502,7 @@ export const towers: Tower[] = [
     attackSpeed: 1200,
     maxHealth: 350,
     description: "Verlangsamt und vergiftet Ziele.",
-    effect: { type: "slow", duration: 3000, potency: 0.25, chance: 1 },
+    effect: { type: "splash", potency: 0.3, chance: 1, targets: 4, vfxType: "thorn", radius: 1 },
     upgradesTo: [],
     get dps() { return calcDps(this.damage, this.attackSpeed); },
   },

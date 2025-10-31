@@ -8,7 +8,7 @@ import { Home, BarChart2, Zap, Save, Loader2, Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { towers as initialTowers } from '@/lib/game-data/towers';
-import type { Tower, TowerEffect } from '@/lib/game-data/types';
+import type { Tower, TowerEffect, PersistentCloudEffect } from '@/lib/game-data/types';
 import {
   Table,
   TableHeader,
@@ -40,6 +40,8 @@ const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
     'pull', 'vulnerability', 'aura', 'armor_shred', 'lifesteal', 'crit', 
     'persistent_cloud', 'poison'
 ];
+
+const ALL_CLOUD_EFFECTS: PersistentCloudEffect[] = ['poison', 'slow', 'burn'];
 
 const defaultEffectValues: Record<TowerEffect['type'], Omit<TowerEffect, 'type'>> = {
     slow: { potency: 0.3, duration: 2000, chance: 1 },
@@ -75,7 +77,7 @@ const EffectInput = ({ label, value, onChange, type = 'number', step = 0.1, min 
     </div>
 );
 
-const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number) => void, onEffectTypeChange: (id: string, newType: TowerEffect['type']) => void }) => {
+const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number | PersistentCloudEffect) => void, onEffectTypeChange: (id: string, newType: TowerEffect['type']) => void }) => {
     if (!tower.effect) return <div className="text-xs text-muted-foreground">Kein Effekt</div>;
 
     const { type, ...params } = tower.effect;
@@ -107,13 +109,33 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
                     </>
                  );
             case 'splash':
-            case 'persistent_cloud':
                  return (
                     <>
                         <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
                         <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
                     </>
                  );
+            case 'persistent_cloud':
+                return (
+                    <>
+                        <div className="grid grid-cols-2 items-center gap-2">
+                             <Label className="text-xs text-muted-foreground">Wolken-Effekt</Label>
+                             <Select value={params.cloudEffect} onValueChange={(newEffect: PersistentCloudEffect) => onEffectChange(tower.id, 'cloudEffect', newEffect)}>
+                                <SelectTrigger className="h-7 text-xs">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {ALL_CLOUD_EFFECTS.map(t => (
+                                        <SelectItem key={t} value={t} className="text-xs capitalize">{t}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <EffectInput label="Wolken-Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Wolken-Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                        <EffectInput label="Wolken-Stärke" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={1} />
+                    </>
+                );
             case 'chain':
                 return <EffectInput label="Sprünge" value={params.bounces ?? 0} onChange={(e) => onEffectChange(tower.id, 'bounces', parseInt(e.target.value))} type="number" step={1} />;
             case 'multishot':
@@ -203,14 +225,18 @@ export default function BalancingPage() {
     );
   };
   
-  const handleEffectChange = (towerId: string, field: keyof TowerEffect, value: string | number) => {
+  const handleEffectChange = (towerId: string, field: keyof TowerEffect, value: string | number | PersistentCloudEffect) => {
     setTowers(currentTowers =>
       currentTowers.map(tower => {
         if (tower.id === towerId && tower.effect) {
-          const numericValue = typeof value === 'string' ? parseFloat(value) : value;
-          if (isNaN(numericValue)) return tower;
-
-          const newEffect = { ...tower.effect, [field]: numericValue };
+          let finalValue = value;
+          if (typeof value === 'string' && field !== 'cloudEffect') {
+             const numericValue = parseFloat(value);
+             if (isNaN(numericValue)) return tower;
+             finalValue = numericValue;
+          }
+          
+          const newEffect = { ...tower.effect, [field]: finalValue };
           return { ...tower, effect: newEffect };
         }
         return tower;
