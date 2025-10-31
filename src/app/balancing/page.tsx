@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Home, BarChart2, Zap, Save, Loader2 } from 'lucide-react';
+import { Home, BarChart2, Zap, Save, Loader2, Heart } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -189,6 +189,7 @@ export default function BalancingPage() {
                 <TableHead>Tier</TableHead>
                 <TableHead className="w-[120px]">Kosten</TableHead>
                 <TableHead className="w-[120px]">Schaden</TableHead>
+                <TableHead className="w-[120px]">Leben</TableHead>
                 <TableHead className="w-[140px]">Angr./s (ms)</TableHead>
                 <TableHead className="w-[120px]">Reichw.</TableHead>
                 <TableHead className="text-right">DPS</TableHead>
@@ -228,6 +229,14 @@ export default function BalancingPage() {
                         onChange={(e) => handleTowerChange(tower.id, 'damage', e.target.value)}
                         className="h-8"
                         disabled={tower.damage === 0}
+                    />
+                  </TableCell>
+                  <TableCell>
+                     <Input 
+                        type="number"
+                        value={tower.maxHealth}
+                        onChange={(e) => handleTowerChange(tower.id, 'maxHealth', e.target.value)}
+                        className="h-8"
                     />
                   </TableCell>
                    <TableCell>
