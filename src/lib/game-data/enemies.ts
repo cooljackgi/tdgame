@@ -29,13 +29,13 @@ export function generateProceduralWave(waveNumber: number, formulas: typeof wave
     else if (waveNumber % 5 === 0) type = 'gepanzert';
     else if (waveNumber % 3 === 0) type = 'schnell';
 
-    // Rüstungsfaktor für gepanzerte Gegner reduziert
+    // Rüstungsfaktor für gepanzerte Gegner wieder auf den ursprünglichen Wert gesetzt
     const baseParams = {
         standard:  { armorFactor: 0.05, speedFactor: 1.0, healthFactor: 1.0, bountyFactor: 1.0, countFactor: 1.0 },
         schnell:   { armorFactor: 0.02, speedFactor: 1.5, healthFactor: 0.8, bountyFactor: 1.1, countFactor: 1.1 },
-        gepanzert: { armorFactor: 0.12, speedFactor: 0.8, healthFactor: 1.5, bountyFactor: 1.4, countFactor: 0.8 }, // armorFactor von 0.20 auf 0.12, bounty von 1.3 auf 1.4
+        gepanzert: { armorFactor: 0.20, speedFactor: 0.8, healthFactor: 1.5, bountyFactor: 1.3, countFactor: 0.8 },
         heilend:   { armorFactor: 0.10, speedFactor: 1.0, healthFactor: 1.2, bountyFactor: 1.2, countFactor: 0.9 },
-        boss:      { armorFactor: 0.15, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 }, // Boss-Rüstung auch leicht reduziert
+        boss:      { armorFactor: 0.30, speedFactor: 0.9, healthFactor: 12.0, bountyFactor: 8.0, countFactor: 1/15 },
     };
     
     const params = baseParams[type];

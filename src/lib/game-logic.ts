@@ -18,9 +18,11 @@ const centerOf = (row: number, col: number) => ({
 /**
  * Wendet den Schaden eines Angriffs auf ein einzelnes Ziel an.
  * Berechnet den Schaden basierend auf Rüstung, Verwundbarkeit und kritischen Treffern.
+ * Berücksichtigt jetzt Rüstungsdurchdringung.
  */
 function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDealt: number, killed: boolean } {
     const armorPen = attack.armorPenFlat ?? 0;
+    // Rüstung kann nicht unter 0 fallen.
     const effectiveArmor = Math.max(0, enemy.armor - armorPen);
     const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
 
@@ -86,6 +88,7 @@ export function processAttack(
     };
     output.newAttacks.push(primaryAttack);
     
+    // HIER IST DIE KORREKTUR: armor_shred wird jetzt als direkter Rüstungsdurchschlag für den Angriff gewertet.
     if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
         primaryAttack.armorPenFlat = tower.damage * (effect.potency ?? 0);
     }
@@ -110,6 +113,10 @@ export function processAttack(
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }
     } else {
+        // HIER WIRD DER DEBUFF GESETZT: Auch das hat gefehlt.
+        if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
+             currentTarget.effects.push({ type: 'armor_shred', expires: now + (effect.duration ?? 4000), potency: (effect.potency ?? 0) });
+        }
         if (effect?.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
             currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
         }
@@ -286,6 +293,7 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
     if (dist <= step) {
       w.x = targetX;
       w.y = targetY;
+      // bauen starten
       w.state = "building";
       w.current.startedAt = now;
       w.current.eta = now + w.current.order.buildTimeMs;
