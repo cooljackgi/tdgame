@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PoisonCloud } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -153,7 +153,7 @@ type GameBoardProps = {
   enemies: Enemy[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
-  poisonClouds: PoisonCloud[];
+  persistentClouds: PersistentCloud[];
   currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
@@ -296,7 +296,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     attacks = [], // default to empty array
     damageNumbers,
     splashRings,
-    poisonClouds,
+    persistentClouds,
     currentPath,
     handlePlaceTower, 
     onFocusTower,
@@ -493,77 +493,42 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         }
         
         // --- GROUND EFFECTS ---
-        for (const cloud of poisonClouds) {
+        for (const cloud of persistentClouds) {
           const center = gridToPx({ row: cloud.y, col: cloud.x });
           let radiusPx = cloud.radius * CELL_SIZE;
 
           const remaining = Math.max(0, cloud.expires - now);
           const t = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0.0;
 
-          const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
-          const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-          grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`);
-          grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
+          if (cloud.effectType === 'slow') {
+              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+              const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
+              grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * t})`);
+              grad.addColorStop(1, `rgba(56, 189, 248, 0)`);
+              groundCtx.fillStyle = grad;
+              groundCtx.beginPath();
+              groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+              groundCtx.fill();
+          } else { // poison
+              const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * t));
+              const grad = groundCtx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
+              grad.addColorStop(0, `rgba(34, 197, 94, ${0.22 * t})`);
+              grad.addColorStop(1, `rgba(34, 197, 94, 0)`);
 
-          groundCtx.save();
-          groundCtx.fillStyle = grad;
-          groundCtx.beginPath();
-          groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
-          groundCtx.fill();
-          
-          groundCtx.globalCompositeOperation = 'lighter';
-          groundCtx.globalAlpha = 0.10 * t;
-          groundCtx.beginPath();
-          groundCtx.arc(center.x, center.y, radiusPx * 0.9, 0, Math.PI * 2);
-          groundCtx.fillStyle = 'rgba(34,197,94,0.25)';
-          groundCtx.fill();
-          groundCtx.restore();
-
-          function hashStr(s: string) {
-            let h = 2166136261 >>> 0;
-            for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
-            return h >>> 0;
+              groundCtx.save();
+              groundCtx.fillStyle = grad;
+              groundCtx.beginPath();
+              groundCtx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+              groundCtx.fill();
+              
+              groundCtx.globalCompositeOperation = 'lighter';
+              groundCtx.globalAlpha = 0.10 * t;
+              groundCtx.beginPath();
+              groundCtx.arc(center.x, center.y, radiusPx * 0.9, 0, Math.PI * 2);
+              groundCtx.fillStyle = 'rgba(34,197,94,0.25)';
+              groundCtx.fill();
+              groundCtx.restore();
           }
-          function rngFactory(seed: number) {
-            return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-          }
-
-          const rng = rngFactory(hashStr(cloud.id));
-          const bubbleCount = 10 + Math.floor(rng()*6);
-          const drift = 0.15 + 0.1 * Math.sin(now * 0.001);
-
-          for (let i = 0; i < bubbleCount; i++) {
-            const baseAngle = rng() * Math.PI * 2;
-            const ring = 0.15 + 0.75 * rng();
-            const pathR = radiusPx * ring;
-            const r = 2 + 4 * rng();
-            const speed = 12 + 24 * rng();
-            const phase = rng() * 5000;
-            const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
-            const rise = -prog + radiusPx * 0.8;
-            const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
-            const x = center.x + Math.cos(baseAngle + wobble) * pathR * (1 + 0.15 * drift);
-            const y = center.y + Math.sin(baseAngle + wobble) * pathR + rise;
-            const dx = x - center.x, dy = y - center.y;
-            if (dx*dx + dy*dy > radiusPx*radiusPx) continue;
-            const toTop = (center.y - y + radiusPx) / (2*radiusPx);
-            const a = Math.max(0, Math.min(1, 0.35 * t * (0.5 + 0.5 * toTop)));
-            groundCtx.save();
-            groundCtx.globalAlpha = a;
-            groundCtx.beginPath();
-            groundCtx.arc(x, y, r, 0, Math.PI * 2);
-            groundCtx.fillStyle = 'rgba(209,250,229,0.18)';
-            groundCtx.fill();
-            groundCtx.lineWidth = 1;
-            groundCtx.strokeStyle = 'rgba(34,197,94,0.55)';
-            groundCtx.stroke();
-            groundCtx.beginPath();
-            groundCtx.arc(x - r*0.35, y - r*0.45, r*0.25, 0, Math.PI*2);
-            groundCtx.fillStyle = 'rgba(255,255,255,0.35)';
-            groundCtx.fill();
-            groundCtx.restore();
-          }
-          groundCtx.restore();
         }
 
         const currentEnemyIds = new Set(enemies.map(e => e.id));
@@ -763,7 +728,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         const angle = baseAngle + (i * (360 / shards));
                         const rad = angle * Math.PI / 180;
                         const len = maxRadius * (0.5 + tRoot * 0.5);
-                        const shardSize = 15 * (1 - t);
+                        const shardSize = 15 * (1-t);
                         groundCtx.beginPath();
                         groundCtx.moveTo(pos.x + Math.cos(rad) * (len - shardSize), pos.y + Math.sin(rad) * (len - shardSize));
                         groundCtx.lineTo(pos.x + Math.cos(rad) * len, pos.y + Math.sin(rad) * len);
@@ -938,7 +903,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, poisonClouds]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, persistentClouds]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -1586,4 +1551,3 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
-
