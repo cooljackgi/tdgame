@@ -6,7 +6,7 @@ import type {
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
-import { towers } from './game-data/towers';
+import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
 
 const TILE_SIZE = 64;
@@ -401,7 +401,7 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
   
   newState.ghosts = newState.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
 
-  const towerSpec = towers.find(t => t.id === order.towerId)!;
+  const towerSpec = allTowers.find(t => t.id === order.towerId)!;
   
   const owner = newState.players.find(p => p.id === (w.id.includes('1') ? 'player1' : 'player2'));
 
