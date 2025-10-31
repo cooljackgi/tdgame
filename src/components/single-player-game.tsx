@@ -513,18 +513,16 @@ export default function SinglePlayerGame({
             }
 
             const currentStatus = gameStatusRef.current;
-            if (currentStatus !== 'playing' && currentStatus !== 'waiting' && currentStatus !== 'paused') return;
-
-            const state: GameSessionState = {
-                players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current,
-            };
+            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
             const newState = tickWorkers(state, delta, now);
             setWorkers(newState.workers);
             setGhosts(newState.ghosts);
             setTowersByCell(newState.towersByCell);
             setCurrentPath(newState.currentPath);
 
-            if (currentStatus !== 'playing') return;
+            if (currentStatus !== 'playing') {
+                return;
+            }
 
 
             setPlayers(prev => prev.map(p => ({
@@ -869,6 +867,7 @@ export default function SinglePlayerGame({
                     firingTowerIds={firingTowerIds} 
                     allTowers={initialTowers}
                     attacks={attacks}
+                    isPlacingPortalEntrance={isPlacingPortalEntrance}
                 />
             </div>
 

@@ -1203,6 +1203,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         position: hoveredCell,
     };
   }, [selectedTowerToBuild, hoveredCell]);
+  
+  const portalPreview = useMemo(() => {
+    if (!isPlacingPortalEntrance || !hoveredCell) return null;
+    
+    let text = "Eingang";
+    let color = "hsl(188 85% 53%)"; // Primary color
+
+    if (portalEntrance) { // If entrance is set, we are placing the exit
+      text = "Ausgang";
+      color = "hsl(271 91% 65%)"; // Dark element color
+    }
+    
+    const pos = gridToPx(hoveredCell);
+    
+    return {
+      x: pos.x,
+      y: pos.y,
+      text,
+      color,
+    }
+
+  }, [isPlacingPortalEntrance, portalEntrance, hoveredCell]);
 
   const isPlacementValid = useMemo(() => {
     return ghostTowerPath !== 'invalid';
@@ -1259,27 +1281,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     closeContextMenu();
   };
 
-  const portalPreview = useMemo(() => {
-    if (!isPlacingPortalEntrance || !hoveredCell) return null;
-    
-    let text = "Eingang";
-    let color = "hsl(188 85% 53%)"; // Primary color
-
-    if (portalEntrance) { // If entrance is set, we are placing the exit
-      text = "Ausgang";
-      color = "hsl(271 91% 65%)"; // Dark element color
-    }
-    
-    const pos = gridToPx(hoveredCell);
-    
-    return {
-      x: pos.x,
-      y: pos.y,
-      text,
-      color,
-    }
-
-  }, [isPlacingPortalEntrance, portalEntrance, hoveredCell]);
 
   return (
     <TooltipProvider>
@@ -1530,7 +1531,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                     </div>
                   </div>
                 )}
-                 {portalEntrance && (
+                
+                {portalEntrance && (
                   <div
                     className="absolute z-10 pointer-events-none"
                     style={{
