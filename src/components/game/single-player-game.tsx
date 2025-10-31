@@ -4,8 +4,6 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud, Worker, GhostFoundation, GameSessionState } from '@/lib/game-data/types';
-import { towers as initialTowers } from '@/lib/game-data/towers';
-import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +20,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescript
 import ScoreboardMiniMap from './ScoreboardMiniMap';
 import Header from './header';
 import TutorialOverlay from './tutorial-overlay';
+import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
+import { Loader2 } from 'lucide-react';
 
 
 export default function SinglePlayerGame({
@@ -39,6 +39,10 @@ export default function SinglePlayerGame({
 }) {
     const { toast } = useToast();
     const isMobile = useIsMobile();
+    
+    // --- Config Loading State ---
+    const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
+    const [configLoading, setConfigLoading] = useState(true);
 
     // --- Core Game State ---
     const [players, setPlayers] = useState<Player[]>([]);
@@ -58,7 +62,6 @@ export default function SinglePlayerGame({
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
-    const [isPlacingPortalEntrance, setIsPlacingPortalEntrance] = useState(false);
     const [portalPhase, setPortalPhase] = useState<'idle' | 'entrance' | 'exit'>('idle');
     const [portalEntrance, setPortalEntrance] = useState<Node | null>(null);
     const [justPlacedTowerId, setJustPlacedTowerId] = useState<string | null>(null);
@@ -122,25 +125,28 @@ export default function SinglePlayerGame({
     useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
     useEffect(() => { workersRef.current = workers; }, [workers]);
     useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
-
+    
+    // --- Load Game Configuration ---
     useEffect(() => {
-        const onFirstPointer = async () => {
+        async function fetchConfig() {
             try {
-                await audioManager.init(); // AudioContext unlock
-                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
-            } catch {}
-            window.removeEventListener('pointerdown', onFirstPointer);
-            window.removeEventListener('touchstart', onFirstPointer);
-        };
-        window.addEventListener('pointerdown', onFirstPointer, { once: true });
-        window.addEventListener('touchstart', onFirstPointer, { once: true });
-        return () => {
-            window.removeEventListener('pointerdown', onFirstPointer);
-            window.removeEventListener('touchstart', onFirstPointer);
-        };
-    }, []);
+                const config = await loadGameConfig();
+                setGameConfig(config);
+            } catch (error) {
+                console.error("Failed to load game config, using defaults:", error);
+                toast({ title: 'Fehler beim Laden der Konfiguration', description: 'Standardwerte werden verwendet.', variant: 'destructive' });
+                // Fallback is handled within loadGameConfig, but we could explicitly set it here too.
+            } finally {
+                setConfigLoading(false);
+            }
+        }
+        fetchConfig();
+    }, [toast]);
+
 
     useEffect(() => {
+        if (configLoading) return; // Wait for config to load
+
         if (initialSavedGame) {
             const now = Date.now();
             const loadedTowers = initialSavedGame.towersByCell;
@@ -191,11 +197,28 @@ export default function SinglePlayerGame({
             }]);
             setGhosts([]);
         }
-    }, [initialSavedGame, initialDifficulty, user, startWithTutorial]);
+    }, [initialSavedGame, initialDifficulty, user, startWithTutorial, configLoading]);
     
     useEffect(() => {
+        const onFirstPointer = async () => {
+            try {
+                await audioManager.init(); // AudioContext unlock
+                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
+            } catch {}
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+        window.addEventListener('pointerdown', onFirstPointer, { once: true });
+        window.addEventListener('touchstart', onFirstPointer, { once: true });
+        return () => {
+            window.removeEventListener('pointerdown', onFirstPointer);
+            window.removeEventListener('touchstart', onFirstPointer);
+        };
+    }, []);
+
+    useEffect(() => {
       const saveGame = () => {
-        if (gameStatusRef.current === 'tutorial' || gameStatusRef.current === 'gameover') return;
+        if (gameStatusRef.current === 'tutorial' || gameStatusRef.current === 'gameover' || !gameConfig) return;
 
         const player1 = playersRef.current[0];
         if (!player1) return;
@@ -230,7 +253,7 @@ export default function SinglePlayerGame({
         document.removeEventListener('visibilitychange', onVis);
         window.removeEventListener('beforeunload', saveGame);
       };
-    }, []);
+    }, [gameConfig]);
 
 
     const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
@@ -239,14 +262,14 @@ export default function SinglePlayerGame({
     
     const buffedTowerIds = useMemo(() => {
         const ids = new Set<string>();
-        const auraTowers = placedTowers.filter(t => t.effect?.type === 'aura');
+        const auraTowers = placedTowers.filter(t => t.effects?.some(e => e.type === 'aura'));
         if (auraTowers.length === 0) return ids;
 
         placedTowers.forEach(tower => {
-          if (tower.effect?.type === 'aura') return;
+          if (tower.effects?.some(e => e.type === 'aura')) return;
           for (const auraTower of auraTowers) {
             const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-            if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+            if (distSq <= Math.pow(auraTower.range, 2)) {
               ids.add(tower.id);
               break;
             }
@@ -279,7 +302,8 @@ export default function SinglePlayerGame({
     }, [user, isCheating]);
 
     const startWaveLogic = useCallback(() => {
-        const waveData = waves[currentWaveRef.current];
+        if (!gameConfig) return;
+        const waveData = gameConfig.waves[currentWaveRef.current];
         if (!waveData) return;
         
         audioManager.play({ kind: 'sfx', name: 'wave_start' });
@@ -315,7 +339,7 @@ export default function SinglePlayerGame({
         waveStartTimeRef.current = Date.now();
         setIsIntermission(false);
         setWaveStartCountdown(0);
-    }, []);
+    }, [gameConfig]);
 
     const handleStartNextWaveNow = useCallback(() => {
         if(gameStatusRef.current === 'waiting' || gameStatusRef.current === 'tutorial') {
@@ -330,14 +354,13 @@ export default function SinglePlayerGame({
     const cancelInteractions = useCallback(() => {
         setSelectedTowerToBuild(null);
         setFocusedTower(null);
-        setIsPlacingPortalEntrance(false);
-        setPortalEntrance(null);
         setPortalPhase('idle');
+        setPortalEntrance(null);
     }, []);
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
-        if (isPlacingPortalEntrance) {
+        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current };
+        if (portalPhase !== 'idle') {
             if (portalPhase === 'entrance') {
                 setPortalEntrance({ row, col });
                 setPortalPhase('exit');
@@ -359,14 +382,14 @@ export default function SinglePlayerGame({
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
         }
-    }, [selectedTowerToBuild, isPlacingPortalEntrance, portalPhase, portalEntrance, cancelInteractions]);
+    }, [selectedTowerToBuild, portalPhase, portalEntrance, cancelInteractions]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
-        if (!player || !focusedTower) return;
+        if (!player || !focusedTower || !gameConfig) return;
         
         const cellKey = `${focusedTower.position.row}_${focusedTower.position.col}`;
-        const upgradeTowerSpec = initialTowers.find(t => t.id === upgradeId);
+        const upgradeTowerSpec = gameConfig.towers.find(t => t.id === upgradeId);
         if (!upgradeTowerSpec) return;
         
         const refundPercentage = difficultyRef.current === 'Einfach' ? 1.0 : 0.75;
@@ -387,7 +410,7 @@ export default function SinglePlayerGame({
         setFocusedTower(newPlacedTower);
         setLastUpgradedTowerId(newPlacedTower.id);
         setTimeout(() => setLastUpgradedTowerId(null), 500);
-    }, [toast, focusedTower]);
+    }, [toast, focusedTower, gameConfig]);
 
     const handleSellTower = useCallback(() => {
         const player = localPlayerRef.current;
@@ -414,9 +437,8 @@ export default function SinglePlayerGame({
 
     const onFocusTower = useCallback((tower: PlacedTower) => {
         setSelectedTowerToBuild(null);
-        setIsPlacingPortalEntrance(false);
-        setPortalEntrance(null);
         setPortalPhase('idle');
+        setPortalEntrance(null);
         setFocusedTower(tower);
     }, []);
     
@@ -428,13 +450,13 @@ export default function SinglePlayerGame({
     
     const onEnterPortalMode = useCallback(() => {
         cancelInteractions();
-        setIsPlacingPortalEntrance(true);
         setPortalPhase('entrance');
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, [cancelInteractions]);
 
     // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
+        if (!gameConfig) return;
         const mazePath: Node[] = [
             ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 2 })),
             ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 4 })),
@@ -475,18 +497,20 @@ export default function SinglePlayerGame({
         setTowersByCell(newTowersByCell);
         const newPath = findPath({ row: 1, col: 1 }, { row: GRID_ROWS, col: GRID_COLS }, blockedPositions, GRID_ROWS, GRID_COLS) ?? [];
         setCurrentPath(newPath);
-    }, []);
+    }, [gameConfig]);
 
     const handleLoadTestLayout = useCallback(() => {
-        const testTowers = initialTowers.filter(t => t.tier === 1 && t.id.includes("neutral-1a"));
+        if (!gameConfig) return;
+        const testTowers = gameConfig.towers.filter(t => t.tier === 1 && t.id.includes("neutral-1a"));
         generateLayout(testTowers);
         toast({ title: 'Test-Layout geladen!', description: 'Ein Labyrinth aus Basistürmen wurde erstellt.' });
-    }, [generateLayout, toast]);
+    }, [generateLayout, toast, gameConfig]);
 
     const handleLoadAllTowersLayout = useCallback(() => {
-        generateLayout(initialTowers);
+        if (!gameConfig) return;
+        generateLayout(gameConfig.towers);
         toast({ title: 'Alle Türme geladen!', description: 'Jeder Turm wurde einmal im Labyrinth platziert.' });
-    }, [generateLayout, toast]);
+    }, [generateLayout, toast, gameConfig]);
 
     const handleUnlockAll = useCallback(() => {
         setPlayers(prev => [{
@@ -499,6 +523,7 @@ export default function SinglePlayerGame({
 
 
     useEffect(() => {
+        if (!gameConfig) return;
         const gameLoop = () => {
             gameLoopRef.current = requestAnimationFrame(gameLoop);
             const now = Date.now();
@@ -519,8 +544,12 @@ export default function SinglePlayerGame({
             const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
             setWorkers(newState.workers);
             setGhosts(newState.ghosts);
-            setTowersByCell(newState.towersByCell);
-            setCurrentPath(newState.currentPath);
+            if (Object.keys(newState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
+              setTowersByCell(newState.towersByCell);
+            }
+            if (newState.currentPath.length !== currentPathRef.current.length) {
+              setCurrentPath(newState.currentPath);
+            }
 
             if (currentStatus !== 'playing') {
                 return;
@@ -572,15 +601,15 @@ export default function SinglePlayerGame({
             let newGravityWells: GravityWell[] = [];
 
             const towers = Object.values(towersByCellRef.current);
-            const auraTowers = towers.filter(t => t.effect?.type === 'aura');
+            const auraTowers = towers.filter(t => t.effects?.some(e => e.type === 'aura'));
             
             const currentBuffedTowerIds = new Set<string>();
             if (auraTowers.length > 0) {
                 towers.forEach(tower => {
-                  if (tower.effect?.type === 'aura') return;
+                  if (tower.effects?.some(e => e.type === 'aura')) return;
                   for (const auraTower of auraTowers) {
                     const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-                    if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+                    if (distSq <= Math.pow(auraTower.range, 2)) {
                       currentBuffedTowerIds.add(tower.id);
                       break;
                     }
@@ -593,12 +622,13 @@ export default function SinglePlayerGame({
                     const isBuffed = currentBuffedTowerIds.has(tower.id);
                     let targets: Enemy[] = [];
 
-                    if (tower.effect?.type === 'multishot' && tower.effect.targets) {
+                    if (tower.effects?.some(e => e.type === 'multishot')) {
+                        const effect = tower.effects.find(e => e.type === 'multishot')!;
                         const potentialTargets = currentEnemies.filter(enemy => {
                             if (enemy.deathTimestamp) return false;
                             const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                             return distSq <= tower.range * tower.range;
-                        }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, tower.effect.targets);
+                        }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
                         targets.push(...potentialTargets);
                     } else {
                         let target: Enemy | null = null;
@@ -763,7 +793,7 @@ export default function SinglePlayerGame({
             if (nextEnemies.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermissionRef.current) {
                 const nextWave = currentWaveRef.current + 1;
                 
-                if (waves[nextWave]) {
+                if (gameConfig.waves[nextWave]) {
                   if ((nextWave) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 8) {
                     setGameStatus('picking-element');
                   } else {
@@ -781,7 +811,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [startWaveLogic, handleGameEnd, user, isCheating]);
+    }, [startWaveLogic, handleGameEnd, user, isCheating, gameConfig]);
 
     const toggleMute = () => {
       setIsMuted(current => {
@@ -792,9 +822,16 @@ export default function SinglePlayerGame({
       });
     };
     
-    if (!localPlayer) return null;
+    if (configLoading || !gameConfig || !localPlayer) {
+      return (
+          <div className="w-full h-full flex flex-col items-center justify-center">
+              <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Lade Spielkonfiguration...</p>
+          </div>
+      );
+    }
 
-    const interactionPrompt = isPlacingPortalEntrance
+    const interactionPrompt = portalPhase !== 'idle'
       ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
       : selectedTowerToBuild
       ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
@@ -813,12 +850,12 @@ export default function SinglePlayerGame({
                     gameState={gameState} 
                     localPlayer={localPlayer}
                     currentWave={currentWave} 
-                    totalWaves={waves.length} 
+                    totalWaves={gameConfig.waves.length} 
                     difficulty={difficulty} 
                     handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')} 
                     gameStatus={gameStatus} 
                     resetGame={onExit}
-                    towers={initialTowers} 
+                    towers={gameConfig.towers} 
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies}
@@ -841,8 +878,8 @@ export default function SinglePlayerGame({
                     handleUpgradeTower={handleUpgradeTower}
                     handleSellTower={handleSellTower}
                     setFocusedTower={setFocusedTower}
-                    spawnedThisWave={isIntermission ? 0 : (waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
-                    totalEnemiesInWave={waves[currentWave]?.enemies.count || 0}
+                    spawnedThisWave={isIntermission ? 0 : (gameConfig.waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
+                    totalEnemiesInWave={gameConfig.waves[currentWave]?.enemies.count || 0}
                     totalKilled={totalKilled}
                     totalLeaked={totalLeaked}
                     isIntermission={isIntermission} 
@@ -861,9 +898,9 @@ export default function SinglePlayerGame({
                     cheat_heal={() => setGameState(prev => ({...prev, lives: difficultyModifiers[difficulty].startLives}))}
                     cheat_unlockAll={handleUnlockAll}
                     firingTowerIds={firingTowerIds} 
-                    allTowers={initialTowers}
+                    allTowers={gameConfig.towers}
                     attacks={attacks}
-                    isPlacingPortalEntrance={isPlacingPortalEntrance}
+                    isPlacingPortalEntrance={portalPhase !== 'idle'}
                 />
             </div>
 
@@ -892,3 +929,4 @@ export default function SinglePlayerGame({
         </div>
     );
 }
+
