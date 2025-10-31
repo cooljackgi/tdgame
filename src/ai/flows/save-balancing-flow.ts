@@ -1,18 +1,16 @@
 
 'use server';
 /**
- * @fileOverview A Genkit flow to securely save tower balancing data.
+ * @fileOverview A Genkit flow to securely save tower balancing data to Firestore.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import {writeFile} from 'fs/promises';
-import {resolve} from 'path';
-import type {Tower} from '@/lib/game-data/types';
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import { getFirestore } from 'firebase-admin/firestore';
+import { app } from '@/lib/firebase-admin'; // Admin app for server-side operations
+import type { Tower } from '@/lib/game-data/types';
 
-
-// Define a schema for a single tower that matches the structure in game-data.ts
-// but without the getter property, which can't be serialized.
+// Zod schemas remain the same to validate the input data structure.
 const TowerEffectSchema = z.object({
   type: z.enum(['slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 'pull', 'vulnerability', 'aura', 'armor_shred', 'lifesteal', 'crit', 'poison', 'persistent_cloud']),
   duration: z.number().optional(),
@@ -22,6 +20,8 @@ const TowerEffectSchema = z.object({
   radius: z.number().optional(),
   targets: z.number().optional(),
   bounces: z.number().optional(),
+  vfxType: z.string().optional(), // Added for splash vfx
+  cloudEffect: z.string().optional(), // for persistent_cloud
 }).passthrough();
 
 
@@ -36,8 +36,9 @@ const TowerSchema = z.object({
     attackSpeed: z.number(),
     description: z.string(),
     maxHealth: z.number(),
+    buildTimeMs: z.number().optional(),
     isBlocker: z.boolean().optional(),
-    effect: TowerEffectSchema.optional(),
+    effects: z.array(TowerEffectSchema).optional(),
     upgradesTo: z.array(z.string()).optional(),
     isBase: z.boolean(),
 });
@@ -65,44 +66,21 @@ const saveBalancingFlow = ai.defineFlow(
   },
   async (towers) => {
     try {
-        const filePath = resolve(process.cwd(), 'src', 'lib', 'game-data', 'towers.ts');
+        const db = getFirestore(app);
+        const configRef = db.doc('game_config/balancing');
         
-        const fileHeader = `
-import type { Tower } from './types';
-`.trim();
-
-
-        // Turn the tower objects into a string that can be written to the file
-        const towersString = towers.map(tower => {
-            // Remove the 'dps' property if it exists, as it's a getter
+        // Convert towers to plain JSON objects, removing the 'dps' getter.
+        const towersAsJson = towers.map(tower => {
             const { dps, ...rest } = tower as any;
-            
-            // Re-stringify the object to ensure it's a clean JSON representation
-            const towerData = { ...rest };
-            delete towerData.dps; // Make sure it's gone
-            
-            let towerString = JSON.stringify(towerData, (key, value) => {
-              if (typeof value === 'string' && key === 'description') {
-                return value.replace(/'/g, "\\\'");
-              }
-              return value;
-            });
-            
-            towerString = towerString.replace(/"([^"]+)":/g, '$1:');
-            
-            // Add the dps getter back
-            return `${towerString.slice(0, -1)}, get dps() { return this.damage * (1000 / this.attackSpeed); } }`;
-        }).join(',\n');
+            return rest;
+        });
 
-        const towersArrayString = `export const towers: Tower[] = [\n${towersString}\n];`;
-
-        const newFileContent = `${fileHeader}\n\n${towersArrayString}\n`;
-
-        await writeFile(filePath, newFileContent, 'utf8');
+        // Use 'set' with 'merge: true' to update only the 'towers' field in the document.
+        await configRef.set({ towers: towersAsJson }, { merge: true });
 
         return { success: true };
     } catch (e: any) {
-        console.error("Failed to save balancing data:", e);
+        console.error("Failed to save tower balancing data to Firestore:", e);
         return { success: false, error: e.message };
     }
   }
