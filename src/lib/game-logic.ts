@@ -333,6 +333,13 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
   newState.ghosts = newState.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
 
   const towerSpec = towers.find(t => t.id === order.towerId)!;
+  
+  // Find the player who owns this worker.
+  // In single player, there's only 'player1'. In coop, there might be 'player1' and 'player2'.
+  // We assume worker ID "worker-1" belongs to the first player, "worker-2" to the second.
+  // This logic is more robust than assuming player1/player2 directly.
+  const owner = newState.players.find(p => p.id.includes(w.id.split('-')[1]));
+
   const newTower: PlacedTower = {
     ...towerSpec,
     id: `tower-${order.row}-${order.col}-${Date.now()}`,
@@ -340,7 +347,7 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
     position: { row: order.row, col: order.col },
     lastAttack: 0,
     health: towerSpec.maxHealth,
-    ownerId: w.id.includes('player1') ? 'player1' : 'player2', // Assumption
+    ownerId: owner ? owner.id : 'player1', // Fallback to player1, but should always find an owner.
   };
 
   const cellKey = `${order.row}_${order.col}`;
