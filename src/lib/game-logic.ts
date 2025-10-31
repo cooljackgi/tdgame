@@ -1,7 +1,7 @@
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState
+  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState, TowerEffect
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
@@ -65,9 +65,10 @@ export function processAttack(
     output.soundEvents.push({ kind: 'attack', element: tower.elements[0], x: tower.position.col, y: tower.position.row });
 
 
-    const { effect } = tower;
-    const isCrit = (tower.effect?.type === 'crit' && Math.random() < (tower.effect.chance ?? 0));
-    const critMultiplier = isCrit ? (tower.effect?.potency ?? 2) : 1;
+    const { effects } = tower;
+    const critEffect = effects?.find(e => e.type === 'crit');
+    const isCrit = (critEffect && Math.random() < (critEffect.chance ?? 0));
+    const critMultiplier = isCrit ? (critEffect?.potency ?? 2) : 1;
     
     let damageAmount = tower.damage * (isBuffed ? 1.15 : 1) * critMultiplier;
     
@@ -88,9 +89,9 @@ export function processAttack(
     };
     output.newAttacks.push(primaryAttack);
     
-    // HIER IST DIE KORREKTUR: armor_shred wird jetzt als direkter Rüstungsdurchschlag für den Angriff gewertet.
-    if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
-        primaryAttack.armorPenFlat = tower.damage * (effect.potency ?? 0);
+    const armorShredEffect = effects?.find(e => e.type === 'armor_shred');
+    if (armorShredEffect && Math.random() < (armorShredEffect.chance ?? 1)) {
+        primaryAttack.armorPenFlat = tower.damage * (armorShredEffect.potency ?? 0);
     }
 
     const { damageDealt, killed } = applyDamage(damageAmount, currentTarget, primaryAttack);
@@ -108,45 +109,48 @@ export function processAttack(
         output.soundEvents.push({ kind: 'sfx', name: 'enemy_die', x: currentTarget.position.col, y: currentTarget.position.row });
         output.resourcesGained += currentTarget.bounty;
         output.killed++;
-        if (tower.effect?.type === 'lifesteal' && Math.random() < (tower.effect.chance ?? 1)) {
-            output.livesGained += (tower.effect.potency ?? 0);
+        const lifestealEffect = effects?.find(e => e.type === 'lifesteal');
+        if (lifestealEffect && Math.random() < (lifestealEffect.chance ?? 1)) {
+            output.livesGained += (lifestealEffect.potency ?? 0);
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }
     } else {
-        // HIER WIRD DER DEBUFF GESETZT: Auch das hat gefehlt.
-        if (effect?.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
-             currentTarget.effects.push({ type: 'armor_shred', expires: now + (effect.duration ?? 4000), potency: (effect.potency ?? 0) });
-        }
-        if (effect?.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
-            currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
-        }
-        if (effect?.type === 'stun' && Math.random() < (effect.chance ?? 1)) {
-            currentTarget.effects.push({ type: 'stun', expires: now + (effect.duration ?? 500), potency: 1 });
-        }
-        if (effect?.type === 'burn' && Math.random() < (effect.chance ?? 1)) {
-            currentTarget.effects.push({ type: 'burn', expires: now + (effect.duration ?? 3000), potency: (effect.potency ?? 0) * damageAmount, lastTick: now });
-        }
-        if (effect?.type === 'vulnerability' && Math.random() < (effect.chance ?? 1)) {
-            currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
-        }
+        effects?.forEach(effect => {
+            if (effect.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
+                currentTarget.effects.push({ type: 'armor_shred', expires: now + (effect.duration ?? 4000), potency: (effect.potency ?? 0) });
+            }
+            if (effect.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
+                currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
+            }
+            if (effect.type === 'stun' && Math.random() < (effect.chance ?? 1)) {
+                currentTarget.effects.push({ type: 'stun', expires: now + (effect.duration ?? 500), potency: 1 });
+            }
+            if (effect.type === 'burn' && Math.random() < (effect.chance ?? 1)) {
+                currentTarget.effects.push({ type: 'burn', expires: now + (effect.duration ?? 3000), potency: (effect.potency ?? 0) * damageAmount, lastTick: now });
+            }
+            if (effect.type === 'vulnerability' && Math.random() < (effect.chance ?? 1)) {
+                currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
+            }
+        });
     }
 
-    if (effect?.type === 'splash') {
+    const splashEffect = effects?.find(e => e.type === 'splash');
+    if (splashEffect) {
         output.splashRings.push({
             id: crypto.randomUUID(),
             x: currentTarget.position.col,
             y: currentTarget.position.row,
-            r: effect.radius!,
+            r: splashEffect.radius!,
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
             element: tower.elements[0],
-            vfxType: effect.vfxType
+            vfxType: splashEffect.vfxType
         });
         
         output.updatedEnemies.forEach(enemy => {
             if (enemy.id !== currentTarget!.id && !enemy.deathTimestamp) {
                 const distSq = (enemy.position.col - currentTarget!.position.col)**2 + (enemy.position.row - currentTarget!.position.row)**2;
-                if (distSq <= effect.radius!**2) {
-                    const splashDmg = damageAmount * (effect.potency ?? 0.5);
+                if (distSq <= splashEffect.radius!**2) {
+                    const splashDmg = damageAmount * (splashEffect.potency ?? 0.5);
                     const { damageDealt: splashDamageDealt, killed: splashKilled } = applyDamage(splashDmg, enemy, { ...primaryAttack, baseDamage: splashDmg });
                     output.damageNumbers.push({ id: crypto.randomUUID(), amount: splashDamageDealt, targetId: enemy.id, color: '#ffc107', isCrit: false });
                     if(splashKilled) {
@@ -156,7 +160,7 @@ export function processAttack(
                         output.killed++;
                     }
                     if (tower.specId === 'dark-2b') {
-                        enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: effect.potency ?? 0.1 });
+                        enemy.effects.push({ type: 'vulnerability', expires: now + 5000, potency: splashEffect.potency ?? 0.1 });
                     }
                 }
             }
@@ -171,9 +175,10 @@ export function processAttack(
         currentTarget.effects.push({ type: 'poison', expires: now + effectDuration, potency: poisonPotency, lastTick: now });
     }
 
-    if (effect?.type === 'chain' && effect.bounces) {
+    const chainEffect = effects?.find(e => e.type === 'chain');
+    if (chainEffect && chainEffect.bounces) {
         let lastTarget = currentTarget;
-        for (let i = 0; i < effect.bounces; i++) {
+        for (let i = 0; i < chainEffect.bounces; i++) {
             let nextTarget: Enemy | null = null;
             let minDistanceSq = Infinity;
             output.updatedEnemies.forEach(enemy => {
@@ -186,7 +191,7 @@ export function processAttack(
                 }
             });
             if (nextTarget) {
-                const chainDmg = damageAmount * ((effect.potency ?? 0.7) ** (i + 1));
+                const chainDmg = damageAmount * ((chainEffect.potency ?? 0.7) ** (i + 1));
                 const { damageDealt: chainDamageDealt, killed: chainKilled } = applyDamage(chainDmg, nextTarget, { ...primaryAttack, baseDamage: chainDmg });
                 output.newAttacks.push({ ...primaryAttack, id: crypto.randomUUID(), targetId: nextTarget.id, targetPosition: { ...nextTarget.position }, isChain: true, chainSourceId: lastTarget.id });
                 output.damageNumbers.push({ id: crypto.randomUUID(), amount: chainDamageDealt, targetId: nextTarget.id, color: '#2196f3', isCrit: false });
@@ -203,26 +208,28 @@ export function processAttack(
         }
     }
     
-     if (effect?.type === 'pull' && effect.radius && effect.duration && effect.potency) {
+    const pullEffect = effects?.find(e => e.type === 'pull');
+    if (pullEffect && pullEffect.radius && pullEffect.duration && pullEffect.potency) {
         output.newGravityWells.push({
             id: `well-${now}`,
             x: target.position.col,
             y: target.position.row,
-            radius: effect.radius,
-            potency: effect.potency,
-            expires: now + effect.duration
+            radius: pullEffect.radius,
+            potency: pullEffect.potency,
+            expires: now + pullEffect.duration
         });
     }
     
-    if (effect?.type === 'persistent_cloud' && effect.radius && effect.duration && effect.potency) {
+    const cloudEffect = effects?.find(e => e.type === 'persistent_cloud');
+    if (cloudEffect && cloudEffect.radius && cloudEffect.duration && cloudEffect.potency) {
          output.newPersistentClouds.push({
             id: `cloud-${tower.id}-${now}`,
-            effectType: effect.cloudEffect || 'slow',
+            effectType: cloudEffect.cloudEffect || 'slow',
             x: currentTarget.position.col,
             y: currentTarget.position.row,
-            radius: effect.radius,
-            potency: effect.potency,
-            duration: effect.duration,
+            radius: cloudEffect.radius,
+            potency: cloudEffect.potency,
+            duration: cloudEffect.duration,
             expires: now + 10000,
         });
     }

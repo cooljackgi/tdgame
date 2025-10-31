@@ -92,12 +92,12 @@ export type Tower = {
   damage: number;
   range: number; // in grid units
   attackSpeed: number; // milliseconds between attacks
-  buildTimeMs?: number; // Neu: Bauzeit
+  buildTimeMs?: number;
   description: string;
   maxHealth: number;
   isBlocker?: boolean;
-  effect?: TowerEffect;
-  upgradesTo?: string[]; // Array of tower IDs it can upgrade to
+  effects?: TowerEffect[]; // CHANGED: Now an array
+  upgradesTo?: string[];
   isBase: boolean;
   get dps(): number;
 };

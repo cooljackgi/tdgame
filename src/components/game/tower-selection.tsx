@@ -134,11 +134,12 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
     if (!focusedTower) return null;
 
     const isBuffed = buffedTowerIds.has(focusedTower.id);
-    const buffPotency = 0.15; // Assuming a standard 15% buff for now
+    const auraEffect = focusedTower.effects?.find(e => e.type === 'aura');
+    const buffPotency = auraEffect?.potency ?? 0.15; // Standard 15% if not specified
 
     const baseDamage = focusedTower.damage;
     const baseAttackSpeed = focusedTower.attackSpeed;
-    const baseDps = baseDamage * (1000 / baseAttackSpeed);
+    const baseDps = baseAttackSpeed > 0 ? baseDamage * (1000 / baseAttackSpeed) : 0;
 
     if (!isBuffed) {
       return { damage: baseDamage, attackSpeed: baseAttackSpeed, dps: baseDps, damageBuff: 0, dpsBuff: 0 };

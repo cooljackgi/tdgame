@@ -1,10 +1,9 @@
-
 // src/app/balancing/page.tsx
 'use client';
 
-import { useMemo, useState, ChangeEvent } from 'react';
+import { useMemo, useState, ChangeEvent, useCallback } from 'react';
 import Link from 'next/link';
-import { Home, BarChart2, Zap, Save, Loader2, Heart } from 'lucide-react';
+import { Home, BarChart2, Zap, Save, Loader2, Heart, PlusCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { towers as initialTowers } from '@/lib/game-data/towers';
@@ -34,6 +33,7 @@ import { saveBalancingData } from '@/ai/flows/save-balancing-flow';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 
 const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
     'slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 
@@ -77,10 +77,9 @@ const EffectInput = ({ label, value, onChange, type = 'number', step = 0.1, min 
     </div>
 );
 
-const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: Tower, onEffectChange: (id: string, field: keyof TowerEffect, value: string | number | PersistentCloudEffect) => void, onEffectTypeChange: (id: string, newType: TowerEffect['type']) => void }) => {
-    if (!tower.effect) return <div className="text-xs text-muted-foreground">Kein Effekt</div>;
-
-    const { type, ...params } = tower.effect;
+const EffectEditor = ({ effect, towerId, effectIndex, onEffectChange, onEffectTypeChange, onRemoveEffect }: { effect: TowerEffect, towerId: string, effectIndex: number, onEffectChange: (towerId: string, effectIndex: number, field: keyof TowerEffect, value: any) => void, onEffectTypeChange: (towerId: string, effectIndex: number, newType: TowerEffect['type']) => void, onRemoveEffect: (towerId: string, effectIndex: number) => void }) => {
+    
+    const { type, ...params } = effect;
 
     const renderInputs = () => {
         switch (type) {
@@ -88,31 +87,31 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
             case 'vulnerability':
                 return (
                     <>
-                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
-                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(towerId, effectIndex, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
                     </>
                 );
             case 'stun':
             case 'crit':
                 return (
                     <>
-                        <EffectInput label="Chance (%)" value={(params.chance ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'chance', parseFloat(e.target.value) / 100)} step={1} />
-                        {type === 'crit' && <EffectInput label="Multiplikator" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={0.1}/>}
-                        {type === 'stun' && <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />}
+                        <EffectInput label="Chance (%)" value={(params.chance ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'chance', parseFloat(e.target.value) / 100)} step={1} />
+                        {type === 'crit' && <EffectInput label="Multiplikator" value={params.potency ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value))} step={0.1}/>}
+                        {type === 'stun' && <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(towerId, effectIndex, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />}
                     </>
                 );
             case 'burn':
                  return (
                     <>
-                        <EffectInput label="Schaden/s" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={1} />
-                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                        <EffectInput label="Schaden/s" value={params.potency ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value))} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(towerId, effectIndex, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
                     </>
                  );
             case 'splash':
                  return (
                     <>
-                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
-                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
                     </>
                  );
             case 'persistent_cloud':
@@ -120,7 +119,7 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
                     <>
                         <div className="grid grid-cols-2 items-center gap-2">
                              <Label className="text-xs text-muted-foreground">Wolken-Effekt</Label>
-                             <Select value={params.cloudEffect} onValueChange={(newEffect: PersistentCloudEffect) => onEffectChange(tower.id, 'cloudEffect', newEffect)}>
+                             <Select value={params.cloudEffect} onValueChange={(newEffect: PersistentCloudEffect) => onEffectChange(towerId, effectIndex, 'cloudEffect', newEffect)}>
                                 <SelectTrigger className="h-7 text-xs">
                                     <SelectValue />
                                 </SelectTrigger>
@@ -131,27 +130,27 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
                                 </SelectContent>
                             </Select>
                         </div>
-                        <EffectInput label="Wolken-Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
-                        <EffectInput label="Wolken-Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
-                        <EffectInput label="Wolken-Stärke" value={params.potency ?? 0} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value))} step={1} />
+                        <EffectInput label="Wolken-Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Wolken-Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(towerId, effectIndex, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                        <EffectInput label="Wolken-Stärke" value={params.potency ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value))} step={1} />
                     </>
                 );
             case 'chain':
-                return <EffectInput label="Sprünge" value={params.bounces ?? 0} onChange={(e) => onEffectChange(tower.id, 'bounces', parseInt(e.target.value))} type="number" step={1} />;
+                return <EffectInput label="Sprünge" value={params.bounces ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'bounces', parseInt(e.target.value))} type="number" step={1} />;
             case 'multishot':
-                return <EffectInput label="Ziele" value={params.targets ?? 0} onChange={(e) => onEffectChange(tower.id, 'targets', parseInt(e.target.value))} type="number" step={1} />;
+                return <EffectInput label="Ziele" value={params.targets ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'targets', parseInt(e.target.value))} type="number" step={1} />;
             case 'armor_shred':
                 return (
                      <>
-                        <EffectInput label="Reduk. (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
-                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(tower.id, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
+                        <EffectInput label="Reduk. (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Dauer (s)" value={(params.duration ?? 0) / 1000} onChange={(e) => onEffectChange(towerId, effectIndex, 'duration', parseFloat(e.target.value) * 1000)} step={0.1} />
                     </>
                 );
             case 'aura':
                  return (
                     <>
-                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(tower.id, 'radius', parseFloat(e.target.value))} step={0.1} />
-                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(tower.id, 'potency', parseFloat(e.target.value) / 100)} step={1} />
+                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
                     </>
                  );
             default:
@@ -160,9 +159,10 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
     }
     
     return (
-        <div className="space-y-2">
-            <Select value={type} onValueChange={(newType: TowerEffect['type']) => onEffectTypeChange(tower.id, newType)}>
-                <SelectTrigger className="h-7 text-xs">
+      <div className="space-y-2 p-2 border rounded-md bg-muted/20">
+        <div className="flex items-center gap-2">
+            <Select value={type} onValueChange={(newType: TowerEffect['type']) => onEffectTypeChange(towerId, effectIndex, newType)}>
+                <SelectTrigger className="h-7 text-xs flex-grow">
                     <SelectValue placeholder="Effekt-Typ wählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -171,10 +171,14 @@ const EffectEditor = ({ tower, onEffectChange, onEffectTypeChange }: { tower: To
                     ))}
                 </SelectContent>
             </Select>
-            <div className="pl-1 border-l-2 border-muted/50 ml-2 mt-2 space-y-2">
-                {renderInputs()}
-            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onRemoveEffect(towerId, effectIndex)}>
+              <XCircle className="h-4 w-4 text-destructive" />
+            </Button>
         </div>
+        <div className="pl-1 border-l-2 border-muted/50 ml-2 mt-2 space-y-2">
+            {renderInputs()}
+        </div>
+    </div>
     );
 };
 
@@ -225,39 +229,65 @@ export default function BalancingPage() {
     );
   };
   
-  const handleEffectChange = (towerId: string, field: keyof TowerEffect, value: string | number | PersistentCloudEffect) => {
+  const handleEffectChange = useCallback((towerId: string, effectIndex: number, field: keyof TowerEffect, value: any) => {
     setTowers(currentTowers =>
       currentTowers.map(tower => {
-        if (tower.id === towerId && tower.effect) {
+        if (tower.id === towerId && tower.effects && tower.effects[effectIndex]) {
+          const newEffects = [...tower.effects];
+          const newEffect = { ...newEffects[effectIndex] };
+          
           let finalValue = value;
           if (typeof value === 'string' && field !== 'cloudEffect') {
              const numericValue = parseFloat(value);
              if (isNaN(numericValue)) return tower;
              finalValue = numericValue;
           }
+          (newEffect as any)[field] = finalValue;
+          newEffects[effectIndex] = newEffect;
           
-          const newEffect = { ...tower.effect, [field]: finalValue };
-          return { ...tower, effect: newEffect };
+          return { ...tower, effects: newEffects };
         }
         return tower;
       })
     );
-  };
+  }, []);
 
-  const handleEffectTypeChange = (towerId: string, newType: TowerEffect['type']) => {
+  const handleEffectTypeChange = useCallback((towerId: string, effectIndex: number, newType: TowerEffect['type']) => {
     setTowers(currentTowers =>
         currentTowers.map(tower => {
-            if (tower.id === towerId) {
-                const newEffect: TowerEffect = {
+            if (tower.id === towerId && tower.effects && tower.effects[effectIndex]) {
+                const newEffects = [...tower.effects];
+                newEffects[effectIndex] = {
                     type: newType,
                     ...defaultEffectValues[newType],
                 };
-                return { ...tower, effect: newEffect };
+                return { ...tower, effects: newEffects };
             }
             return tower;
         })
     );
-  };
+  }, []);
+
+  const handleAddEffect = useCallback((towerId: string) => {
+    setTowers(currentTowers => currentTowers.map(tower => {
+        if (tower.id === towerId) {
+            const newEffects = [...(tower.effects || [])];
+            newEffects.push({ type: 'slow', ...defaultEffectValues['slow'] });
+            return { ...tower, effects: newEffects };
+        }
+        return tower;
+    }));
+  }, []);
+
+  const handleRemoveEffect = useCallback((towerId: string, effectIndex: number) => {
+      setTowers(currentTowers => currentTowers.map(tower => {
+          if (tower.id === towerId && tower.effects) {
+              const newEffects = tower.effects.filter((_, idx) => idx !== effectIndex);
+              return { ...tower, effects: newEffects };
+          }
+          return tower;
+      }));
+  }, []);
   
   const handleSaveChanges = async () => {
     setIsSaving(true);
@@ -372,7 +402,7 @@ export default function BalancingPage() {
                   <TableHead className="w-[120px]">Leben</TableHead>
                   <TableHead className="w-[140px]">Angr./s (ms)</TableHead>
                   <TableHead className="w-[120px]">Reichw.</TableHead>
-                  <TableHead className="min-w-[220px]">Effekt-Werte</TableHead>
+                  <TableHead className="min-w-[250px]">Effekt-Werte</TableHead>
                   <TableHead className="text-right">DPS</TableHead>
                   <TableHead className="text-right">DPS/Kosten</TableHead>
                 </TableRow>
@@ -409,7 +439,7 @@ export default function BalancingPage() {
                           value={tower.damage}
                           onChange={(e) => handleTowerChange(tower.id, 'damage', e.target.value)}
                           className="h-8"
-                          disabled={tower.damage === 0 && tower.effect?.type !== 'aura'}
+                          disabled={tower.damage === 0 && !tower.effects?.some(e => e.type === 'aura')}
                       />
                     </TableCell>
                     <TableCell>
@@ -426,7 +456,7 @@ export default function BalancingPage() {
                           value={tower.attackSpeed}
                           onChange={(e) => handleTowerChange(tower.id, 'attackSpeed', e.target.value)}
                           className="h-8"
-                          disabled={tower.damage === 0 && tower.effect?.type !== 'aura'}
+                           disabled={tower.damage === 0 && !tower.effects?.some(e => e.type === 'aura')}
                       />
                     </TableCell>
                     <TableCell>
@@ -439,7 +469,22 @@ export default function BalancingPage() {
                       />
                     </TableCell>
                     <TableCell>
-                        <EffectEditor tower={tower} onEffectChange={handleEffectChange} onEffectTypeChange={handleEffectTypeChange} />
+                      <div className="space-y-2">
+                        {tower.effects?.map((effect, index) => (
+                           <EffectEditor 
+                              key={index}
+                              towerId={tower.id}
+                              effectIndex={index}
+                              effect={effect}
+                              onEffectChange={handleEffectChange} 
+                              onEffectTypeChange={handleEffectTypeChange} 
+                              onRemoveEffect={handleRemoveEffect}
+                           />
+                        ))}
+                        <Button variant="outline" size="sm" className="w-full h-8" onClick={() => handleAddEffect(tower.id)}>
+                           <PlusCircle className="h-4 w-4 mr-2"/> Effekt hinzufügen
+                        </Button>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right font-semibold">{tower.dps.toFixed(2)}</TableCell>
                     <TableCell className={cn("text-right font-bold", dpcColor)}>{dpc.toFixed(4)}</TableCell>
