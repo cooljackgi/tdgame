@@ -358,11 +358,13 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const isPanningRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const lastClickTimeRef = useRef(0);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, row: number, col: number } | null>(null);
 
   const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
   const lastTouchRef = useRef<{dist: number; cx: number; cy: number} | null>(null);
+  const lastTapTimeRef = useRef(0);
 
   const applyTransform = useCallback(() => {
       const el = worldRef.current;
@@ -499,7 +501,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         
         // --- GROUND EFFECTS ---
         for (const cloud of persistentClouds) {
-          const center = gridToPx({ row: cloud.y, col: cloud.x });
+          const center = gridToPx({row: cloud.y, col: cloud.x});
           const radiusPx = cloud.radius * CELL_SIZE;
 
           const remaining = Math.max(0, cloud.expires - now);
@@ -1005,16 +1007,23 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     
     e.stopPropagation(); 
 
-    if (hoveredCell && selectedTowerToBuild) {
-        suppressNextClickRef.current = true;
-        handlePlaceTower(hoveredCell.row, hoveredCell.col);
-        return;
-    } else if (hoveredCell) {
-        const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
-        if (towerAtCell) {
-            onFocusTower(towerAtCell);
-        } else {
-            cancelInteractions();
+    if (hoveredCell) {
+        const now = Date.now();
+        if (now - lastClickTimeRef.current < 300) { // Double-click
+            handlePlaceTower(hoveredCell.row, hoveredCell.col); // This will trigger a move if no tower is selected
+            lastClickTimeRef.current = 0; // Reset to prevent triple-click issues
+        } else { // Single-click
+            if (selectedTowerToBuild) {
+                handlePlaceTower(hoveredCell.row, hoveredCell.col); // Place tower on single click if one is selected
+            } else {
+                const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
+                if (towerAtCell) {
+                    onFocusTower(towerAtCell);
+                } else {
+                    cancelInteractions();
+                }
+            }
+            lastClickTimeRef.current = now;
         }
     } else {
         cancelInteractions();
@@ -1120,20 +1129,29 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const dist = Math.hypot(dx, dy);
     const duration = Date.now() - start.time;
 
-    if (dist < 10 && duration < 200) { // It's a tap
+    if (dist < 10) { // It's a tap or double tap
         e.stopPropagation();
-        if (hoveredCell && selectedTowerToBuild) {
-            handlePlaceTower(hoveredCell.row, hoveredCell.col);
-            return; // Explicitly stop further actions
-        } else if (hoveredCell) {
-            const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
-            if (towerAtCell) {
-                onFocusTower(towerAtCell);
+        
+        const now = Date.now();
+        if (now - lastTapTimeRef.current < 300) { // Double-tap
+            if (hoveredCell) handlePlaceTower(hoveredCell.row, hoveredCell.col); // Move worker
+            lastTapTimeRef.current = 0;
+        } else { // Single-tap
+            if (hoveredCell) {
+                if (selectedTowerToBuild) {
+                    handlePlaceTower(hoveredCell.row, hoveredCell.col);
+                } else {
+                    const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
+                    if (towerAtCell) {
+                        onFocusTower(towerAtCell);
+                    } else {
+                        cancelInteractions();
+                    }
+                }
             } else {
                 cancelInteractions();
             }
-        } else {
-            cancelInteractions();
+            lastTapTimeRef.current = now;
         }
     }
     
