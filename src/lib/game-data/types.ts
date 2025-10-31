@@ -1,3 +1,4 @@
+
 import type { LucideIcon } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 
@@ -67,6 +68,15 @@ export type PersistentCloud = {
   expires: number; // When the cloud itself disappears.
 };
 
+export type Portal = {
+  id: string;
+  entrance: { row: number; col: number };
+  exit:     { row: number; col: number };
+  active: boolean;
+  usesLeft: number;
+  perEnemyCooldownMs: number;
+};
+
 
 export type SplashRingVfxType = 'magma' | 'flame' | 'ice' | 'rock' | 'thorn' | 'light' | 'dark' | 'poison' | 'steam';
 
@@ -96,7 +106,7 @@ export type Tower = {
   description: string;
   maxHealth: number;
   isBlocker?: boolean;
-  effects?: TowerEffect[]; // CHANGED: Now an array
+  effects?: TowerEffect[];
   upgradesTo?: string[];
   isBase: boolean;
   get dps(): number;
@@ -105,7 +115,7 @@ export type Tower = {
 export type PlacedTower = Tower & {
   specId: string;
   position: { row: number; col: number };
-  lastAttack: number; // timestamp of the last attack
+  lastAttack: number;
   health: number;
   ownerId: Player['id'];
 };
@@ -114,15 +124,12 @@ export type Attack = {
   id: string;
   towerId: string;
   targetId: string;
-  targetPosition: Node; // The position of the target at the time of attack
+  targetPosition: Node;
   elements: Tower['elements'];
   projectile: 'beam' | 'arrow' | 'chain';
   isChain?: boolean;
   chainSourceId?: string;
-  // VFX Pool properties
   active?: boolean;
-  
-  // Properties for new damage pipeline
   baseDamage: number;
   critChance?: number;
   critMult?: number;
@@ -138,7 +145,6 @@ export type DamageNumber = {
   position?: { row: number; col: number };
   color: string;
   isCrit?: boolean;
-  // VFX Pool properties
   active?: boolean;
 };
 
@@ -158,7 +164,6 @@ export type SplashRing = {
     start?: number;
     life?: number;
     vfxType?: SplashRingVfxType;
-    // VFX Pool properties
     active?: boolean;
 };
 
@@ -170,13 +175,12 @@ export type EnemyStatusEffect = {
   type: TowerEffect['type'];
   expires: number;
   potency: number;
-  lastTick?: number; // For DoT effects like burn
+  lastTick?: number;
   duration?: number;
   chance?: number;
   radius?: number;
 };
 
-// New types for the damage pipeline
 export type Debuffs = {
     vulnerabilityPct?: number;
     armorReductionFlat?: number;
@@ -184,7 +188,7 @@ export type Debuffs = {
 
 export type DoTEffect = {
     id: string;
-    sourceId: string; // ID of tower/ability that applied it
+    sourceId: string;
     type: 'burn' | 'poison';
     startTime: number;
     durationMs: number;
@@ -202,47 +206,32 @@ export type Enemy = {
   health: number;
   maxHealth: number;
   armor: number;
-  speed: number; // path indices per second
-  damage: number; // damage per second to towers
-  bounty: number; // resources awarded on defeat
+  speed: number;
+  damage: number;
+  bounty: number;
   path: Node[];
   pathIndex: number;
   position: { row: number; col: number };
   isBlocked: boolean;
-  effects: EnemyStatusEffect[]; // Old system, to be phased out
+  effects: EnemyStatusEffect[];
   activeDots?: DoTEffect[];
   debuffs?: Debuffs;
   lastMove: number;
   wasHit: boolean;
   targetNode: Node;
   movementPattern: MovementPattern;
-  // New properties for pull effect
-  vx: number; // velocity x
-  vy: number; // velocity y
-  deathTimestamp?: number; // New property for death animation
+  vx: number;
+  vy: number;
+  deathTimestamp?: number;
+  lastTeleportAt?: number;
+  teleportsUsed?: number;
 };
 
 
 export enum DeltaType {
-    ENEMY_SPAWN,
-    ENEMY_MOVE,
-    ENEMY_DAMAGE,
-    ENEMY_DIE,
-    ENEMY_REACH_END,
-    ENEMY_ADD_EFFECT,
-    ENEMY_REMOVE_EFFECT,
-    TOWER_ATTACK,
-    VFX_DAMAGE_NUMBER,
-    VFX_SPLASH,
-    GAME_STATE_UPDATE,
-    PLAYER_UPDATE,
-    TOWERS_UPDATE,
-    CLIENT_STATS_UPDATE,
-    TOWER_UPGRADE_VFX,
-    ENEMY_PATH_UPDATE,
-    BUILD_TOWER_REQUEST,
-    UPGRADE_TOWER_REQUEST,
-    SELL_TOWER_REQUEST,
+    ENEMY_SPAWN, ENEMY_MOVE, ENEMY_DAMAGE, ENEMY_DIE, ENEMY_REACH_END, ENEMY_ADD_EFFECT, ENEMY_REMOVE_EFFECT,
+    TOWER_ATTACK, VFX_DAMAGE_NUMBER, VFX_SPLASH, GAME_STATE_UPDATE, PLAYER_UPDATE, TOWERS_UPDATE, CLIENT_STATS_UPDATE,
+    TOWER_UPGRADE_VFX, ENEMY_PATH_UPDATE, BUILD_TOWER_REQUEST, UPGRADE_TOWER_REQUEST, SELL_TOWER_REQUEST,
 }
 
 export type GameDelta = [DeltaType, ...any[]];
@@ -251,7 +240,7 @@ export type GameDelta = [DeltaType, ...any[]];
 export type WaveEnemyData = {
   type: EnemyType;
   count: number;
-  spawnDelay: number; // ms
+  spawnDelay: number;
   health: number;
   armor: number;
   speed: number;
@@ -264,114 +253,37 @@ export type Wave = {
   enemies: WaveEnemyData;
 };
 
-// --- PING & REQUEST SYSTEM ---
-
 export type PingKind = 'attention' | 'defend' | 'attack' | 'build' | 'sell';
-export type PingPayload = {
-  id: string;
-  kind: PingKind;
-  from: 'player1' | 'player2';
-  row: number;
-  col: number;
-  msg?: string;
-  ttl?: number;
-  createdAt: number;
-};
-
+export type PingPayload = { id: string; kind: PingKind; from: 'player1' | 'player2'; row: number; col: number; msg?: string; ttl?: number; createdAt: number; };
 export type RequestKind = 'REQUEST_BUILD_AT' | 'REQUEST_SELL_TOWER' | 'REQUEST_UPGRADE_TOWER';
-export type RequestPayload = {
-  id: string;
-  kind: RequestKind;
-  from: 'player1' | 'player2';
-  row?: number;
-  col?: number;
-  towerId?: string;
-  upgradeId?: string;
-  msg?: string;
-  createdAt: number;
-};
-
+export type RequestPayload = { id: string; kind: RequestKind; from: 'player1' | 'player2'; row?: number; col?: number; towerId?: string; upgradeId?: string; msg?: string; createdAt: number; };
 export type RequestResolve = { id: string; result: 'accepted' | 'declined'; by: 'player1'|'player2'; at: number };
-
-// --- NEW AUDIO SYNC ---
-export type SoundEvent =
-  | { kind: 'attack'; element: Element; pitch?: number; x: number; y: number, towerId?: string; }
-  | { kind: 'sfx'; name: 'enemy_die' | 'enemy_leak' | 'build_tower' | 'upgrade_tower' | 'sell_tower' | 'ui_click' | 'wave_start'; x?: number; y?: number };
-
-
-// -- New Types for Damage Pipeline ---
-
-export type AuraBuffs = {
-    damageFlat?: number;
-    damageMult?: number;
-};
-
-export type DamageApplicationResult = {
-    immediateDamage: number;
-    crit: boolean;
-    vulnerabilityAppliedPct: number;
-    effectiveArmor: number;
-    dotsApplied: DoTEffect[];
-    killed: boolean;
-};
-
-// vorhandene Imports/Typen beibehalten
-export type ProcessAttackResult = {
-  updatedEnemies: Enemy[];          // kopierte/aktualisierte Gegnerliste
-  newAttacks: Attack[];             // projizierte neue Projektile/Strahlen
-  damageNumbers: DamageNumber[];    // Floating-Text / Trefferzahlen
-  splashRings: SplashRing[];        // AoE-VFX-Ringe
-  lifeGainVfx: LifeGainVfx[];       // Heil-/Leech-VFX
-  newPersistentClouds: PersistentCloud[];   // persistente Giftwolken
-  newGravityWells: GravityWell[];   // Gravitations-Felder
-  soundEvents: SoundEvent[];      // Audio Events
-  resourcesGained: number;          // Gold/Essenz etc. in diesem Tick
-  livesGained: number;              // ggf. Lifegain aufs Spielerleben
-  killed: number;                   // in diesem Angriff getötete Gegner
-};
-
-
-// --- WORKER TYPES ---
+export type SoundEvent = | { kind: 'attack'; element: Element; pitch?: number; x: number; y: number, towerId?: string; } | { kind: 'sfx'; name: 'enemy_die' | 'enemy_leak' | 'build_tower' | 'upgrade_tower' | 'sell_tower' | 'ui_click' | 'wave_start'; x?: number; y?: number };
+export type AuraBuffs = { damageFlat?: number; damageMult?: number; };
+export type DamageApplicationResult = { immediateDamage: number; crit: boolean; vulnerabilityAppliedPct: number; effectiveArmor: number; dotsApplied: DoTEffect[]; killed: boolean; };
+export type ProcessAttackResult = { updatedEnemies: Enemy[]; newAttacks: Attack[]; damageNumbers: DamageNumber[]; splashRings: SplashRing[]; lifeGainVfx: LifeGainVfx[]; newPersistentClouds: PersistentCloud[]; newGravityWells: GravityWell[]; soundEvents: SoundEvent[]; resourcesGained: number; livesGained: number; killed: number; };
 
 export type WorkerState = "idle" | "moving" | "building";
+export type WorkerOrderType = "build_tower" | "place_portal";
 
-export interface BuildOrder {
-  id: string;
-  row: number;
-  col: number;
-  towerId: string;
-  cost: number;
-  buildTimeMs: number;
-  createdAt: number;
-}
+export interface WorkerOrderBase { id: string; type: WorkerOrderType; createdAt: number; }
+export interface BuildTowerOrder extends WorkerOrderBase { type: "build_tower"; row: number; col: number; towerId: string; cost: number; buildTimeMs: number; }
+export interface PlacePortalOrder extends WorkerOrderBase { type: "place_portal"; entrance: { row: number; col: number }; exit: { row: number; col: number }; cost: number; buildTimeMsEntrance: number; buildTimeMsExit: number; phase: "entrance" | "exit"; }
+export type WorkerOrder = BuildTowerOrder | PlacePortalOrder;
 
 export interface Worker {
   id: string;
-  x: number;             // world coords
+  x: number;
   y: number;
-  z?: number;            // für Hover-VFX (optional)
-  speed: number;         // worldUnits / s
+  z?: number;
+  speed: number;
   state: WorkerState;
-  queue: BuildOrder[];
-  current?: {
-    order: BuildOrder;
-    targetX: number;
-    targetY: number;
-    startedAt?: number;
-    eta?: number;
-  };
+  queue: WorkerOrder[];
+  current?: { order: WorkerOrder; targetX: number; targetY: number; startedAt?: number; eta?: number; };
   moveTarget?: { x: number, y: number } | null;
 }
 
-export interface GhostFoundation {
-  id: string;
-  row: number;
-  col: number;
-  towerId: string;
-  startedAt: number;
-  buildTimeMs: number;
-  progress: number; // 0..1
-}
+export interface GhostFoundation { id: string; row: number; col: number; towerId: string; startedAt: number; buildTimeMs: number; progress: number; }
 
 export interface GameSessionState {
   players: Player[];
@@ -386,4 +298,5 @@ export interface GameSessionState {
   isIntermission: boolean;
   workers: Worker[];
   ghosts: GhostFoundation[];
+  portals?: Portal[];
 }

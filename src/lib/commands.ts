@@ -1,9 +1,9 @@
+
 // src/lib/commands.ts
 import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
 import { GRID_ROWS, GRID_COLS } from './game-data/constants';
-import type { GameSessionState, BuildOrder, Worker } from './game-data/types';
-import { startNextOrder, centerOf } from './game-logic';
+import type { GameSessionState, BuildTowerOrder, Worker, PlacePortalOrder } from './game-data/types';
 
 function tierToBuildTime(tier: number) {
   if (tier <= 0) return 1200;
@@ -16,12 +16,14 @@ export function enqueueMoveOrder(state: GameSessionState, workerId: string, row:
     const worker = state.workers.find(w => w.id === workerId);
     if (!worker) return state;
 
-    // Set a direct move target. This will be picked up by the worker logic.
-    worker.moveTarget = centerOf(row, col);
-
-    // If the worker is idle, this makes it start moving immediately.
-    if (worker.state === 'idle') {
-        worker.state = 'moving';
+    // A direct move command should only be executed if the worker is idle and has no build queue.
+    // Otherwise, we let the build queue take precedence.
+    if (worker.state === 'idle' && worker.queue.length === 0) {
+        worker.moveTarget = { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 };
+        worker.state = 'moving'; // Start moving immediately
+    } else if (worker.state === 'moving' && !worker.current) {
+        // If already moving to a point (not for a build), update the target
+        worker.moveTarget = { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 };
     }
     
     return { ...state };
@@ -47,21 +49,18 @@ export function enqueueBuildOrder(
   const cost = towerSpec.cost;
   const buildTimeMs = towerSpec.buildTimeMs ?? tierToBuildTime(towerSpec.tier);
 
-  // Check if cell is already occupied by a tower or a ghost
   const isOccupied = 
     Object.values(state.towersByCell).some(t => t.position.row === row && t.position.col === col) ||
     state.ghosts.some(g => g.row === row && g.col === col);
     
   if (isOccupied) return state;
 
-  // Pathfinding check
   const newBlocked = [...Object.values(state.towersByCell).map(t => t.position), {row, col}];
   if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) {
-      // Maybe show a toast/error to the user here
       return state;
   }
 
-  if (player.resources < cost) return state; // not enough money
+  if (player.resources < cost) return state;
   
   player.resources -= cost;
 
@@ -71,19 +70,58 @@ export function enqueueBuildOrder(
     row: row,
     col: col,
     towerId: towerId,
-    startedAt: 0, // Will be set when building starts
+    startedAt: 0,
     buildTimeMs: buildTimeMs,
     progress: 0,
   });
 
-  const order: BuildOrder = {
+  const order: BuildTowerOrder = {
     id: `order-${row}-${col}-${now}`,
+    type: "build_tower",
     row, col, towerId, cost, buildTimeMs, createdAt: now
   };
   worker.queue.push(order);
-
-  // If worker is idle, it will pick up the new order in the next tick via startNextOrder.
-  // We don't need to call it here, the main loop will handle it.
   
   return state;
+}
+
+export function enqueuePlacePortalOrder(
+  state: GameSessionState,
+  workerId: string,
+  entrance: { row: number; col: number },
+  exit:     { row: number; col: number },
+  now: number,
+): GameSessionState {
+    const cost = 150;
+    const buildEntranceTime = 1200;
+    const buildExitTime = 1500;
+
+    const worker = state.workers.find(w => w.id === workerId);
+    const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2'));
+
+    if (!worker || !player || player.resources < cost) return state;
+
+    // Simplified validation checks
+    const isOccupied = (r: number, c: number) => 
+        Object.values(state.towersByCell).some(t => t.position.row === r && t.position.col === c) ||
+        state.ghosts.some(g => g.row === r && g.col === c);
+
+    if (isOccupied(entrance.row, entrance.col) || isOccupied(exit.row, exit.col)) return state;
+
+    player.resources -= cost;
+
+    const order: PlacePortalOrder = {
+        id: `portal-${now}`,
+        type: "place_portal",
+        createdAt: now,
+        entrance, exit,
+        cost,
+        buildTimeMsEntrance: buildEntranceTime,
+        buildTimeMsExit: buildExitTime,
+        phase: "entrance",
+    };
+
+    worker.queue.push(order);
+    
+    return state;
 }

@@ -1,7 +1,8 @@
+
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState, TowerEffect
+  Worker, BuildOrder, WorkerState, GhostFoundation, GameSessionState, TowerEffect, WorkerOrder, PlacePortalOrder
 } from './game-data/types';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
@@ -266,23 +267,33 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
 // --- Worker Logic ---
 
 export function startNextOrder(state: GameSessionState, w: Worker): GameSessionState {
-  if (w.moveTarget) {
+  if (w.moveTarget && w.state !== 'building') {
     w.state = "moving";
     w.current = undefined;
     return state;
   }
-  
+
   const next = w.queue.shift();
   if (!next) { 
     w.state = "idle";
     w.current = undefined;
     return state;
   }
-  const c = centerOf(next.row, next.col);
-  w.current = { order: next, targetX: c.x, targetY: c.y };
+
+  let targetRow: number, targetCol: number;
+
+  if (next.type === "build_tower") {
+    targetRow = next.row; targetCol = next.col;
+  } else { // place_portal
+    const phaseCell = next.phase === "entrance" ? next.entrance : next.exit;
+    targetRow = phaseCell.row; targetCol = phaseCell.col;
+  }
+  const { x, y } = centerOf(targetRow, targetCol);
+  w.current = { order: next, targetX: x, targetY: y };
   w.state = "moving";
   return state;
 }
+
 
 export function tickWorkers(state: GameSessionState, dtMs: number, now: number): GameSessionState {
   let newState = { ...state };
@@ -294,7 +305,6 @@ export function tickWorkers(state: GameSessionState, dtMs: number, now: number):
 
 function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: number): GameSessionState {
   if (w.state === "idle") {
-    // If worker is idle, it can always start a new order or a manual move.
     if (w.moveTarget || w.queue.length > 0) {
       return startNextOrder(state, w);
     }
@@ -316,14 +326,14 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
       w.y = targetY;
 
       if (w.moveTarget) {
-        // Arrived at manual move destination
         w.moveTarget = null;
-        w.state = "idle"; // Will pick up queue next tick if available
+        w.state = "idle";
+        return startNextOrder(state, w); // Immediately try to start next queued order
       } else {
-        // Arrived at build site
         w.state = "building";
         w.current!.startedAt = now;
-        w.current!.eta = now + w.current!.order.buildTimeMs;
+        const o = w.current!.order;
+        w.current!.eta = now + (o.type === "build_tower" ? o.buildTimeMs : (o.phase === "entrance" ? o.buildTimeMsEntrance : o.buildTimeMsExit));
       }
     } else {
       w.x += (dx / dist) * step;
@@ -333,28 +343,56 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
   }
 
   if (w.state === "building") {
-    // A worker that is building will COMPLETE its task, even if a new move command is issued.
-    // The moveTarget will be handled once it becomes idle again.
-    if (!w.current) { // Safeguard
+    if (!w.current) {
       w.state = "idle";
       return state;
     }
     
     const { order, startedAt, eta } = w.current;
-    const p = Math.min(1, (now - (startedAt ?? now)) / (order.buildTimeMs || 1));
-    const ghost = state.ghosts.find(g => g.row === order.row && g.col === order.col);
+    const p = Math.min(1, (now - (startedAt ?? now)) / (eta! - (startedAt ?? now) || 1));
+    const ghost = state.ghosts.find(g => g.row === (order as BuildTowerOrder).row && g.col === (order as BuildTowerOrder).col);
     if(ghost) ghost.progress = p;
 
     if (now >= (eta ?? now)) {
-      return completeConstruction(state, w);
+      if (order.type === 'build_tower') {
+        return completeConstruction(state, w);
+      } else {
+        return completePlacePortalPhase(state, w, order);
+      }
     }
     return state;
   }
   return state;
 }
 
+function completePlacePortalPhase(state: GameSessionState, w: Worker, o: PlacePortalOrder): GameSessionState {
+    if (o.phase === "entrance") {
+        // Here we would create a visual effect for the entrance
+        o.phase = "exit";
+        const { x, y } = centerOf(o.exit.row, o.exit.col);
+        w.current = { order: o, targetX: x, targetY: y };
+        w.state = "moving";
+        return state;
+    }
+
+    // Exit is finished, activate the portal
+    const portal = {
+        id: `p-${o.createdAt}`,
+        entrance: o.entrance,
+        exit: o.exit,
+        active: true,
+        usesLeft: 30,
+        perEnemyCooldownMs: 3000,
+    };
+    state.portals = [...(state.portals || []), portal];
+
+    w.current = undefined;
+    w.state = "idle";
+    return startNextOrder(state, w);
+}
+
 function completeConstruction(state: GameSessionState, w: Worker): GameSessionState {
-  const { order } = w.current!;
+  const { order } = w.current! as { order: BuildTowerOrder };
   
   const newState = { ...state };
   
@@ -379,7 +417,6 @@ function completeConstruction(state: GameSessionState, w: Worker): GameSessionSt
   newState.currentPath = findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(newState.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
 
   w.current = undefined;
-  // State becomes idle, will pick up next move/build order in the next tick.
   w.state = "idle";
-  return newState;
+  return startNextOrder(newState, w);
 }
