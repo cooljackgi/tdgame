@@ -24,6 +24,7 @@ export type Player = {
   resources: number;
   unlockedElements: Element[];
   incomePerSecond: number;
+  portalCooldownUntilWave?: number;
 };
 
 
@@ -64,7 +65,13 @@ export const joinGame = functions.https.onCall(async (data, context) => {
         player2Id: uid, 
         'members': { ...gameData?.members, [uid]: true },
         'players.player2': {
-            id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'], incomePerSecond: 5
+            id: 'player2', 
+            name: displayName, 
+            avatarUrl: avatarUrl, 
+            resources: resources, 
+            unlockedElements: ['neutral'], 
+            incomePerSecond: 5,
+            portalCooldownUntilWave: 0
         },
       });
     });
