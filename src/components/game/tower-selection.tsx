@@ -83,11 +83,13 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
             </div>
         </div>
         <Separator className="w-full bg-border/50 my-1"/>
-        <div className="w-full flex items-center justify-start gap-4 pl-1 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5 text-yellow-400 font-medium"><Coins className="h-3.5 w-3.5"/> {tower.cost}</span>
-            {tower.damage > 0 && <span className="flex items-center gap-1"><Bomb className="h-3 w-3 text-red-400/80"/> {tower.damage}</span>}
-            {tower.attackSpeed > 0 && <span className="flex items-center gap-1"><ChevronsUp className="h-3 w-3 text-sky-400/80"/> {attackSpeedPerSecond}/s</span>}
-            {tower.range > 0 && <span className="flex items-center gap-1"><Target className="h-3 w-3 text-green-400/80"/> {tower.range}</span>}
+        <div className="w-full flex items-center justify-between gap-4 pl-1 text-xs text-muted-foreground">
+             <div className="flex items-center gap-4">
+                 {tower.damage > 0 && <span className="flex items-center gap-1"><Bomb className="h-3 w-3 text-red-400/80"/> {tower.damage}</span>}
+                {tower.attackSpeed > 0 && <span className="flex items-center gap-1"><ChevronsUp className="h-3 w-3 text-sky-400/80"/> {attackSpeedPerSecond}/s</span>}
+                {tower.range > 0 && <span className="flex items-center gap-1"><Target className="h-3 w-3 text-green-400/80"/> {tower.range}</span>}
+             </div>
+             <span className="flex items-center gap-1.5 text-yellow-400 font-medium"><Coins className="h-3.5 w-3.5"/> {tower.cost}</span>
         </div>
       </button>
     </li>
@@ -162,6 +164,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
   const isPortalOnCooldown = portalCooldown > currentWave;
   const portalCost = 250;
   const canAffordPortal = localPlayer.resources >= portalCost;
+  const wavesRemaining = portalCooldown - currentWave;
   
   const portalButton = (
     <Tooltip>
@@ -176,19 +179,24 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
                   <Bot className="h-6 w-6 text-cyan-300" />
               </div>
               <div className="flex-grow min-w-0">
-                  <h4 className="font-semibold">Portal bauen</h4>
-                  <p className="text-xs text-muted-foreground">Erschaffe eine Abkürzung. Hält bis zum Ende der Welle.</p>
+                  <h4 className="font-semibold">{isPortalOnCooldown ? "Abklingzeit" : "Portal bauen"}</h4>
+                  <p className="text-xs text-muted-foreground">
+                    {isPortalOnCooldown 
+                        ? `Noch ${wavesRemaining} Welle${wavesRemaining > 1 ? 'n' : ''}` 
+                        : "Erschaffe eine Abkürzung für eine Welle."
+                    }
+                  </p>
               </div>
               <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
-                  <Coins className="h-3.5 w-3.5" />
-                  <span>{portalCost}</span>
+                  {isPortalOnCooldown ? <Timer className="h-4 w-4" /> : <Coins className="h-3.5 w-3.5" />}
+                  <span>{isPortalOnCooldown ? '' : portalCost}</span>
               </div>
           </button>
         </div>
       </TooltipTrigger>
       {isPortalOnCooldown && (
         <TooltipContent>
-          <p className="flex items-center gap-2"><Timer className="h-4 w-4"/>Abklingzeit: Noch {portalCooldown - currentWave} Welle(n)</p>
+          <p className="flex items-center gap-2"><Timer className="h-4 w-4"/>Abklingzeit: Noch {wavesRemaining} Welle(n)</p>
         </TooltipContent>
       )}
     </Tooltip>
