@@ -30,6 +30,8 @@ export type GameSaveState = {
   enemies: Enemy[];
   currentWave: number;
   difficulty: Difficulty;
+  workers?: Worker[];
+  ghosts?: GhostFoundation[];
 };
 
 export type GameResult = {

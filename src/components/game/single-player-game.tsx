@@ -160,6 +160,11 @@ export default function SinglePlayerGame({
             setEnemies(initialSavedGame.enemies);
             setCurrentWave(initialSavedGame.currentWave);
             setDifficulty(initialSavedGame.difficulty);
+            setWorkers(initialSavedGame.workers || [{
+                id: "worker-1", x: 64, y: 64, speed: 260,
+                state: "idle", queue: [], moveTarget: null,
+            }]);
+            setGhosts(initialSavedGame.ghosts || []);
             setGameStatus('playing');
             if (initialSavedGame.enemies.length === 0) {
                  setIsIntermission(true);
@@ -196,7 +201,6 @@ export default function SinglePlayerGame({
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial, configLoading]);
     
-    // DER ENTSCHEIDENDE FIX: Pfad immer neu berechnen, wenn sich die Türme ändern.
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
       setCurrentPath(newPath);
@@ -234,7 +238,9 @@ export default function SinglePlayerGame({
           enemies: enemiesRef.current,
           currentWave: currentWaveRef.current,
           difficulty: difficultyRef.current,
-          _v: 1,
+          workers: workersRef.current,
+          ghosts: ghostsRef.current,
+          _v: 2, // Bump version to indicate new structure
           _savedAt: Date.now(),
         };
 
@@ -368,7 +374,7 @@ export default function SinglePlayerGame({
             if (portalPhase === 'entrance') {
                 setPortalEntrance({ row, col });
                 setPortalPhase('exit');
-                return; // Wait for the second click
+                return;
             } else if (portalPhase === 'exit' && portalEntrance) {
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
                 setPlayers(newState.players);
@@ -822,12 +828,12 @@ export default function SinglePlayerGame({
     };
     
     if (configLoading || !gameConfig || !localPlayer) {
-      return (
-          <div className="w-full h-full flex flex-col items-center justify-center">
-              <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-              <p className="text-muted-foreground">Lade Spielkonfiguration...</p>
-          </div>
-      );
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center">
+                <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground">Lade Spielkonfiguration...</p>
+            </div>
+        );
     }
 
     const interactionPrompt = portalPhase !== 'idle'
