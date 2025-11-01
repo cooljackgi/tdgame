@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Gem, Swords, Users, LogIn, Loader2, Play, BookOpen, BarChart2, Github, Trophy, HelpCircle, Gamepad2, Trash2, LogOut } from 'lucide-react';
-import type { Difficulty, GameSaveState } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, Player } from '@/lib/game-data/types';
 import { LOCAL_STORAGE_KEY, difficultyModifiers } from '@/lib/game-data/constants';
 import { onAuthStateChanged, signInWithGoogle, logOut, type User, auth } from '@/lib/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -75,23 +75,23 @@ export default function Home() {
       const gameName = `${user.displayName}'s Spiel`;
       const difficultyMod = difficultyModifiers[difficulty];
 
+      const player1: Player = { 
+          id: 'player1',
+          name: user.displayName || 'Spieler 1',
+          avatarUrl: user.photoURL || null,
+          resources: difficultyMod.startResources,
+          unlockedElements: ['neutral'],
+          incomePerSecond: 5,
+          portalCooldownUntilWave: 0
+      };
+
       const gameDocRef = await addDoc(collection(db, "games"), {
         gameName: gameName,
         player1Id: user.uid,
         player2Id: null,
         members: { [user.uid]: true },
         difficulty: difficulty,
-        players: {
-            player1: { 
-                id: 'player1',
-                name: user.displayName || 'Spieler 1',
-                avatarUrl: user.photoURL || null,
-                resources: difficultyMod.startResources,
-                unlockedElements: ['neutral'],
-                incomePerSecond: 5,
-            },
-            player2: null
-        },
+        players: { player1: player1, player2: null },
         gameState: { lives: difficultyMod.startLives },
         gameStatus: 'waiting',
         currentWave: 0,
