@@ -1,4 +1,3 @@
-
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
@@ -116,7 +115,7 @@ export function processAttack(
         output.resourcesGained += currentTarget.bounty;
         output.killed++;
         const lifestealEffect = effects?.find(e => e.type === 'lifesteal');
-        if (lifestealEffect && Math.random() < (lifestealEffect.chance ?? 1)) {
+        if (lifestealEffect && Math.random() < (lifestealEffect.chance ?? 0)) {
             output.livesGained += 1;
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }

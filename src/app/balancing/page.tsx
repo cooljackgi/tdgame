@@ -1,4 +1,5 @@
 
+
 // src/app/balancing/page.tsx
 'use client';
 
@@ -43,7 +44,7 @@ const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
     'persistent_cloud', 'poison'
 ];
 
-const ALL_CLOUD_EFFECTS: PersistentCloudEffect[] = ['poison', 'slow', 'burn', 'vulnerability', 'armor_shred'];
+const ALL_CLOUD_EFFECTS: PersistentCloudEffect[] = ['poison', 'slow', 'burn', 'vulnerability', 'armor_shred', 'stun'];
 
 const defaultEffectValues: Record<TowerEffect['type'], Omit<TowerEffect, 'type'>> = {
     slow: { potency: 0.3, duration: 2000, chance: 1 },
