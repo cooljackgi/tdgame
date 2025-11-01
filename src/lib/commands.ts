@@ -110,6 +110,7 @@ export function enqueuePlacePortalOrder(
     if (isOccupied(entrance.row, entrance.col) || isOccupied(exit.row, exit.col)) return state;
 
     player.resources -= cost;
+    player.portalCooldownUntilWave = state.currentWave + 4; // Current wave + 3 waves cooldown
 
     const order: PlacePortalOrder = {
         id: `portal-${now}`,

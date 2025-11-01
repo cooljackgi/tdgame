@@ -34,7 +34,7 @@ export type GameSaveState = {
   difficulty: Difficulty;
   workers: Worker[];
   ghosts: GhostFoundation[];
-  portals?: Portal[];
+  portals: Portal[];
 };
 
 export type GameResult = {
@@ -81,6 +81,7 @@ export type Portal = {
   active: boolean;
   usesLeft: number;
   perEnemyCooldownMs: number;
+  expiresAt: number;
 };
 
 

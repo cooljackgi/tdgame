@@ -183,6 +183,7 @@ export default function SinglePlayerGame({
                 resources: difficultyMod.startResources,
                 unlockedElements: ['neutral'],
                 incomePerSecond: 5,
+                portalCooldownUntilWave: 0,
             };
 
             setPlayers([player1]);
@@ -567,12 +568,6 @@ export default function SinglePlayerGame({
                 return;
             }
             
-            const activePortals = (portalsRef.current || []).filter(p => p.expiresAt > now);
-            if (activePortals.length !== (portalsRef.current || []).length) {
-                setPortals(activePortals);
-            }
-
-
             setPlayers(prev => prev.map(p => ({
                 ...p,
                 resources: p.resources + (p.incomePerSecond * (delta / 1000)),
@@ -747,19 +742,21 @@ export default function SinglePlayerGame({
               
                // Portal Logic
                 let teleported = false;
-                for (const portal of activePortals) {
-                    if (!portal.active) continue;
-                    const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
-                    if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
-                        updatedEnemy.position = { ...portal.exit };
-                        updatedEnemy.lastTeleportAt = now;
-                        updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
-                        updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
-                        updatedEnemy.pathIndex = 0;
-                        updatedEnemy.lastMove = now;
-                        teleported = true;
-                        break; 
-                    }
+                if(portalsRef.current) {
+                  for (const portal of portalsRef.current) {
+                      if (!portal.active) continue;
+                      const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
+                      if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
+                          updatedEnemy.position = { ...portal.exit };
+                          updatedEnemy.lastTeleportAt = now;
+                          updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
+                          updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+                          updatedEnemy.pathIndex = 0;
+                          updatedEnemy.lastMove = now;
+                          teleported = true;
+                          break; 
+                      }
+                  }
                 }
                 if (teleported) {
                     nextEnemies.push(updatedEnemy);
@@ -832,6 +829,7 @@ export default function SinglePlayerGame({
                 const nextWave = currentWaveRef.current + 1;
                 
                 if (gameConfig.waves[nextWave]) {
+                  setPortals([]); // Portale am Ende der Welle entfernen
                   if ((nextWave) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 8) {
                     setGameStatus('picking-element');
                   } else {
