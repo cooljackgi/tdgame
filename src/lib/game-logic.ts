@@ -252,11 +252,15 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
   let totalDamage = 0;
   
   for (const effect of target.effects) {
-    if ((effect.type === 'burn' || effect.type === 'poison') && effect.expires > Date.now()) {
+    if (effect.expires > Date.now()) {
         const ticksSinceLast = delta / 1000;
-        const damageThisFrame = (effect.potency ?? 0) * ticksSinceLast;
-        target.health -= damageThisFrame;
-        totalDamage += damageThisFrame;
+        
+        if (effect.type === 'burn' || effect.type === 'poison') {
+            const damageThisFrame = (effect.potency ?? 0) * ticksSinceLast;
+            target.health -= damageThisFrame;
+            totalDamage += damageThisFrame;
+        }
+        // Cloud effects are applied in the main loop now, not here.
     }
   }
 

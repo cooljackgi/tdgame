@@ -1,3 +1,4 @@
+
 // src/app/balancing/page.tsx
 'use client';
 
@@ -42,7 +43,7 @@ const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
     'persistent_cloud', 'poison'
 ];
 
-const ALL_CLOUD_EFFECTS: PersistentCloudEffect[] = ['poison', 'slow', 'burn'];
+const ALL_CLOUD_EFFECTS: PersistentCloudEffect[] = ['poison', 'slow', 'burn', 'vulnerability', 'armor_shred'];
 
 const defaultEffectValues: Record<TowerEffect['type'], Omit<TowerEffect, 'type'>> = {
     slow: { potency: 0.3, duration: 2000, chance: 1 },
@@ -56,7 +57,7 @@ const defaultEffectValues: Record<TowerEffect['type'], Omit<TowerEffect, 'type'>
     vulnerability: { potency: 0.15, duration: 5000 },
     aura: { radius: 4, potency: 0.1 },
     armor_shred: { potency: 0.25, duration: 4000, chance: 1 },
-    lifesteal: { potency: 0.1, chance: 0.2 },
+    lifesteal: { chance: 0.2 },
     crit: { potency: 2, chance: 0.15 },
     persistent_cloud: { radius: 1.5, potency: 50, duration: 5000, cloudEffect: 'poison' },
     poison: { potency: 25, duration: 5000 },
@@ -126,7 +127,7 @@ const EffectEditor = ({ effect, towerId, effectIndex, onEffectChange, onEffectTy
                                 </SelectTrigger>
                                 <SelectContent>
                                     {ALL_CLOUD_EFFECTS.map(t => (
-                                        <SelectItem key={t} value={t} className="text-xs capitalize">{t}</SelectItem>
+                                        <SelectItem key={t} value={t} className="text-xs capitalize">{t.replace('_', ' ')}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -154,6 +155,8 @@ const EffectEditor = ({ effect, towerId, effectIndex, onEffectChange, onEffectTy
                         <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
                     </>
                  );
+            case 'lifesteal':
+                return <EffectInput label="Chance (%)" value={(params.chance ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'chance', parseFloat(e.target.value) / 100)} step={1} />;
             default:
                 return <div className="text-xs text-muted-foreground">{type}</div>;
         }
