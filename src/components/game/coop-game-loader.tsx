@@ -87,7 +87,7 @@ export default function CoopGameLoader() {
     const p = players.find(p => p.id === localPlayerId);
     if (p) return p;
     // Fallback (verhindert Crashes in Kindkomponenten)
-    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'], incomePerSecond: 5 } : null;
+    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'], incomePerSecond: 5, portalCooldownUntilWave: 0 } : null;
   }, [players, localPlayerId]);
 
 
@@ -451,7 +451,9 @@ export default function CoopGameLoader() {
   }, [localPlayerId, isGameHost]);
   
   const dispatchAction = useCallback((action: 'build' | 'upgrade' | 'sell' | 'pick_element' | 'start_wave_now' | 'move_worker' | 'place_portal', payload: any) => {
+      // Ensure the payload always has a playerId. Default to local player if not provided.
       const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
+      
       if (isGameHost) {
           onHostAction(action, finalPayload);
       } else {
@@ -984,7 +986,7 @@ export default function CoopGameLoader() {
   }
   
   const handleUpgradeTower = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
-  const handleSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col });
+  const handleSellTower = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col, playerId: focusedTower.ownerId });
   const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
   const handleStartNextWaveNow = () => dispatchAction('start_wave_now', {});
   
