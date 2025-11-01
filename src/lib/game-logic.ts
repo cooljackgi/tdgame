@@ -1,5 +1,4 @@
 
-
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
@@ -357,7 +356,6 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
     const { order, startedAt, eta } = w.current;
     const p = Math.min(1, (now - (startedAt ?? now)) / (eta! - (startedAt ?? now) || 1));
     
-    // Find the ghost associated with a build order (not portal)
     if (order.type === 'build_tower') {
       const ghost = state.ghosts.find(g => g.row === order.row && g.col === order.col);
       if(ghost) ghost.progress = p;
@@ -367,8 +365,7 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
       if (order.type === 'build_tower') {
         return completeConstruction(state, w, allTowers);
       } else {
-        // Portal logic not fully implemented to return state
-        // return completePlacePortalPhase(state, w, order);
+        return completePlacePortalPhase(state, w);
       }
     }
     return state;
@@ -406,6 +403,44 @@ function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tow
   w.current = undefined;
   w.state = "idle";
   
-  // Directly start the next order after finishing construction.
   return startNextOrder(newState, w);
+}
+
+function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
+  if (!w.current || w.current.order.type !== 'place_portal') return state;
+  const order = w.current.order as PlacePortalOrder;
+  const now = Date.now();
+
+  if (order.phase === 'entrance') {
+      // Create ghost for entrance
+      state.ghosts.push({
+        id: `ghost-portal-entrance-${now}`,
+        row: order.entrance.row,
+        col: order.entrance.col,
+        towerId: 'portal_entrance',
+        startedAt: now,
+        buildTimeMs: 0, // Visual only
+        progress: 1,
+      });
+      // Update order to next phase
+      order.phase = 'exit';
+      w.current.order = order;
+      // Re-run startNextOrder logic to move to the exit
+      return startNextOrder(state, w);
+  } else { // Phase is 'exit'
+      // Create ghost for exit
+       state.ghosts.push({
+        id: `ghost-portal-exit-${now}`,
+        row: order.exit.row,
+        col: order.exit.col,
+        towerId: 'portal_exit',
+        startedAt: now,
+        buildTimeMs: 0,
+        progress: 1,
+      });
+      // TODO: Actually create and add the portal to game state
+      w.current = undefined;
+      w.state = "idle";
+      return startNextOrder(state, w);
+  }
 }
