@@ -1,31 +1,37 @@
 
 import * as admin from 'firebase-admin';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCStdTE19Iq-EdlmiV8EB2I6sIhnvIh0-Y",
-  authDomain: "studio-8208926735-5ea4c.firebaseapp.com",
-  projectId: "studio-8208926735-5ea4c",
-  storageBucket: "studio-8208926735-5ea4c.appspot.com",
-  messagingSenderId: "345017018409",
-  appId: "1:345017018409:web:07a4cccdbf28dfc1f99438"
-};
-
 // This is a server-side only file. It should not be imported in client components.
-let app: admin.app.App;
 
-if (admin.apps.length > 0) {
-  app = admin.apps[0]!;
-} else {
-  // Extract credentials from environment variables if they exist
-  // This is the standard way to initialize in secure environments like Cloud Run
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
-    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-    : undefined;
+// Check if the app is already initialized to prevent re-initialization
+if (!admin.apps.length) {
+  // This environment variable should be set in your deployment environment (Vercel, Cloud Run, etc.)
+  // It should contain the stringified JSON of your service account key.
+  const serviceAccountString = process.env.FIREBASE_SERVICE_ACCOUNT;
 
-  app = admin.initializeApp({
-    credential: serviceAccount ? admin.credential.cert(serviceAccount) : undefined,
-    databaseURL: `https://${firebaseConfig.projectId}.firebaseio.com`,
-  });
+  if (serviceAccountString) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountString);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      console.log("Firebase Admin SDK initialized successfully.");
+    } catch (error) {
+      console.error("Error parsing Firebase service account or initializing app:", error);
+    }
+  } else {
+    // This will run in local development if the .env.local variable is not set.
+    // It's also a fallback for environments where the SDK can auto-discover credentials.
+    console.warn("FIREBASE_SERVICE_ACCOUNT environment variable not found. Attempting default initialization...");
+    try {
+        admin.initializeApp();
+        console.log("Firebase Admin SDK initialized with default credentials.");
+    } catch (e) {
+        console.error("Default Firebase Admin SDK initialization failed. Ensure you have the correct environment setup for ADC (Application Default Credentials) or a service account file.", e);
+    }
+  }
 }
+
+const app = admin.app();
 
 export { app };
