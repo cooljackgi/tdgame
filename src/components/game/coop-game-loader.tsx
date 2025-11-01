@@ -898,6 +898,10 @@ export default function CoopGameLoader() {
                   setGameStatus('gameover');
               }
           }
+          
+          if (livesGainedThisTick > 0) {
+             setGameState(gs => ({ ...gs, lives: gs.lives + livesGainedThisTick }));
+          }
 
           if (resourcesGainedThisTick > 0) {
               setTotalKilled(k => k + killedThisTick);
