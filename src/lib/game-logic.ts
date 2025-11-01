@@ -259,7 +259,6 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
             target.health -= damageThisFrame;
             totalDamage += damageThisFrame;
         }
-        // Cloud effects are applied in the main loop now, not here.
     }
   }
 
@@ -306,7 +305,7 @@ export function tickWorkers(state: GameSessionState, dtMs: number, now: number, 
   let newState = { ...state };
   for (const w of newState.workers) {
     const updatedState = stepWorker(newState, w, dtMs, now, allTowers);
-    newState = { ...newState, ...updatedState };
+    newState = { ...updatedState };
   }
   return newState;
 }

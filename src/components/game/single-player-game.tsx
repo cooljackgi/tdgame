@@ -560,8 +560,8 @@ export default function SinglePlayerGame({
             if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
               setTowersByCell(workerState.towersByCell);
             }
-            if(workerState.portals?.length !== (portalsRef.current?.length || 0)) {
-                setPortals(workerState.portals || []);
+            if(workerState.portals) {
+                setPortals(workerState.portals);
             }
 
             if (currentStatus !== 'playing') {
@@ -684,9 +684,9 @@ export default function SinglePlayerGame({
             }
 
             if (firingIds.size > 0) setFiringTowerIds(firingIds);
-            if (allNewAttacks.length > 0) gameBoardRef.current?.queueAttacks(allNewAttacks);
-            if (allNewDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
-            if (allNewSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(allNewSplashRings);
+            if (allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);
+            if (allNewDamageNumbers.length > 0) setDamageNumbers(prev => [...prev, ...allNewDamageNumbers]);
+            if (allNewSplashRings.length > 0) setSplashRings(prev => [...prev, ...allNewSplashRings]);
             if (allNewLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(allNewLifeGainVfx);
 
             let livesLostThisTick = 0;
@@ -724,7 +724,7 @@ export default function SinglePlayerGame({
 
               const dotResult = tickDots(updatedEnemy, delta);
               if (dotResult.totalDamage > 0) {
-                 gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
+                 setDamageNumbers(prev => [...prev, { id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy!.id, color: '#f97316' }]);
               }
               if (dotResult.killed && !updatedEnemy.deathTimestamp) {
                 updatedEnemy.deathTimestamp = now;
