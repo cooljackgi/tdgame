@@ -61,6 +61,7 @@ function cssVar(name: string): string {
 }
 
 
+
 export const interpolatedEnemyPositions = new Map<string, { x: number; y: number; lastUpdate: number }>();
 
 function getEnemyWorldPos(enemy: Enemy, now: number, path: Node[]): { x: number; y: number } {
@@ -513,19 +514,40 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             const exitPos = gridToPx(portal.exit);
             const radius = CELL_SIZE * 0.5;
 
-            // Entrance (blue/cyan vortex)
+            // --- REDESIGNED ENTRANCE (TUNNEL EFFECT) ---
             groundCtx.save();
             groundCtx.translate(entrancePos.x, entrancePos.y);
-            groundCtx.rotate(now * 0.001);
-            for (let i = 0; i < 5; i++) {
-                const t = (i + (now * 0.0005) % 1) / 5;
-                const r = radius * (1 - t);
+
+            const tunnelLayers = 6;
+            for (let i = 0; i < tunnelLayers; i++) {
+                const layerT = i / (tunnelLayers - 1); // 0 to 1
+                const pulse = Math.sin(now * 0.002 + layerT * Math.PI) * 0.1 + 0.9;
+                
+                const rX = radius * (1 - layerT) * 0.8 * pulse;
+                const rY = radius * (1 - layerT) * 1.2 * pulse;
+                const alpha = (1 - layerT) * 0.7;
+
                 groundCtx.beginPath();
-                groundCtx.arc(0, 0, r, 0, Math.PI * 2 * (1 - t));
-                groundCtx.strokeStyle = `hsla(188, 85%, ${53 + t * 40}%, ${1 - t})`;
-                groundCtx.lineWidth = 2 + (1 - t) * 3;
+                groundCtx.ellipse(0, 0, rX, rY, 0, 0, Math.PI * 2);
+                groundCtx.strokeStyle = `hsla(188, 85%, ${60 + layerT * 20}%, ${alpha})`;
+                groundCtx.lineWidth = 1 + (1 - layerT) * 2;
                 groundCtx.stroke();
             }
+
+            // Inward-moving particles
+            const particleCount = 15;
+            for (let i = 0; i < particleCount; i++) {
+                const angle = (i / particleCount) * Math.PI * 2 + now * 0.0003;
+                const life = (now * 0.05 + i * 1337) % 1; // 0 to 1 lifetime
+                const r = radius * (1 - life);
+                const particleSize = 1.5 * (1 - life);
+                
+                groundCtx.beginPath();
+                groundCtx.arc(Math.cos(angle) * r, Math.sin(angle) * r * 1.2, particleSize, 0, Math.PI*2);
+                groundCtx.fillStyle = `hsla(188, 85%, 80%, ${1 - life})`;
+                groundCtx.fill();
+            }
+
             groundCtx.restore();
 
             // Exit (purple/orange rift)
@@ -1725,3 +1747,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
+
+    
