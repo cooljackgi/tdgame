@@ -332,7 +332,6 @@ function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: numbe
       if (w.moveTarget) {
         w.moveTarget = null;
         w.state = "idle";
-        // After finishing a move order, immediately check for build orders.
         return startNextOrder(state, w);
       } else {
         w.state = "building";
@@ -412,23 +411,23 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
   const now = Date.now();
 
   if (order.phase === 'entrance') {
-      // Create ghost for entrance
       state.ghosts.push({
         id: `ghost-portal-entrance-${now}`,
         row: order.entrance.row,
         col: order.entrance.col,
         towerId: 'portal_entrance',
         startedAt: now,
-        buildTimeMs: 0, // Visual only
+        buildTimeMs: 0, 
         progress: 1,
       });
-      // Update order to next phase
+      // Set phase to exit and re-engage worker
       order.phase = 'exit';
-      w.current.order = order;
-      // Re-run startNextOrder logic to move to the exit
-      return startNextOrder(state, w);
+      const { x, y } = centerOf(order.exit.row, order.exit.col);
+      w.current.targetX = x;
+      w.current.targetY = y;
+      w.state = 'moving'; // Set back to moving to go to the exit
+      return state;
   } else { // Phase is 'exit'
-      // Create ghost for exit
        state.ghosts.push({
         id: `ghost-portal-exit-${now}`,
         row: order.exit.row,
