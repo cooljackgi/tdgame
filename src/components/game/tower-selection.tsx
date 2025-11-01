@@ -58,39 +58,42 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
         onClick={() => onSelect(tower)}
         disabled={disabled}
         className={cn(
-          "flex items-start gap-3 group w-full p-2 rounded-md transition-colors text-left",
+          "flex flex-col items-start gap-2 w-full p-2 rounded-md transition-colors text-left",
           isSelected ? "bg-primary/20" : bgColorClass,
           "disabled:opacity-50 disabled:cursor-not-allowed"
         )}
       >
-        <div className="flex-shrink-0 pt-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="h-8 w-8 flex items-center justify-center">
-                <TowerCardIcon tower={tower} />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="capitalize">{tower.elements.join(' & ')} Element</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-        <div className="flex-grow min-w-0">
-          <h4 className="font-semibold">{tower.name}</h4>
-          <p className="text-xs text-muted-foreground">{tower.description}</p>
-          {/* Display stats for upgrade options */}
-          <div className="flex gap-3 mt-1.5 text-xs">
-            {tower.damage > 0 && <span className="flex items-center gap-1 text-red-400"><Bomb className="h-3 w-3"/> {tower.damage}</span>}
-            {tower.attackSpeed > 0 && <span className="flex items-center gap-1 text-sky-400"><ChevronsUp className="h-3 w-3"/> {attackSpeedPerSecond}/s</span>}
-            {tower.range > 0 && <span className="flex items-center gap-1 text-green-400"><Target className="h-3 w-3"/> {tower.range}</span>}
-          </div>
-        </div>
-        <div className="flex-shrink-0 flex flex-col items-end gap-1.5 text-xs font-medium">
-            <div className="flex items-center gap-1.5 text-yellow-400">
-                <Coins className="h-3.5 w-3.5" />
-                <span>{tower.cost}</span>
+        <div className="flex items-start gap-3 w-full">
+            <div className="flex-shrink-0 pt-1">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                <div className="h-8 w-8 flex items-center justify-center">
+                    <TowerCardIcon tower={tower} />
+                </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                <p className="capitalize">{tower.elements.join(' & ')} Element</p>
+                </TooltipContent>
+            </Tooltip>
+            </div>
+            <div className="flex-grow min-w-0">
+            <h4 className="font-semibold">{tower.name}</h4>
+            <p className="text-xs text-muted-foreground">{tower.description}</p>
             </div>
         </div>
+
+        <div className="w-full flex items-center justify-between pl-11">
+             <div className="flex gap-3 text-xs">
+                {tower.damage > 0 && <span className="flex items-center gap-1 text-red-400"><Bomb className="h-3 w-3"/> {tower.damage}</span>}
+                {tower.attackSpeed > 0 && <span className="flex items-center gap-1 text-sky-400"><ChevronsUp className="h-3 w-3"/> {attackSpeedPerSecond}/s</span>}
+                {tower.range > 0 && <span className="flex items-center gap-1 text-green-400"><Target className="h-3 w-3"/> {tower.range}</span>}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
+                <Coins className="h-3.5 w-3.5" />
+                <span>Kosten: {tower.cost}</span>
+            </div>
+        </div>
+
       </button>
     </li>
   );
