@@ -1007,10 +1007,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const moved = Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5;
     isPanningRef.current = false;
   
-    if (moved) return;
+    if (moved) {
+        suppressNextClickRef.current = true; // Suppress click if it was a drag
+        return;
+    }
     
-    e.stopPropagation(); 
-
+    // This part is for click handling
     if (hoveredCell) {
         const now = Date.now();
         if (now - lastClickTimeRef.current < 300) { // Double-click
@@ -1231,7 +1233,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   }, [ghostTowerPath]);
   
   const auraTowers = useMemo(() => 
-    placedTowers.filter(t => t.effect?.type === 'aura'), 
+    placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), 
   [placedTowers]);
 
   const buffedTowerIds = useMemo(() => {
@@ -1239,10 +1241,10 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     if (auraTowers.length === 0) return buffedIds;
     
     placedTowers.forEach(tower => {
-      if (tower.effect?.type === 'aura') return;
+      if (tower.effects?.some(e => e.type === 'aura')) return;
       for (const auraTower of auraTowers) {
         const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-        if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+        if (distSq <= Math.pow(auraTower.range, 2)) {
           buffedIds.add(tower.id);
           break;
         }
@@ -1311,14 +1313,18 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           className="absolute inset-0"
           style={{ transformOrigin: 'top left', willChange: 'transform' }}
           onClick={(e) => {
-            closeContextMenu();
             if (suppressNextClickRef.current) {
-              suppressNextClickRef.current = false;
-              e.stopPropagation();
-              return;
+                suppressNextClickRef.current = false;
+                return;
             }
-            if (selectedTowerToBuild) return;
-            cancelInteractions();
+            // Stop propagation only if a click action is performed
+            if (selectedTowerToBuild || focusedTower || isPlacingPortalEntrance || contextMenu) {
+                e.stopPropagation();
+            }
+            closeContextMenu();
+            if (!selectedTowerToBuild && !focusedTower && !isPlacingPortalEntrance) {
+                cancelInteractions();
+            }
           }}
         >
           {/* Layer 10: Game World (Grid, Path, Towers, Enemies) */}

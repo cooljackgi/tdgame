@@ -81,7 +81,6 @@ export default function CoopGameLoader() {
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
-  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
   
   const localPlayer = useMemo(() => {
     const p = players.find(p => p.id === localPlayerId);
@@ -307,7 +306,7 @@ export default function CoopGameLoader() {
     
   // --- WebRTC Logic ---
   
-  const handleGameData = useCallback((msg: any) => {
+  const handleGameData = useCallback((msg: NetMsg) => {
     if (isGameHost) return;
     const { type, payload } = msg;
 
@@ -382,7 +381,7 @@ export default function CoopGameLoader() {
     }
   }, [isGameHost, focusedTower]);
 
-    const handleActionData = useCallback((msg: any) => {
+    const handleActionData = useCallback((msg: NetMsg) => {
         if (!isGameHost) return;
         const { type, payload } = msg;
 
@@ -573,7 +572,6 @@ export default function CoopGameLoader() {
                   { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                 ]);
                 setGhosts(data.ghosts || []);
-                setCurrentPath(findPath({ row: 1, col: 1 }, { row: 12, col: 12 }, Object.values(data.towersByCell || {}).map(t => (t as PlacedTower).position), 12, 12) || []);
             }
             
             setPlayers(normalizePlayers(data.players));
@@ -593,6 +591,11 @@ export default function CoopGameLoader() {
 
         return () => unsub();
     }, [user, gameId, router, toast, configLoading]);
+    
+    useEffect(() => {
+      const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+      setCurrentPath(newPath);
+    }, [towersByCell]);
 
     useEffect(() => {
         if (!isGameHost) {
@@ -647,14 +650,11 @@ export default function CoopGameLoader() {
           const currentStatus = gameStatus;
           const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
           
-          const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now);
-          setWorkers(newState.workers);
-          setGhosts(newState.ghosts);
-          if (Object.keys(newState.towersByCell).length !== Object.keys(towersByCell).length) {
-            setTowersByCell(newState.towersByCell);
-          }
-          if (newState.currentPath.length !== currentPath.length) {
-            setCurrentPath(newState.currentPath);
+          const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
+          setWorkers(workerState.workers);
+          setGhosts(workerState.ghosts);
+          if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
+            setTowersByCell(workerState.towersByCell);
           }
 
           if (currentStatus !== 'playing') {
@@ -979,7 +979,7 @@ export default function CoopGameLoader() {
                 resetGame={onExit}
                 towers={gameConfig.towers} 
                 setTowers={() => {}} 
-                placedTowers={placedTowers} 
+                placedTowers={Object.values(towersByCell)} 
                 enemies={enemies}
                 workers={workers}
                 ghosts={ghosts}

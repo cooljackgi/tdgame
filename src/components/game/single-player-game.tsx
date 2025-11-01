@@ -481,7 +481,6 @@ export default function SinglePlayerGame({
         ];
 
         const newTowersByCell: Record<string, PlacedTower> = {};
-        const blockedPositions: Node[] = [];
         let towerIndex = 0;
 
         for (const pos of mazePath) {
@@ -499,7 +498,6 @@ export default function SinglePlayerGame({
                 health: towerSpec.maxHealth,
                 ownerId: 'player1',
             };
-            blockedPositions.push(pos);
             towerIndex++;
         }
 
@@ -549,11 +547,11 @@ export default function SinglePlayerGame({
             const currentStatus = gameStatusRef.current;
             const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
             
-            const newState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
-            setWorkers(newState.workers);
-            setGhosts(newState.ghosts);
-            if (Object.keys(newState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
-              setTowersByCell(newState.towersByCell);
+            const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
+            setWorkers(workerState.workers);
+            setGhosts(workerState.ghosts);
+            if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
+              setTowersByCell(workerState.towersByCell);
             }
 
             if (currentStatus !== 'playing') {
