@@ -58,8 +58,8 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
         onClick={() => onSelect(tower)}
         disabled={disabled}
         className={cn(
-          "flex flex-col items-start gap-2 w-full p-2 rounded-md transition-colors text-left",
-          isSelected ? "bg-primary/20" : bgColorClass,
+          "flex flex-col items-start gap-2 w-full p-3 rounded-lg border-2 border-transparent transition-all text-left",
+          isSelected ? "bg-primary/20 border-primary/50" : bgColorClass,
           "disabled:opacity-50 disabled:cursor-not-allowed"
         )}
       >
@@ -80,19 +80,19 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
             <h4 className="font-semibold">{tower.name}</h4>
             <p className="text-xs text-muted-foreground">{tower.description}</p>
             </div>
+             <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
+                <Coins className="h-3.5 w-3.5" />
+                <span>{tower.cost}</span>
+            </div>
         </div>
 
-        <div className="w-full flex items-center justify-between pl-11">
-             <div className="flex gap-3 text-xs">
-                {tower.damage > 0 && <span className="flex items-center gap-1 text-red-400"><Bomb className="h-3 w-3"/> {tower.damage}</span>}
-                {tower.attackSpeed > 0 && <span className="flex items-center gap-1 text-sky-400"><ChevronsUp className="h-3 w-3"/> {attackSpeedPerSecond}/s</span>}
-                {tower.range > 0 && <span className="flex items-center gap-1 text-green-400"><Target className="h-3 w-3"/> {tower.range}</span>}
+        {(tower.damage > 0 || tower.range > 0) && (
+            <div className="w-full flex items-center justify-start gap-4 pl-11 text-xs text-muted-foreground">
+                {tower.damage > 0 && <span className="flex items-center gap-1"><Bomb className="h-3 w-3 text-red-400/80"/> {tower.damage}</span>}
+                {tower.attackSpeed > 0 && <span className="flex items-center gap-1"><ChevronsUp className="h-3 w-3 text-sky-400/80"/> {attackSpeedPerSecond}/s</span>}
+                {tower.range > 0 && <span className="flex items-center gap-1"><Target className="h-3 w-3 text-green-400/80"/> {tower.range}</span>}
             </div>
-            <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
-                <Coins className="h-3.5 w-3.5" />
-                <span>Kosten: {tower.cost}</span>
-            </div>
-        </div>
+        )}
 
       </button>
     </li>
@@ -212,7 +212,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             <button
                 onClick={onEnterPortalMode}
                 disabled={localPlayer.resources < 150} // Placeholder cost
-                className="flex items-start gap-3 group w-full p-2 rounded-md transition-colors text-left bg-purple-900/40 hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-start gap-3 group w-full p-3 rounded-lg border-2 border-transparent transition-all text-left bg-purple-900/40 hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 <div className="flex-shrink-0 pt-1 h-8 w-8 flex items-center justify-center">
                     <Bot className="h-6 w-6 text-cyan-300" />
@@ -221,11 +221,9 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
                     <h4 className="font-semibold">Portal bauen</h4>
                     <p className="text-xs text-muted-foreground">Erschaffe eine Abkürzung für Gegner. Klicke 2x auf die Karte.</p>
                 </div>
-                <div className="flex-shrink-0 flex flex-col items-end gap-1.5 text-xs font-medium">
-                    <div className="flex items-center gap-1.5 text-yellow-400">
-                        <Coins className="h-3.5 w-3.5" />
-                        <span>150</span>
-                    </div>
+                <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
+                    <Coins className="h-3.5 w-3.5" />
+                    <span>150</span>
                 </div>
             </button>
           </li>
