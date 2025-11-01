@@ -2,7 +2,7 @@
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node
+  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node, Portal
 } from './game-data/types';
 import { audioManager } from './audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from './game-data/constants';
@@ -411,35 +411,31 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
   const now = Date.now();
 
   if (order.phase === 'entrance') {
-      state.ghosts.push({
-        id: `ghost-portal-entrance-${now}`,
-        row: order.entrance.row,
-        col: order.entrance.col,
-        towerId: 'portal_entrance',
-        startedAt: now,
-        buildTimeMs: 0, 
-        progress: 1,
-      });
-      // Set phase to exit and re-engage worker
-      order.phase = 'exit';
-      const { x, y } = centerOf(order.exit.row, order.exit.col);
-      w.current.targetX = x;
-      w.current.targetY = y;
-      w.state = 'moving'; // Set back to moving to go to the exit
-      return state;
+    state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
+    order.phase = 'exit';
+    const { x, y } = centerOf(order.exit.row, order.exit.col);
+    w.current.targetX = x;
+    w.current.targetY = y;
+    w.state = 'moving';
+    return state;
   } else { // Phase is 'exit'
-       state.ghosts.push({
-        id: `ghost-portal-exit-${now}`,
-        row: order.exit.row,
-        col: order.exit.col,
-        towerId: 'portal_exit',
-        startedAt: now,
-        buildTimeMs: 0,
-        progress: 1,
-      });
-      // TODO: Actually create and add the portal to game state
-      w.current = undefined;
-      w.state = "idle";
-      return startNextOrder(state, w);
+    state.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
+    
+    // Actually create the portal object
+    if (!state.portals) {
+        state.portals = [];
+    }
+    state.portals.push({
+        id: `portal-${order.createdAt}`,
+        entrance: order.entrance,
+        exit: order.exit,
+        active: true,
+        usesLeft: Infinity, // For now
+        perEnemyCooldownMs: 5000, // Prevent loops
+    });
+
+    w.current = undefined;
+    w.state = "idle";
+    return startNextOrder(state, w);
   }
 }

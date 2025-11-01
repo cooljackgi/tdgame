@@ -59,6 +59,7 @@ export default function SinglePlayerGame({
     const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
+    const [portals, setPortals] = useState<any[]>([]);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -110,6 +111,7 @@ export default function SinglePlayerGame({
     const persistentCloudsRef = useRef(persistentClouds);
     const workersRef = useRef(workers);
     const ghostsRef = useRef(ghosts);
+    const portalsRef = useRef(portals);
 
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
@@ -125,6 +127,7 @@ export default function SinglePlayerGame({
     useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
     useEffect(() => { workersRef.current = workers; }, [workers]);
     useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
+    useEffect(() => { portalsRef.current = portals; }, [portals]);
     
     // --- Load Game Configuration ---
     useEffect(() => {
@@ -165,6 +168,7 @@ export default function SinglePlayerGame({
                 state: "idle", queue: [], moveTarget: null,
             }]);
             setGhosts(initialSavedGame.ghosts || []);
+            setPortals(initialSavedGame.portals || []);
             setGameStatus('playing');
             if (initialSavedGame.enemies.length === 0) {
                  setIsIntermission(true);
@@ -198,6 +202,7 @@ export default function SinglePlayerGame({
                 moveTarget: null,
             }]);
             setGhosts([]);
+            setPortals([]);
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial, configLoading]);
     
@@ -240,6 +245,7 @@ export default function SinglePlayerGame({
           difficulty: difficultyRef.current,
           workers: workersRef.current,
           ghosts: ghostsRef.current,
+          portals: portalsRef.current,
           _v: 2, // Bump version to indicate new structure
           _savedAt: Date.now(),
         };
@@ -369,7 +375,7 @@ export default function SinglePlayerGame({
     }, []);
 
     const handlePlaceTower = useCallback((row: number, col: number) => {
-        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current };
+        const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
         if (portalPhase !== 'idle') {
             if (portalPhase === 'entrance') {
                 setPortalEntrance({ row, col });
@@ -545,13 +551,16 @@ export default function SinglePlayerGame({
             }
 
             const currentStatus = gameStatusRef.current;
-            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, };
+            const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
             
             const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
             setWorkers(workerState.workers);
             setGhosts(workerState.ghosts);
             if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
               setTowersByCell(workerState.towersByCell);
+            }
+            if(workerState.portals?.length !== (portalsRef.current?.length || 0)) {
+                setPortals(workerState.portals || []);
             }
 
             if (currentStatus !== 'playing') {
@@ -730,6 +739,27 @@ export default function SinglePlayerGame({
                   nextEnemies.push(updatedEnemy);
                   continue;
               }
+              
+               // Portal Logic
+                let teleported = false;
+                for (const portal of portalsRef.current) {
+                    if (!portal.active) continue;
+                    const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
+                    if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
+                        updatedEnemy.position = { ...portal.exit };
+                        updatedEnemy.lastTeleportAt = now;
+                        updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
+                        updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+                        updatedEnemy.pathIndex = 0;
+                        updatedEnemy.lastMove = now;
+                        teleported = true;
+                        break; 
+                    }
+                }
+                if (teleported) {
+                    nextEnemies.push(updatedEnemy);
+                    continue;
+                }
                 
               for (const well of activeGravityWells) {
                   const dx = well.x - updatedEnemy.position.col;

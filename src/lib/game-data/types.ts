@@ -1,4 +1,5 @@
 
+
 import type { LucideIcon } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore';
 
@@ -32,6 +33,7 @@ export type GameSaveState = {
   difficulty: Difficulty;
   workers: Worker[];
   ghosts: GhostFoundation[];
+  portals?: Portal[];
 };
 
 export type GameResult = {
