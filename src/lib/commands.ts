@@ -3,7 +3,7 @@
 import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
 import { GRID_ROWS, GRID_COLS } from './game-data/constants';
-import type { GameSessionState, BuildTowerOrder, Worker, PlacePortalOrder } from './game-data/types';
+import type { GameSessionState, BuildTowerOrder, Worker, PlacePortalOrder, Player } from './game-data/types';
 
 function tierToBuildTime(tier: number) {
   if (tier <= 0) return 1200;
@@ -92,14 +92,15 @@ export function enqueuePlacePortalOrder(
   exit:     { row: number; col: number },
   now: number,
 ): GameSessionState {
-    const cost = 150;
+    const cost = 250;
     const buildEntranceTime = 1200;
     const buildExitTime = 1500;
 
     const worker = state.workers.find(w => w.id === workerId);
-    const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2'));
+    const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2')) as Player;
 
     if (!worker || !player || player.resources < cost) return state;
+    if ((player.portalCooldownUntilWave || 0) > state.currentWave) return state;
 
     // Simplified validation checks
     const isOccupied = (r: number, c: number) => 

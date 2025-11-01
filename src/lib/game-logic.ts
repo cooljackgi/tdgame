@@ -2,12 +2,13 @@
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node, Portal
+  Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node, Portal, Player
 } from './game-data/types';
 import { audioManager } from './audio/audio-manager';
 import { elementProjectileColors, GRID_COLS, GRID_ROWS } from './game-data/constants';
 import type { Tower } from '@/lib/game-data/types';
 import { findPath } from './pathfinding';
+import { loadGameConfig, type GameConfig } from './game-config-loader';
 
 const TILE_SIZE = 64;
 export const centerOf = (row: number, col: number) => ({
@@ -409,6 +410,7 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
     if (!w.current || w.current.order.type !== 'place_portal') return state;
     const order = w.current.order as PlacePortalOrder;
     const now = Date.now();
+    const ownerId = w.id.includes('1') ? 'player1' : 'player2';
 
     if (order.phase === 'entrance') {
         state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
@@ -426,12 +428,12 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
         const newPortals = state.portals ? [...state.portals] : [];
         newPortals.push({
             id: `portal-${order.createdAt}`,
+            ownerId: ownerId,
             entrance: order.entrance,
             exit: order.exit,
             active: true,
             usesLeft: Infinity,
             perEnemyCooldownMs: 5000,
-            expiresAt: now + 10000, // Portal lives for 10 seconds
         });
         state.portals = newPortals;
 

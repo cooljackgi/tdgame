@@ -18,6 +18,7 @@ export type Player = {
   resources: number;
   unlockedElements: Element[];
   incomePerSecond: number;
+  portalCooldownUntilWave?: number;
 };
 
 export type GameState = {
@@ -74,12 +75,12 @@ export type PersistentCloud = {
 
 export type Portal = {
   id: string;
+  ownerId: Player['id'];
   entrance: { row: number; col: number };
   exit:     { row: number; col: number };
   active: boolean;
   usesLeft: number;
   perEnemyCooldownMs: number;
-  expiresAt: number;
 };
 
 

@@ -6,7 +6,7 @@ import { elementBackgroundColors } from "@/lib/game-data/constants";
 import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
 import type { Player } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna, Bot } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna, Bot, Timer } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ type TowerSelectionProps = {
   localPlayer: Player;
   isMobile?: boolean;
   buffedTowerIds: Set<string>;
+  currentWave: number;
 }
 
 const TowerCardIcon = React.memo(function TowerCardIcon({ tower }: { tower: Tower }) {
@@ -80,20 +81,14 @@ const TowerCard = React.memo(({ tower, onSelect, disabled, isSelected }: { tower
             <h4 className="font-semibold">{tower.name}</h4>
             <p className="text-xs text-muted-foreground">{tower.description}</p>
             </div>
-             <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
-                <Coins className="h-3.5 w-3.5" />
-                <span>{tower.cost}</span>
-            </div>
         </div>
-
-        {(tower.damage > 0 || tower.range > 0) && (
-            <div className="w-full flex items-center justify-start gap-4 pl-11 text-xs text-muted-foreground">
-                {tower.damage > 0 && <span className="flex items-center gap-1"><Bomb className="h-3 w-3 text-red-400/80"/> {tower.damage}</span>}
-                {tower.attackSpeed > 0 && <span className="flex items-center gap-1"><ChevronsUp className="h-3 w-3 text-sky-400/80"/> {attackSpeedPerSecond}/s</span>}
-                {tower.range > 0 && <span className="flex items-center gap-1"><Target className="h-3 w-3 text-green-400/80"/> {tower.range}</span>}
-            </div>
-        )}
-
+        <Separator className="w-full bg-border/50 my-1"/>
+        <div className="w-full flex items-center justify-start gap-4 pl-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-yellow-400 font-medium"><Coins className="h-3.5 w-3.5"/> {tower.cost}</span>
+            {tower.damage > 0 && <span className="flex items-center gap-1"><Bomb className="h-3 w-3 text-red-400/80"/> {tower.damage}</span>}
+            {tower.attackSpeed > 0 && <span className="flex items-center gap-1"><ChevronsUp className="h-3 w-3 text-sky-400/80"/> {attackSpeedPerSecond}/s</span>}
+            {tower.range > 0 && <span className="flex items-center gap-1"><Target className="h-3 w-3 text-green-400/80"/> {tower.range}</span>}
+        </div>
       </button>
     </li>
   );
@@ -111,7 +106,7 @@ const StatDisplay = ({ icon: Icon, value, buff, label }: { icon: React.FC<any>, 
 );
 
 
-const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, onEnterPortalMode, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds }: TowerSelectionProps) {
+const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, onEnterPortalMode, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds, currentWave }: TowerSelectionProps) {
   
   const unlockedElementsSet = React.useMemo(() => new Set(localPlayer.unlockedElements), [localPlayer.unlockedElements]);
   
@@ -163,6 +158,42 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
     };
   }, [focusedTower, buffedTowerIds]);
 
+  const portalCooldown = localPlayer.portalCooldownUntilWave || 0;
+  const isPortalOnCooldown = portalCooldown > currentWave;
+  const portalCost = 250;
+  const canAffordPortal = localPlayer.resources >= portalCost;
+  
+  const portalButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="w-full"> {/* Wrapper for Tooltip with disabled button */}
+          <button
+              onClick={onEnterPortalMode}
+              disabled={isPortalOnCooldown || !canAffordPortal}
+              className="flex items-start gap-3 group w-full p-3 rounded-lg border-2 border-transparent transition-all text-left bg-purple-900/40 hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+              <div className="flex-shrink-0 pt-1 h-8 w-8 flex items-center justify-center">
+                  <Bot className="h-6 w-6 text-cyan-300" />
+              </div>
+              <div className="flex-grow min-w-0">
+                  <h4 className="font-semibold">Portal bauen</h4>
+                  <p className="text-xs text-muted-foreground">Erschaffe eine Abkürzung. Hält bis zum Ende der Welle.</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
+                  <Coins className="h-3.5 w-3.5" />
+                  <span>{portalCost}</span>
+              </div>
+          </button>
+        </div>
+      </TooltipTrigger>
+      {isPortalOnCooldown && (
+        <TooltipContent>
+          <p className="flex items-center gap-2"><Timer className="h-4 w-4"/>Abklingzeit: Noch {portalCooldown - currentWave} Welle(n)</p>
+        </TooltipContent>
+      )}
+    </Tooltip>
+  );
+
 
   const content = (
       <>
@@ -209,23 +240,7 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
       ) : (
         <ul className="space-y-2">
           <li className="w-full">
-            <button
-                onClick={onEnterPortalMode}
-                disabled={localPlayer.resources < 150} // Placeholder cost
-                className="flex items-start gap-3 group w-full p-3 rounded-lg border-2 border-transparent transition-all text-left bg-purple-900/40 hover:bg-purple-900/60 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                <div className="flex-shrink-0 pt-1 h-8 w-8 flex items-center justify-center">
-                    <Bot className="h-6 w-6 text-cyan-300" />
-                </div>
-                <div className="flex-grow min-w-0">
-                    <h4 className="font-semibold">Portal bauen</h4>
-                    <p className="text-xs text-muted-foreground">Erschaffe eine Abkürzung für Gegner. Klicke 2x auf die Karte.</p>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs font-medium text-yellow-400">
-                    <Coins className="h-3.5 w-3.5" />
-                    <span>150</span>
-                </div>
-            </button>
+            {portalButton}
           </li>
           <Separator />
           {availableTowers.length > 0 ? availableTowers.map((tower) => (
