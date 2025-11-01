@@ -117,7 +117,7 @@ export function processAttack(
         output.killed++;
         const lifestealEffect = effects?.find(e => e.type === 'lifesteal');
         if (lifestealEffect && Math.random() < (lifestealEffect.chance ?? 1)) {
-            output.livesGained += (lifestealEffect.potency ?? 0);
+            output.livesGained += 1;
             output.lifeGainVfx.push({ id: crypto.randomUUID(), amount: 1 });
         }
     } else {
@@ -434,6 +434,7 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
             active: true,
             usesLeft: Infinity,
             perEnemyCooldownMs: 5000,
+            expiresAt: 0, // Will be set at end of wave
         });
         state.portals = newPortals;
 

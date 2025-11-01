@@ -84,7 +84,7 @@ exports.joinGame = functions.https.onCall(async (data, context) => {
                 player2Id: uid,
                 'members': { ...gameData?.members, [uid]: true },
                 'players.player2': {
-                    id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'],
+                    id: 'player2', name: displayName, avatarUrl: avatarUrl, resources: resources, unlockedElements: ['neutral'], incomePerSecond: 5
                 },
             });
         });
