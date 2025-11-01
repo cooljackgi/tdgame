@@ -102,7 +102,7 @@ export default function CoopGameLoader() {
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
   
   const onFocusTower = (tower: PlacedTower) => {
-    setSelectedTowerToBuild(null);
+    cancelInteractions();
     setFocusedTower(tower);
   };
   
@@ -173,26 +173,29 @@ export default function CoopGameLoader() {
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
         
+        const playerId = payload.playerId; // This is the crucial part
+        
         const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
 
         switch(action){
             case 'place_portal': {
-                const { entrance, exit, playerId } = payload;
+                const { entrance, exit } = payload;
                 const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueuePlacePortalOrder(state, workerId, entrance, exit, Date.now());
                 setPlayers(updatedState.players);
                 setWorkers(updatedState.workers);
+                setPortals(updatedState.portals || []); // Make sure portals are updated
                 break;
             }
             case 'move_worker': {
-                const { row, col, playerId } = payload;
+                const { row, col } = payload;
                 const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueueMoveOrder(state, workerId, row, col);
                 setWorkers(updatedState.workers);
                 break;
             }
             case 'build': {
-                const { row, col, towerId, playerId } = payload;
+                const { row, col, towerId } = payload;
                 const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueueBuildOrder(state, workerId, row, col, towerId, Date.now());
 
@@ -202,7 +205,7 @@ export default function CoopGameLoader() {
                 break;
             }
             case 'upgrade': {
-                const { row, col, upgradeId, playerId } = payload;
+                const { row, col, upgradeId } = payload;
                 const key = `${row}_${col}`;
                 const existingTower = towersByCell[key];
                 
@@ -225,8 +228,8 @@ export default function CoopGameLoader() {
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
                 
-                // FEHLERBEHEBUNG: Der Host darf NICHT den Fokus für sich selbst setzen.
-                // Dies wird nur durch eine lokale Benutzeraktion (Klick) ausgelöst.
+                // CRITICAL FIX: Do NOT set focusedTower on the host in response to a network action.
+                // This is a local UI state.
                 // setFocusedTower(upgradedTower); 
 
                 setLastUpgradedTowerId(upgradedTower.id);
@@ -236,7 +239,7 @@ export default function CoopGameLoader() {
                 break;
             }
             case 'sell': {
-                 const { row, col, playerId } = payload;
+                 const { row, col } = payload;
                  const key = `${row}_${col}`;
                  const towerToSell = towersByCell[key];
                  if (!towerToSell || towerToSell.ownerId !== playerId) return;
@@ -248,11 +251,12 @@ export default function CoopGameLoader() {
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
-                 setFocusedTower(null); // Unfocus after selling
+                 // CRITICAL FIX: Do not set focusedTower on host.
+                 // setFocusedTower(null);
                  break;
             }
             case 'pick_element': {
-                const { playerId, element } = payload;
+                const { element } = payload;
                 const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
                 audioManager.play(sound);
                 sendGameDataRef.current('AUDIO_EVENT', sound);
@@ -318,13 +322,17 @@ export default function CoopGameLoader() {
         setPlayers(payload.players);
         setEnemies(payload.enemies);
         
+        // This is a crucial part of the fix. We should not blindly accept the host's `focusedTower`,
+        // as that is a local UI state. We only update our local focus if the tower has changed *underneath* us.
         if (focusedTower) {
             const updatedFocusedTower = payload.towersByCell[`${focusedTower.position.row}_${focusedTower.position.col}`];
             if (updatedFocusedTower) {
+                // Only update if the spec (upgrade) has changed, not for minor state like lastAttack
                 if (updatedFocusedTower.specId !== focusedTower.specId) {
                     setFocusedTower(updatedFocusedTower);
                 }
             } else {
+                // The tower we were focusing on was sold.
                 setFocusedTower(null);
             }
         }
@@ -492,7 +500,7 @@ export default function CoopGameLoader() {
             totalKilled, totalLeaked,
             gravityWells,
             persistentClouds,
-            workers, ghosts, portals,
+            workers, ghosts, portals, // Correctly include portals in the snapshot
             fps,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
@@ -897,7 +905,7 @@ export default function CoopGameLoader() {
           if (livesLostThisTick > 0) {
               setGameState(gs => {
                   const newLives = Math.max(0, gs.lives - livesLostThisTick);
-                  if (newLives === 0 && gameStatus !== 'gameover') {
+                  if (newLives <= 0 && gameStatus !== 'gameover') {
                       onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
                       setGameStatus('gameover');
                   }
@@ -912,7 +920,7 @@ export default function CoopGameLoader() {
 
           if (resourcesGainedThisTick > 0) {
               setTotalKilled(k => k + killedThisTick);
-              setPlayers(ps => ps.map(p => ({ ...p, resources: p.resources + resourcesGainedThisTick })));
+              setPlayers(ps => ps.map(p => p.id === 'player1' ? ({ ...p, resources: p.resources + resourcesGainedThisTick }) : p));
           }
 
             if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
