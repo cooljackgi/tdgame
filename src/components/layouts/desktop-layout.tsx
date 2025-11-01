@@ -287,6 +287,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 onBack={cancelInteractions}
                 localPlayer={localPlayer}
                 buffedTowerIds={buffedTowerIds}
+                currentWave={currentWave}
               />
             )}
         </div>

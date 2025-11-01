@@ -381,6 +381,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                         localPlayer={localPlayer}
                         isMobile
                         buffedTowerIds={buffedTowerIds}
+                        currentWave={currentWave}
                       />
                     )}
                   </ScrollArea>
