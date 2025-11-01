@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, Waves, Save, Loader2, BarChart2, RefreshCw, Timer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { waves as initialWaves, waveFormulaCoefficients, generateProceduralWave 
 import type { Wave, WaveEnemyData, EnemyType } from '@/lib/game-data/types';
 import { useToast } from '@/hooks/use-toast';
 import { saveWaveData } from '@/ai/flows/save-waves-flow';
+import { loadGameConfig } from '@/lib/game-config-loader';
 import {
   BarChart,
   Bar,
@@ -31,9 +32,33 @@ const ENEMY_TYPES: EnemyType[] = ['standard', 'schnell', 'gepanzert', 'heilend',
 
 export default function WavesBalancingPage() {
   const [formulas, setFormulas] = useState<FormulaCoefficients>(waveFormulaCoefficients);
-  const [waves, setWaves] = useState<Wave[]>(() => JSON.parse(JSON.stringify(initialWaves.slice(0, 50))));
+  const [waves, setWaves] = useState<Wave[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    async function fetchWaves() {
+      setIsLoading(true);
+      try {
+        const config = await loadGameConfig();
+        // Assuming waves have a fixed length for now, or take the first 50
+        setWaves(config.waves.slice(0, 50)); 
+      } catch (e) {
+        console.error("Failed to load wave data:", e);
+        toast({
+          title: "Fehler beim Laden",
+          description: "Die Wellen-Daten konnten nicht geladen werden. Lokale Standardwerte werden verwendet.",
+          variant: "destructive",
+        });
+        setWaves(initialWaves.slice(0, 50)); // Fallback to local data
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchWaves();
+  }, [toast]);
+
 
   const handleFormulaChange = (key: keyof FormulaCoefficients, value: string) => {
       const numericValue = parseFloat(value);
@@ -98,6 +123,16 @@ export default function WavesBalancingPage() {
       count: wave.enemies.count,
     }));
   }, [waves]);
+  
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-4">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin" />
+        <p>Lade Wellen-Daten aus Firestore...</p>
+      </main>
+    );
+  }
+
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
