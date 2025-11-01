@@ -21,7 +21,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation
+  Worker, GhostFoundation, Portal
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -40,6 +40,7 @@ interface MobileLayoutProps {
   enemies: Enemy[];
   workers: Worker[];
   ghosts: GhostFoundation[];
+  portals: Portal[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
@@ -102,7 +103,7 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
-    workers, ghosts,
+    workers, ghosts, portals,
     damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     portalEntrance, focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
@@ -165,16 +166,16 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
   
-  const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effect?.type === 'aura'), [placedTowers]);
+  const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
     if (auraTowers.length === 0) return ids;
     
     placedTowers.forEach(tower => {
-      if (tower.effect?.type === 'aura') return;
+      if (tower.effects?.some(e => e.type === 'aura')) return;
       for (const auraTower of auraTowers) {
         const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
-        if (distSq <= Math.pow(auraTower.effect!.radius!, 2)) {
+        if (distSq <= Math.pow(auraTower.range, 2)) {
           ids.add(tower.id);
           break;
         }
@@ -276,6 +277,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           enemies={enemies}
           workers={workers}
           ghosts={ghosts}
+          portals={portals}
           attacks={attacks}
           damageNumbers={damageNumbers}
           splashRings={splashRings}

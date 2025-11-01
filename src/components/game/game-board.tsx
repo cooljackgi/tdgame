@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Card } from '@/components/ui/card';
-import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud, Worker, GhostFoundation } from '@/lib/game-data/types';
+import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud, Worker, GhostFoundation, Portal } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -154,6 +154,7 @@ type GameBoardProps = {
   enemies: Enemy[];
   workers: Worker[];
   ghosts: GhostFoundation[];
+  portals: Portal[];
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
@@ -300,6 +301,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     enemies, 
     workers,
     ghosts,
+    portals,
     attacks = [], // default to empty array
     damageNumbers,
     splashRings,
@@ -504,6 +506,47 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         }
         
         // --- GROUND EFFECTS ---
+        for (const portal of portals) {
+            if (!portal.active) continue;
+            
+            const entrancePos = gridToPx(portal.entrance);
+            const exitPos = gridToPx(portal.exit);
+            const radius = CELL_SIZE * 0.5;
+
+            // Entrance (blue/cyan vortex)
+            groundCtx.save();
+            groundCtx.translate(entrancePos.x, entrancePos.y);
+            groundCtx.rotate(now * 0.001);
+            for (let i = 0; i < 5; i++) {
+                const t = (i + (now * 0.0005) % 1) / 5;
+                const r = radius * (1 - t);
+                groundCtx.beginPath();
+                groundCtx.arc(0, 0, r, 0, Math.PI * 2 * (1 - t));
+                groundCtx.strokeStyle = `hsla(188, 85%, ${53 + t * 40}%, ${1 - t})`;
+                groundCtx.lineWidth = 2 + (1 - t) * 3;
+                groundCtx.stroke();
+            }
+            groundCtx.restore();
+
+            // Exit (purple/orange rift)
+            groundCtx.save();
+            groundCtx.translate(exitPos.x, exitPos.y);
+            groundCtx.rotate(-now * 0.0015);
+             for (let i = 0; i < 4; i++) {
+                const t = (i + (now * 0.0007) % 1) / 4;
+                const r = radius * (0.5 + t * 0.5);
+                groundCtx.beginPath();
+                groundCtx.moveTo(0, 0);
+                const angle = Math.sin(t * Math.PI * 2 + i) * 0.5;
+                groundCtx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+                groundCtx.strokeStyle = `hsla(${271 + t*40}, 91%, ${65 + t * 15}%, ${1 - t})`;
+                groundCtx.lineWidth = 2 + (1 - t) * 2;
+                groundCtx.stroke();
+            }
+            groundCtx.restore();
+        }
+
+
         for (const cloud of persistentClouds) {
           const center = gridToPx({row: cloud.y, col: cloud.x});
           const radiusPx = cloud.radius * CELL_SIZE;
@@ -935,7 +978,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     } catch (err) {
         console.error('VFX render failed:', err);
     }
-  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, persistentClouds]);
+  }, [fpsCapMs, placedTowers, currentPath, enemies, playerRole, persistentClouds, portals]);
   
    useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderVfx);
@@ -1447,6 +1490,8 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                       
                       {ghosts?.map(g => {
                         const {x, y} = gridToPx({row: g.row, col: g.col});
+                        const isPortal = g.towerId.startsWith('portal');
+                        if (isPortal) return null; // Don't render portal ghosts as towers
                         return (
                           <div key={g.id} style={{ position: 'absolute', left: x, top: y, width:CELL_SIZE, height:CELL_SIZE, transform: 'translate(-50%,-50%)'}}>
                             <div className="relative w-full h-full flex items-center justify-center">

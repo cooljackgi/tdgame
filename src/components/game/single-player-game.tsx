@@ -3,7 +3,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud, Worker, GhostFoundation, GameSessionState } from '@/lib/game-data/types';
+import type { Difficulty, GameSaveState, User, Player, GameState, PlacedTower, Tower, Node, Element, Enemy, Attack, DamageNumber, SplashRing, MovementPattern, LifeGainVfx, GravityWell, PersistentCloud, Worker, GhostFoundation, GameSessionState, Portal } from '@/lib/game-data/types';
 import { difficultyModifiers, GRID_COLS, GRID_ROWS, LOCAL_STORAGE_KEY, INTERMISSION_TIME, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { findPath } from '@/lib/pathfinding';
 import { useToast } from '@/hooks/use-toast';
@@ -59,7 +59,7 @@ export default function SinglePlayerGame({
     const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
     const [workers, setWorkers] = useState<Worker[]>([]);
     const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
-    const [portals, setPortals] = useState<any[]>([]);
+    const [portals, setPortals] = useState<Portal[]>([]);
 
     // --- UI/Interaction State ---
     const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -894,6 +894,7 @@ export default function SinglePlayerGame({
                     enemies={enemies}
                     workers={workers}
                     ghosts={ghosts}
+                    portals={portals}
                     damageNumbers={damageNumbers} 
                     splashRings={splashRings}
                     persistentClouds={persistentClouds}

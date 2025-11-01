@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, AuraBuffs, DoTEffect, DamageApplicationResult, ProcessAttackResult, SoundEvent, Worker, GhostFoundation, GameSessionState } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, AuraBuffs, DoTEffect, DamageApplicationResult, ProcessAttackResult, SoundEvent, Worker, GhostFoundation, GameSessionState, Portal } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -61,6 +61,7 @@ export default function CoopGameLoader() {
   const [fps, setFps] = useState(0);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
+  const [portals, setPortals] = useState<Portal[]>([]);
   const [currentPath, setCurrentPath] = useState<Node[]>([]);
 
   
@@ -172,7 +173,7 @@ export default function CoopGameLoader() {
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
         
-        const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+        const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
 
         switch(action){
             case 'place_portal': {
@@ -302,11 +303,11 @@ export default function CoopGameLoader() {
                 break;
         }
         setHostRevision(r => r + 1);
-    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, gameState, difficulty, currentPath, waveStartCountdown, gameConfig]);
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig]);
     
   // --- WebRTC Logic ---
   
-  const handleGameData = useCallback((msg: NetMsg) => {
+  const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     const { type, payload } = msg;
 
@@ -338,6 +339,7 @@ export default function CoopGameLoader() {
         setPersistentClouds(payload.persistentClouds || []);
         setWorkers(payload.workers || []);
         setGhosts(payload.ghosts || []);
+        setPortals(payload.portals || []);
         if (payload.fps !== undefined) setFps(payload.fps);
         break;
       case 'AUDIO_EVENT':
@@ -381,7 +383,7 @@ export default function CoopGameLoader() {
     }
   }, [isGameHost, focusedTower]);
 
-    const handleActionData = useCallback((msg: NetMsg) => {
+    const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
         const { type, payload } = msg;
 
@@ -486,11 +488,11 @@ export default function CoopGameLoader() {
             totalKilled, totalLeaked,
             gravityWells,
             persistentClouds,
-            workers, ghosts,
+            workers, ghosts, portals,
             fps,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
-    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, persistentClouds, workers, ghosts, fps]);
+    }, [isGameHost, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, totalKilled, totalLeaked, gravityWells, persistentClouds, workers, ghosts, portals, fps]);
     
     useEffect(() => {
         if (!isGameHost || hostRevision === 0) return;
@@ -572,6 +574,7 @@ export default function CoopGameLoader() {
                   { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                 ]);
                 setGhosts(data.ghosts || []);
+                setPortals(data.portals || []);
             }
             
             setPlayers(normalizePlayers(data.players));
@@ -648,13 +651,16 @@ export default function CoopGameLoader() {
           }
 
           const currentStatus = gameStatus;
-          const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts };
+          const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
           const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
           setWorkers(workerState.workers);
           setGhosts(workerState.ghosts);
           if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
             setTowersByCell(workerState.towersByCell);
+          }
+           if (workerState.portals.length !== portals.length) {
+            setPortals(workerState.portals);
           }
 
           if (currentStatus !== 'playing') {
@@ -900,7 +906,7 @@ export default function CoopGameLoader() {
       return () => {
           if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
       }
-  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPath, players, gravityWells, persistentClouds, startWave, gameState, workers, ghosts, gameConfig]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, onGameEnd, currentWave, currentPath, players, gravityWells, persistentClouds, portals, startWave, gameState, workers, ghosts, gameConfig]);
 
 
   useEffect(() => {
@@ -983,6 +989,7 @@ export default function CoopGameLoader() {
                 enemies={enemies}
                 workers={workers}
                 ghosts={ghosts}
+                portals={portals}
                 damageNumbers={[]} 
                 splashRings={[]}
                 persistentClouds={persistentClouds}
