@@ -1,7 +1,7 @@
 // src/app/balancing/page.tsx
 'use client';
 
-import { useMemo, useState, ChangeEvent, useCallback } from 'react';
+import { useMemo, useState, ChangeEvent, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { Home, BarChart2, Zap, Save, Loader2, Heart, PlusCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +34,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { loadGameConfig } from '@/lib/game-config-loader';
 
 const ALL_EFFECT_TYPES: TowerEffect['type'][] = [
     'slow', 'stun', 'burn', 'pushback', 'splash', 'multishot', 'chain', 
@@ -184,11 +185,31 @@ const EffectEditor = ({ effect, towerId, effectIndex, onEffectChange, onEffectTy
 
 
 export default function BalancingPage() {
-  const [towers, setTowers] = useState<Tower[]>(() => 
-    initialTowers.map(tower => ({...tower}))
-  );
+  const [towers, setTowers] = useState<Tower[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    async function fetchTowers() {
+      setIsLoading(true);
+      try {
+        const config = await loadGameConfig();
+        setTowers(config.towers);
+      } catch (e) {
+        console.error("Failed to load tower data:", e);
+        toast({
+          title: "Fehler beim Laden",
+          description: "Die Turm-Daten konnten nicht geladen werden. Lokale Standardwerte werden verwendet.",
+          variant: "destructive",
+        });
+        setTowers(initialTowers); // Fallback to local data
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchTowers();
+  }, [toast]);
 
   const towerStats = useMemo(() => {
     return towers
@@ -311,6 +332,15 @@ export default function BalancingPage() {
         setIsSaving(false);
     }
   };
+  
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-4">
+        <Loader2 className="mr-2 h-8 w-8 animate-spin" />
+        <p>Lade Turm-Daten aus Firestore...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">

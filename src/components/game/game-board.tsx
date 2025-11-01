@@ -579,27 +579,35 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           groundCtx.save();
 
           if (cloud.effectType === "burn") {
-            // nutzt direkt radiusPx (=> kommt aus cloud.radius * CELL_SIZE)
-            const GLOW  = 0.75;  // etwas dezenter
-            const MOVE  = 0.8;   // langsamere Bewegung
-            const DENSE = 0.65;  // weniger Partikel
-            const SIZE  = 0.8;   // kleinere Blasen
-            const SPARK = 0.55;  // weniger Funken
+            // ── Regler aus deinen params: radiusPx, duration, potency ─────────────────
+            const remaining = Math.max(0, cloud.expires - now);
+            const fadeT = cloud.duration ? Math.min(1, remaining / cloud.duration) : 0; // 1→0 über Lebenszeit
+            const life  = 1 - fadeT;                          // 0→1
+            const pop   = 1 - (1 - life) * (1 - life);        // easeOutQuad
+            const baseIntensity = 0.35 + 0.65 * pop;          // sofort sichtbar
           
-            const hash = (n: number) => {
-              const s = Math.sin(n) * 43758.5453123;
-              return s - Math.floor(s);
-            };
-            const n2 = (x: number, y: number) => hash(x * 127.1 + y * 311.7 + 19.19);
+            // Wolken-Stärke: sanft auf Optik mappen (0..10 -> 0.5..1.5 / 0.5..1.6)
+            const pot = Math.max(0, (cloud.potency ?? 1));
+            const potNorm = Math.min(1, pot / 10);            // >10 wird visuell gekappt
+            const strengthMul = 0.5 + 1.0 * potNorm;          // Einfluss auf Helligkeit/Alpha
+            const densityMul  = 0.5 + 1.1 * potNorm;          // Einfluss auf Blasen/Funken-Anzahl
           
+            const intensity = Math.min(baseIntensity * strengthMul, 1.0);
+          
+            // dezente Basis
+            const GLOW  = 0.75;
+            const MOVE  = 0.8;
+            const DENSE = 0.65 * densityMul;
+            const SIZE  = 0.8;
+            const SPARK = 0.55 * densityMul;
+          
+            // deterministische "Randoms"
+            const hash=(n:number)=>{const s=Math.sin(n)*43758.5453123;return s-Math.floor(s);};
+            const n2=(x:number,y:number)=>hash(x*127.1+y*311.7+19.19);
             const t = now * 0.001;
-            const life = 1 - fadeT;                        // 0 -> 1 über Lebenszeit
-            const pop  = 1 - (1 - life) * (1 - life);      // easeOutQuad
-            const baseIntensity = 0.35 + 0.65 * pop;       // sofort sichtbar
-            const intensity = Math.min(baseIntensity, 0.8);
             const seed = cloud.id ? cloud.id.charCodeAt(0) : 0;
           
-            // 1) Innerer Glow (kompakt, basiert direkt auf radiusPx)
+            // 1) Innerer Glow — nutzt deinen Radius-Regler (radiusPx)
             const g = groundCtx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radiusPx);
             g.addColorStop(0.00, `rgba(255,170,80,${0.40 * intensity * GLOW})`);
             g.addColorStop(0.45, `rgba(255,110,30,${0.28 * intensity * GLOW})`);
@@ -615,76 +623,68 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             groundCtx.globalCompositeOperation = "lighter";
             const swirlLayers = 3;
             for (let k = 0; k < swirlLayers; k++) {
-              const rot =
-                (seed * 0.13 + k * 2.1) +
-                t * (0.6 + 0.2 * k) * MOVE +
-                pop * 0.3;
-          
+              const rot = (seed*0.13 + k*2.1) + t*(0.6+0.2*k)*MOVE + pop*0.3;
               const r0 = radiusPx * (0.45 + 0.18 * k);
               const baseWidth = radiusPx * (0.08 - 0.02 * k);
               groundCtx.lineWidth = Math.max(1.2, baseWidth * (0.5 + 0.5 * intensity));
-          
-              const hue = 25 + k * 6;
+              const hue = 25 + k*6;
               const alpha = Math.max(0.14, 0.18 * intensity);
               groundCtx.strokeStyle = `hsla(${hue}, 100%, 55%, ${alpha})`;
-          
               groundCtx.beginPath();
-              groundCtx.arc(center.x, center.y, r0, rot, rot + Math.PI * (0.7 - 0.12 * k));
+              groundCtx.arc(center.x, center.y, r0, rot, rot + Math.PI*(0.7 - 0.12*k));
               groundCtx.stroke();
             }
           
-            // 3) Blasen (alles relativ zu radiusPx)
+            // 3) Blasen — Anzahl/Größe hängen am Radius-Regler + potency
             const bubbleCount = Math.max(6, Math.round(14 * DENSE));
             for (let i = 0; i < bubbleCount; i++) {
-              const rA = n2(seed + i * 3.17, seed - i * 1.41);
-              const rB = n2(seed - i * 7.73, seed + i * 5.29);
+              const rA = n2(seed + i*3.17, seed - i*1.41);
+              const rB = n2(seed - i*7.73, seed + i*5.29);
+              const baseAngle = (rA*360) + i*(360/bubbleCount);
+              const swirl = (20*pop) + (t*40*(0.4+0.6*rB)*MOVE);
+              const angle = (baseAngle + swirl) * Math.PI/180;
           
-              const baseAngle = (rA * 360) + i * (360 / bubbleCount);
-              const swirl = (20 * pop) + (t * 40 * (0.4 + 0.6 * rB) * MOVE);
-              const angle = (baseAngle + swirl) * Math.PI / 180;
+              const rise   = (0.12 + 0.70*Math.pow(rA,1.6)) * radiusPx;
+              const jitter = Math.sin(t*3 + i) * (radiusPx*0.05) * (0.4+0.6*rB);
+              const dist   = Math.max(radiusPx*0.12, Math.min(radiusPx*0.75, rise + jitter));
           
-              const rise   = (0.12 + 0.70 * Math.pow(rA, 1.6)) * radiusPx;
-              const jitter = Math.sin(t * 3 + i) * (radiusPx * 0.05) * (0.4 + 0.6 * rB);
-              const dist   = Math.max(radiusPx * 0.12, Math.min(radiusPx * 0.75, rise + jitter));
+              const baseSize = radiusPx * (0.07 + 0.09*rB) * SIZE;
+              const size     = Math.max(0.9, baseSize * (0.8 + 0.2*pop));
           
-              const baseSize = radiusPx * (0.07 + 0.09 * rB) * SIZE;
-              const size     = Math.max(0.9, baseSize * (0.8 + 0.2 * pop));
-          
-              const light = 50 + 20 * rA;
-              const bubbleAlpha = (0.26 + 0.50 * pop) * (0.6 + 0.4 * rB) * intensity;
+              const light = 50 + 20*rA;
+              const bubbleAlpha = (0.26 + 0.50*pop) * (0.6+0.4*rB) * intensity;
           
               groundCtx.fillStyle = `hsla(28, 100%, ${light}%, ${bubbleAlpha})`;
               groundCtx.beginPath();
-              groundCtx.arc(center.x + Math.cos(angle) * dist, center.y + Math.sin(angle) * dist, size, 0, Math.PI * 2);
+              groundCtx.arc(center.x + Math.cos(angle)*dist, center.y + Math.sin(angle)*dist, size, 0, Math.PI*2);
               groundCtx.fill();
           
-              groundCtx.fillStyle = `hsla(35, 100%, 70%, ${0.22 * (0.5 + 0.5 * pop) * intensity})`;
+              groundCtx.fillStyle = `hsla(35,100%,70%,${0.22*(0.5+0.5*pop)*intensity})`;
               groundCtx.beginPath();
-              groundCtx.arc(center.x + Math.cos(angle) * dist, center.y + Math.sin(angle) * dist, Math.max(0.7, size * 0.45), 0, Math.PI * 2);
+              groundCtx.arc(center.x + Math.cos(angle)*dist, center.y + Math.sin(angle)*dist, Math.max(0.7, size*0.45), 0, Math.PI*2);
               groundCtx.fill();
             }
           
-            // 4) Funken (am Rand von radiusPx)
+            // 4) Funken — Menge über potency mitgedeckelt
             const sparks = Math.max(3, Math.round(8 * SPARK));
             groundCtx.lineWidth = 1;
             for (let s = 0; s < sparks; s++) {
-              const rS = Math.abs(Math.sin((seed * 0.7 + s * 9.19) * 0.5));
-              const a = (s * (360 / sparks) + t * (70 + 50 * rS) * MOVE) * Math.PI / 180;
-              const rd = radiusPx * (0.80 + 0.10 * rS);
-              const x = center.x + Math.cos(a) * rd;
-              const y = center.y + Math.sin(a) * rd;
-              const sparkAlpha = Math.max(
-                0.16,
-                0.24 * (0.6 + 0.4 * pop) * (0.8 + 0.2 * Math.sin(t * 6 + s)) * intensity
-              );
-              groundCtx.fillStyle = `hsla(45, 100%, 75%, ${sparkAlpha})`;
+              const rS = Math.abs(Math.sin((seed*0.7 + s*9.19)*0.5));
+              const a = (s*(360/sparks) + t*(70 + 50*rS)*MOVE) * Math.PI/180;
+              const rd = radiusPx * (0.80 + 0.10*rS);
+              const x = center.x + Math.cos(a)*rd;
+              const y = center.y + Math.sin(a)*rd;
+              const sparkAlpha = Math.max(0.16,
+                0.24 * (0.6+0.4*pop) * (0.8+0.2*Math.sin(t*6 + s)) * intensity);
+              groundCtx.fillStyle = `hsla(45,100%,75%,${sparkAlpha})`;
               groundCtx.beginPath();
-              groundCtx.arc(x, y, Math.max(0.8, radiusPx * 0.02), 0, Math.PI * 2);
+              groundCtx.arc(x, y, Math.max(0.8, radiusPx*0.02), 0, Math.PI*2);
               groundCtx.fill();
             }
           
             groundCtx.globalCompositeOperation = prevComp;
           }
+                    
                     
           
           
