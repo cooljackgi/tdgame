@@ -659,12 +659,17 @@ export default function CoopGameLoader() {
           if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
             setTowersByCell(workerState.towersByCell);
           }
-           if (workerState.portals.length !== portals.length) {
-            setPortals(workerState.portals);
+           if (workerState.portals?.length !== (portals || []).length) {
+            setPortals(workerState.portals || []);
           }
 
           if (currentStatus !== 'playing') {
             return;
+          }
+
+          const activePortals = (portals || []).filter(p => p.expiresAt > now);
+          if (activePortals.length !== (portals || []).length) {
+            setPortals(activePortals);
           }
 
 
@@ -826,6 +831,27 @@ export default function CoopGameLoader() {
               
               const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
               if (stunEffect) {
+                  stillAlive.push(updatedEnemy);
+                  continue;
+              }
+
+              // Portal Logic
+              let teleported = false;
+              for (const portal of activePortals) {
+                  if (!portal.active) continue;
+                  const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
+                  if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
+                      updatedEnemy.position = { ...portal.exit };
+                      updatedEnemy.lastTeleportAt = now;
+                      updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
+                      updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+                      updatedEnemy.pathIndex = 0;
+                      updatedEnemy.lastMove = now;
+                      teleported = true;
+                      break; 
+                  }
+              }
+              if (teleported) {
                   stillAlive.push(updatedEnemy);
                   continue;
               }
@@ -1028,7 +1054,7 @@ export default function CoopGameLoader() {
                 isWsConnected={isConnected} 
                 onPing={sendPing}
                 hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                hostBytesSentPerSecond={stats.sentBytesPerSecond}
+                hostBytesSentPerSecond={stats.sentBytesSentPerSecond}
                 clientPacketsPerSecond={stats.packetsPerSecond}
                 clientBytesReceivedPerSecond={stats.bytesPerSecond}
                 averagePacketSize={stats.averagePacketSize}

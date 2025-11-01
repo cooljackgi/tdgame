@@ -406,36 +406,37 @@ function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tow
 }
 
 function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
-  if (!w.current || w.current.order.type !== 'place_portal') return state;
-  const order = w.current.order as PlacePortalOrder;
-  const now = Date.now();
+    if (!w.current || w.current.order.type !== 'place_portal') return state;
+    const order = w.current.order as PlacePortalOrder;
+    const now = Date.now();
 
-  if (order.phase === 'entrance') {
-    state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
-    order.phase = 'exit';
-    const { x, y } = centerOf(order.exit.row, order.exit.col);
-    w.current.targetX = x;
-    w.current.targetY = y;
-    w.state = 'moving';
-    return state;
-  } else { // Phase is 'exit'
-    state.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
-    
-    // Actually create the portal object
-    if (!state.portals) {
-        state.portals = [];
+    if (order.phase === 'entrance') {
+        state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
+        order.phase = 'exit';
+        const { x, y } = centerOf(order.exit.row, order.exit.col);
+        w.current.targetX = x;
+        w.current.targetY = y;
+        w.state = 'moving';
+        w.current.startedAt = now; // Reset timer for next phase
+        w.current.eta = now + order.buildTimeMsExit;
+        return state;
+    } else { // Phase is 'exit'
+        state.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
+        
+        const newPortals = state.portals ? [...state.portals] : [];
+        newPortals.push({
+            id: `portal-${order.createdAt}`,
+            entrance: order.entrance,
+            exit: order.exit,
+            active: true,
+            usesLeft: Infinity,
+            perEnemyCooldownMs: 5000,
+            expiresAt: now + 10000, // Portal lives for 10 seconds
+        });
+        state.portals = newPortals;
+
+        w.current = undefined;
+        w.state = "idle";
+        return startNextOrder(state, w);
     }
-    state.portals.push({
-        id: `portal-${order.createdAt}`,
-        entrance: order.entrance,
-        exit: order.exit,
-        active: true,
-        usesLeft: Infinity, // For now
-        perEnemyCooldownMs: 5000, // Prevent loops
-    });
-
-    w.current = undefined;
-    w.state = "idle";
-    return startNextOrder(state, w);
-  }
 }

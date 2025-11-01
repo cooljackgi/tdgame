@@ -79,6 +79,7 @@ export type Portal = {
   active: boolean;
   usesLeft: number;
   perEnemyCooldownMs: number;
+  expiresAt: number;
 };
 
 

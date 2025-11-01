@@ -566,6 +566,11 @@ export default function SinglePlayerGame({
             if (currentStatus !== 'playing') {
                 return;
             }
+            
+            const activePortals = (portalsRef.current || []).filter(p => p.expiresAt > now);
+            if (activePortals.length !== (portalsRef.current || []).length) {
+                setPortals(activePortals);
+            }
 
 
             setPlayers(prev => prev.map(p => ({
@@ -742,7 +747,7 @@ export default function SinglePlayerGame({
               
                // Portal Logic
                 let teleported = false;
-                for (const portal of portalsRef.current) {
+                for (const portal of activePortals) {
                     if (!portal.active) continue;
                     const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
                     if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
