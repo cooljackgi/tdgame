@@ -920,7 +920,7 @@ export default function CoopGameLoader() {
 
           if (resourcesGainedThisTick > 0) {
               setTotalKilled(k => k + killedThisTick);
-              setPlayers(ps => ps.map(p => p.id === 'player1' ? ({ ...p, resources: p.resources + resourcesGainedThisTick }) : p));
+              setPlayers(ps => ps.map(p => ({ ...p, resources: p.resources + resourcesGainedThisTick })));
           }
 
             if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
