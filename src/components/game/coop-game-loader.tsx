@@ -225,7 +225,9 @@ export default function CoopGameLoader() {
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
                 
-                setFocusedTower(upgradedTower);
+                // FEHLERBEHEBUNG: Der Host darf NICHT den Fokus für sich selbst setzen.
+                // Dies wird nur durch eine lokale Benutzeraktion (Klick) ausgelöst.
+                // setFocusedTower(upgradedTower); 
 
                 setLastUpgradedTowerId(upgradedTower.id);
                 setTimeout(()=>setLastUpgradedTowerId(null), 500);
@@ -893,12 +895,15 @@ export default function CoopGameLoader() {
           
 
           if (livesLostThisTick > 0) {
-              setGameState(gs => ({ ...gs, lives: Math.max(0, gs.lives - livesLostThisTick) }));
+              setGameState(gs => {
+                  const newLives = Math.max(0, gs.lives - livesLostThisTick);
+                  if (newLives === 0 && gameStatus !== 'gameover') {
+                      onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
+                      setGameStatus('gameover');
+                  }
+                  return { ...gs, lives: newLives };
+              });
               setTotalLeaked(l => l + livesLostThisTick);
-              if (gameState.lives - livesLostThisTick <= 0 && gameStatus !== 'gameover') {
-                  onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
-                  setGameStatus('gameover');
-              }
           }
           
           if (livesGainedThisTick > 0) {

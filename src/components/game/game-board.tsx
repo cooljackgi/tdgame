@@ -1416,22 +1416,9 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const onTowerClick = useCallback((e: React.MouseEvent, clickedTower: PlacedTower) => {
     e.stopPropagation();
-  
-    // ignore if the pointer moved (drag vs. click)
-    const moved =
-      Math.hypot(e.clientX - panStartRef.current.x, e.clientY - panStartRef.current.y) > 5;
-    if (moved) return;
-  
-    if (selectedTowerToBuild) {
-      // exit build mode and select the tower that was tapped/clicked
-      cancelInteractions(); // this should clear the "build" selection
-      requestAnimationFrame(() => onFocusTower(clickedTower));
-      return;
-    }
-  
-    // normal behavior when not building
+    // FEHLERBEHEBUNG: Klick-Logik vereinfacht
     onFocusTower(clickedTower);
-  }, [cancelInteractions, onFocusTower, selectedTowerToBuild]);
+  }, [onFocusTower]);
   
 
   const handlePingSelect = (kind: PingKind) => {
