@@ -669,12 +669,11 @@ export default function CoopGameLoader() {
           const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
           setWorkers(workerState.workers);
           setGhosts(workerState.ghosts);
+          setPortals(workerState.portals ?? portals);
           if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
             setTowersByCell(workerState.towersByCell);
           }
-           if(workerState.portals) {
-              setPortals(workerState.portals);
-          }
+
 
           if (currentStatus !== 'playing') {
             return;
@@ -697,8 +696,6 @@ export default function CoopGameLoader() {
           }
           
           let livesLostThisTick = 0;
-          let resourcesGainedThisTick = 0;
-          let livesGainedThisTick = 0;
           let killedThisTick = 0;
           
           let allNewAttacks: Attack[] = [];
@@ -710,6 +707,8 @@ export default function CoopGameLoader() {
           let newPersistentClouds: PersistentCloud[] = [];
           
           let currentEnemies = enemies.map(e => ({...e, wasHit: false }));
+          let currentTowersByCell = { ...towersByCell };
+          let currentPlayers = [...players];
           
           const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
           if (spawnQueueRef.current.length > 0) {
@@ -724,10 +723,10 @@ export default function CoopGameLoader() {
           
           let firingIds = new Set<string>();
 
-          for (const tower of Object.values(towersByCell)) {
+          for (const tower of Object.values(currentTowersByCell)) {
               if (now - tower.lastAttack < tower.attackSpeed) continue;
 
-              const auraTowers = Object.values(towersByCell).filter(t => t.effects?.some(e => e.type === 'aura'));
+              const auraTowers = Object.values(currentTowersByCell).filter(t => t.effects?.some(e => e.type === 'aura'));
               let isBuffed = false;
               for (const aura of auraTowers) {
                   const distSq = (tower.position.col - aura.position.col)**2 + (tower.position.row - aura.position.row)**2;
@@ -765,6 +764,9 @@ export default function CoopGameLoader() {
                   firingIds.add(tower.id);
                   
                   let enemiesForThisTick = [...currentEnemies];
+                  let livesGainedThisTick = 0;
+                  let resourcesGainedThisTick = 0;
+
                   for (const target of targets) {
                       const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
                       enemiesForThisTick = result.updatedEnemies;
@@ -783,6 +785,13 @@ export default function CoopGameLoader() {
                       
                   }
                   currentEnemies = enemiesForThisTick;
+
+                  if (livesGainedThisTick > 0) {
+                      setGameState(gs => ({...gs, lives: gs.lives + livesGainedThisTick}));
+                  }
+                  if (resourcesGainedThisTick > 0) {
+                      currentPlayers = currentPlayers.map(p => ({ ...p, resources: p.resources + resourcesGainedThisTick }));
+                  }
               }
           }
           
@@ -899,9 +908,12 @@ export default function CoopGameLoader() {
               }
           }
           
+          setTowersByCell(currentTowersByCell);
+          setPlayers(currentPlayers);
           setEnemies(stillAlive);
           setGravityWells(activeGravityWells);
           setPersistentClouds(activePersistentClouds);
+          if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
           
 
           if (livesLostThisTick > 0) {
@@ -916,14 +928,6 @@ export default function CoopGameLoader() {
               setTotalLeaked(l => l + livesLostThisTick);
           }
           
-          if (livesGainedThisTick > 0) {
-             setGameState(gs => ({ ...gs, lives: gs.lives + livesGainedThisTick }));
-          }
-
-          if (resourcesGainedThisTick > 0) {
-              setTotalKilled(k => k + killedThisTick);
-              setPlayers(ps => ps.map(p => ({ ...p, resources: p.resources + resourcesGainedThisTick })));
-          }
 
             if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
                 let updatedPortals = portals || [];
@@ -981,24 +985,33 @@ export default function CoopGameLoader() {
   }, [cancelInteractions]);
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
+    const state: GameSessionState = { players: players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+    
     if (portalPhase !== 'idle') {
       if (portalPhase === 'entrance') {
           setPortalEntrance({ row, col });
           setPortalPhase('exit');
           return;
       } else if (portalPhase === 'exit' && portalEntrance) {
-          dispatchAction('place_portal', { entrance: portalEntrance, exit: { row, col } });
+          const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
+          setPlayers(newState.players);
+          setWorkers(newState.workers);
+          setPortals(newState.portals ?? []);
           cancelInteractions();
           return;
       }
     }
     
     if (selectedTowerToBuild) {
-        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
+        const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
+        setPlayers(newState.players);
+        setGhosts(newState.ghosts);
+        setWorkers(newState.workers);
     } else {
-        dispatchAction('move_worker', { row, col });
+        const newState = enqueueMoveOrder(state, 'worker-1', row, col);
+        setWorkers(newState.workers);
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, dispatchAction, cancelInteractions]);
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
   
   if (loading || configLoading || !gameDataLoaded || !localPlayerId || !localPlayer || !gameConfig) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spiel...</p></div>;
@@ -1054,7 +1067,7 @@ export default function CoopGameLoader() {
                 interactionPrompt={interactionPrompt} 
                 cancelInteractions={cancelInteractions}
                 onSelectTowerToBuild={onSelectTowerToBuild}
-                onEnterPortalMode={handleEnterPortalMode}
+                onEnterPortalMode={onEnterPortalMode}
                 handleUpgradeTower={handleUpgradeTowerAction}
                 handleSellTower={handleSellTowerAction}
                 setFocusedTower={setFocusedTower}
