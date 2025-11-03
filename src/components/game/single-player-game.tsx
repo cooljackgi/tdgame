@@ -585,7 +585,6 @@ export default function SinglePlayerGame({
             }
 
             let currentEnemies = enemiesRef.current.map(e => ({ ...e, wasHit: false }));
-            let currentTowersByCell = { ...towersByCellRef.current };
 
             const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
             if (spawnQueueRef.current.length > 0) {
@@ -609,7 +608,7 @@ export default function SinglePlayerGame({
             let killedThisTick = 0;
             let newGravityWells: GravityWell[] = [];
 
-            Object.values(currentTowersByCell).forEach(tower => {
+            Object.values(towersByCellRef.current).forEach(tower => {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
                     const isBuffed = buffedTowerIds.has(tower.id);
                     let target: Enemy | null = null;
@@ -625,7 +624,14 @@ export default function SinglePlayerGame({
                     });
                     
                     if (target) {
-                        tower.lastAttack = now;
+                        setTowersByCell(prev => ({
+                            ...prev,
+                            [`${tower.position.row}_${tower.position.col}`]: {
+                                ...tower,
+                                lastAttack: now,
+                            }
+                        }));
+
                         firingIds.add(tower.id);
                         
                         const result = processAttack(tower, target, currentEnemies, now, isBuffed);
@@ -758,7 +764,6 @@ export default function SinglePlayerGame({
                }
             }
             
-            setTowersByCell(currentTowersByCell); // Persist lastAttack updates
             setEnemies(nextEnemies);
             setGravityWells(activeGravityWells);
             setPersistentClouds(activePersistentClouds);
