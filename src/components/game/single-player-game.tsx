@@ -560,7 +560,7 @@ export default function SinglePlayerGame({
             const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
             setWorkers(workerState.workers);
             setGhosts(workerState.ghosts);
-            setPortals(workerState.portals ?? portalsRef.current);
+            if (workerState.portals) setPortals(workerState.portals);
             if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
               setTowersByCell(workerState.towersByCell);
             }
@@ -607,8 +607,9 @@ export default function SinglePlayerGame({
             let livesGainedThisTick = 0;
             let killedThisTick = 0;
             let newGravityWells: GravityWell[] = [];
+            let updatedTowers = { ...towersByCellRef.current };
 
-            Object.values(towersByCellRef.current).forEach(tower => {
+            Object.values(updatedTowers).forEach(tower => {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
                     const isBuffed = buffedTowerIds.has(tower.id);
                     let target: Enemy | null = null;
@@ -624,14 +625,7 @@ export default function SinglePlayerGame({
                     });
                     
                     if (target) {
-                        setTowersByCell(prev => ({
-                            ...prev,
-                            [`${tower.position.row}_${tower.position.col}`]: {
-                                ...tower,
-                                lastAttack: now,
-                            }
-                        }));
-
+                        tower.lastAttack = now;
                         firingIds.add(tower.id);
                         
                         const result = processAttack(tower, target, currentEnemies, now, isBuffed);
@@ -651,6 +645,8 @@ export default function SinglePlayerGame({
                     }
                 }
             });
+
+            setTowersByCell(updatedTowers); // Apply all cooldown updates at once
 
             if (firingIds.size > 0) setFiringTowerIds(firingIds);
             if (allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);

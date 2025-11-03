@@ -274,7 +274,7 @@ export default function CoopGameLoader() {
                 
                 const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && players.find(origP => origP.id === p.id));
                 const allPlayersHavePicked = activePlayers.every(p => {
-                    if (!p.unlockedElements) return false;
+                    if (!p || !p.unlockedElements) return false;
                     if (p.unlockedElements.length >= 8) return true; // Maxed out
                     return p.unlockedElements.length >= expectedElementsAfterPick;
                 });
@@ -692,8 +692,11 @@ export default function CoopGameLoader() {
           let currentEnemies = enemies.map(e => ({...e, wasHit: false }));
           
           let firingIds = new Set<string>();
+          let updatedTowers = { ...towersByCell }; // Create a mutable copy for this frame
+          let resourcesGainedThisTick = { player1: 0, player2: 0 };
 
-          Object.values(towersByCell).forEach(tower => {
+
+          Object.values(updatedTowers).forEach(tower => {
               if (now - tower.lastAttack < tower.attackSpeed) return;
               
               const isBuffed = false; // Simplified for now
@@ -710,14 +713,8 @@ export default function CoopGameLoader() {
               });
 
               if (target) {
-                  setTowersByCell(prev => ({
-                    ...prev,
-                    [`${tower.position.row}_${tower.position.col}`]: {
-                        ...tower,
-                        lastAttack: now
-                    }
-                  }));
-
+                  // CRITICAL FIX: Update the lastAttack time on the mutable copy
+                  tower.lastAttack = now;
                   firingIds.add(tower.id);
                   
                   const result = processAttack(tower, target, currentEnemies, now, isBuffed);
@@ -732,7 +729,10 @@ export default function CoopGameLoader() {
                   if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                   if (result.resourcesGained > 0) {
-                      setPlayers(prev => prev.map(p => ({...p, resources: p.resources + result.resourcesGained})));
+                      players.forEach(p => {
+                          const key = p.id as 'player1' | 'player2';
+                          resourcesGainedThisTick[key] += result.resourcesGained;
+                      });
                   }
                   if (result.livesGained > 0) {
                       setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
@@ -740,6 +740,9 @@ export default function CoopGameLoader() {
                   if (result.killed > 0) killedThisTick += result.killed;
               }
           });
+          
+          // FINAL STEP: Apply the batched update for tower cooldowns
+          setTowersByCell(updatedTowers);
           
           if (firingIds.size > 0) {
             setFiringTowerIds(firingIds);
@@ -869,6 +872,13 @@ export default function CoopGameLoader() {
                   return { ...gs, lives: newLives };
               });
               setTotalLeaked(l => l + livesLostThisTick);
+          }
+          
+          if (resourcesGainedThisTick.player1 > 0 || resourcesGainedThisTick.player2 > 0) {
+              setPlayers(prev => prev.map(p => {
+                  const gain = resourcesGainedThisTick[p.id as 'player1' | 'player2'] || 0;
+                  return { ...p, resources: p.resources + gain };
+              }));
           }
           
 
