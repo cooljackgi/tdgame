@@ -113,7 +113,8 @@ const EffectEditor = ({ effect, towerId, effectIndex, onEffectChange, onEffectTy
             case 'splash':
                  return (
                     <>
-                        <EffectInput label="Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="Schaden-Radius" value={params.radius ?? 0} onChange={(e) => onEffectChange(towerId, effectIndex, 'radius', parseFloat(e.target.value))} step={0.1} />
+                        <EffectInput label="VFX-Radius" value={params.vfxRadius ?? (params.radius ?? 0)} onChange={(e) => onEffectChange(towerId, effectIndex, 'vfxRadius', parseFloat(e.target.value))} step={0.1} />
                         <EffectInput label="Stärke (%)" value={(params.potency ?? 0) * 100} onChange={(e) => onEffectChange(towerId, effectIndex, 'potency', parseFloat(e.target.value) / 100)} step={1} />
                     </>
                  );
