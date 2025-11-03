@@ -92,7 +92,7 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, a: DemoAttack, t: 
 
 export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: number) {
     const pos = { x: s.x, y: s.y };
-    const maxRadius = s.r * CELL_SIZE;
+    const maxRadius = (s.vfxRadius ?? s.r) * CELL_SIZE;
     const easeOutT = 1 - (1 - t) * (1 - t);
     const tSquared = t * t;
     const tRoot = Math.sqrt(t);
@@ -301,6 +301,7 @@ export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: Persis
             const r = 2 + 4 * rng();
             const speed = 12 + 24 * rng();
             const phase = rng() * 5000;
+            const radiusPx = maxRadius;
             const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
             const rise = -prog + maxRadius * 0.8;
             const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
