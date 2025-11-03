@@ -609,60 +609,42 @@ export default function SinglePlayerGame({
             let killedThisTick = 0;
             let newGravityWells: GravityWell[] = [];
 
-            const towers = Object.values(currentTowersByCell);
-            
-            for (const tower of towers) {
+            Object.values(currentTowersByCell).forEach(tower => {
                 if (now - tower.lastAttack >= tower.attackSpeed) {
                     const isBuffed = buffedTowerIds.has(tower.id);
-                    let targets: Enemy[] = [];
+                    let target: Enemy | null = null;
+                    let minDistanceSq = tower.range * tower.range;
 
-                    if (tower.effects?.some(e => e.type === 'multishot')) {
-                        const effect = tower.effects.find(e => e.type === 'multishot')!;
-                        const potentialTargets = currentEnemies.filter(enemy => {
-                            if (enemy.deathTimestamp) return false;
-                            const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                            return distSq <= tower.range * tower.range;
-                        }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
-                        targets.push(...potentialTargets);
-                    } else {
-                        let target: Enemy | null = null;
-                        let minDistanceSq = tower.range * tower.range;
-                        currentEnemies.forEach(enemy => {
-                            if (enemy.deathTimestamp) return;
-                            const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                            if (distSq <= minDistanceSq) {
-                                minDistanceSq = distSq;
-                                target = enemy;
-                            }
-                        });
-                        if (target) targets.push(target);
-                    }
+                    currentEnemies.forEach(enemy => {
+                        if (enemy.deathTimestamp) return;
+                        const distSq = (tower.position.col - enemy.position.col)**2 + (tower.position.row - enemy.position.row)**2;
+                        if (distSq <= minDistanceSq) {
+                            minDistanceSq = distSq;
+                            target = enemy;
+                        }
+                    });
                     
-                    if (targets.length > 0) {
+                    if (target) {
                         tower.lastAttack = now;
                         firingIds.add(tower.id);
                         
-                        let enemiesForThisTick = [...currentEnemies];
-                        for (const target of targets) {
-                            const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
-                            enemiesForThisTick = result.updatedEnemies;
-                            
-                            allNewAttacks.push(...result.newAttacks);
-                            allNewDamageNumbers.push(...result.damageNumbers);
-                            allNewSplashRings.push(...result.splashRings);
-                            allNewLifeGainVfx.push(...result.lifeGainVfx);
-                            result.soundEvents.forEach(ev => audioManager.play(ev));
-                            if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
-                            if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
+                        const result = processAttack(tower, target, currentEnemies, now, isBuffed);
+                        
+                        currentEnemies = result.updatedEnemies;
+                        allNewAttacks.push(...result.newAttacks);
+                        allNewDamageNumbers.push(...result.damageNumbers);
+                        allNewSplashRings.push(...result.splashRings);
+                        allNewLifeGainVfx.push(...result.lifeGainVfx);
+                        result.soundEvents.forEach(ev => audioManager.play(ev));
+                        if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
+                        if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
-                            if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
-                            if (result.killed > 0) killedThisTick += result.killed;
-                            if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
-                        }
-                        currentEnemies = enemiesForThisTick;
+                        if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
+                        if (result.killed > 0) killedThisTick += result.killed;
+                        if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
                     }
                 }
-            }
+            });
 
             if (firingIds.size > 0) setFiringTowerIds(firingIds);
             if (allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);

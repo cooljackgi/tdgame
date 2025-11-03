@@ -228,9 +228,6 @@ export default function CoopGameLoader() {
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
                 
-                // CRITICAL FIX: Do NOT set focusedTower on the host in response to a network action.
-                // This is a local UI state.
-                // setFocusedTower(upgradedTower); 
 
                 setLastUpgradedTowerId(upgradedTower.id);
                 setTimeout(()=>setLastUpgradedTowerId(null), 500);
@@ -251,8 +248,7 @@ export default function CoopGameLoader() {
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
-                 // CRITICAL FIX: Do not set focusedTower on host.
-                 // setFocusedTower(null);
+
                  break;
             }
             case 'pick_element': {
@@ -323,17 +319,13 @@ export default function CoopGameLoader() {
         setPlayers(payload.players);
         setEnemies(payload.enemies);
         
-        // This is a crucial part of the fix. We should not blindly accept the host's `focusedTower`,
-        // as that is a local UI state. We only update our local focus if the tower has changed *underneath* us.
         if (focusedTower) {
             const updatedFocusedTower = payload.towersByCell[`${focusedTower.position.row}_${focusedTower.position.col}`];
             if (updatedFocusedTower) {
-                // Only update if the spec (upgrade) has changed, not for minor state like lastAttack
                 if (updatedFocusedTower.specId !== focusedTower.specId) {
                     setFocusedTower(updatedFocusedTower);
                 }
             } else {
-                // The tower we were focusing on was sold.
                 setFocusedTower(null);
             }
         }
@@ -501,7 +493,7 @@ export default function CoopGameLoader() {
             totalKilled, totalLeaked,
             gravityWells,
             persistentClouds,
-            workers, ghosts, portals, // Correctly include portals in the snapshot
+            workers, ghosts, portals,
             fps,
         };
         sendGameDataRef.current('GAME_STATE_SNAPSHOT', snapshot);
@@ -723,77 +715,46 @@ export default function CoopGameLoader() {
           
           let firingIds = new Set<string>();
 
-          for (const tower of Object.values(currentTowersByCell)) {
-              if (now - tower.lastAttack < tower.attackSpeed) continue;
+          Object.values(currentTowersByCell).forEach(tower => {
+              if (now - tower.lastAttack < tower.attackSpeed) return;
+              
+              const isBuffed = false; // Simplified for now
+              let target: Enemy | null = null;
+              let minDistanceSq = tower.range * tower.range;
 
-              const auraTowers = Object.values(currentTowersByCell).filter(t => t.effects?.some(e => e.type === 'aura'));
-              let isBuffed = false;
-              for (const aura of auraTowers) {
-                  const distSq = (tower.position.col - aura.position.col)**2 + (tower.position.row - aura.position.row)**2;
-                  if (distSq <= (aura.range ** 2)) {
-                      isBuffed = true;
-                      break;
+              currentEnemies.forEach(enemy => {
+                  if (enemy.deathTimestamp) return;
+                  const distSq = (tower.position.col - enemy.position.col)**2 + (tower.position.row - enemy.position.row)**2;
+                  if (distSq <= minDistanceSq) {
+                      minDistanceSq = distSq;
+                      target = enemy;
                   }
-              }
+              });
 
-              let targets: Enemy[] = [];
-              if (tower.effects?.some(e => e.type === 'multishot')) {
-                  const effect = tower.effects.find(e => e.type === 'multishot')!;
-                  const potentialTargets = currentEnemies.filter(enemy => {
-                      if (enemy.deathTimestamp) return false;
-                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                      return distSq <= tower.range * tower.range;
-                  }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
-                  targets.push(...potentialTargets);
-              } else {
-                  let target: Enemy | null = null;
-                  let minDistanceSq = tower.range * tower.range;
-                  currentEnemies.forEach(enemy => {
-                      if (enemy.deathTimestamp) return; // Ignore dying enemies
-                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                      if (distSq <= minDistanceSq) {
-                          minDistanceSq = distSq;
-                          target = enemy;
-                      }
-                  });
-                  if (target) targets.push(target);
-              }
-
-              if (targets.length > 0) {
-                  tower.lastAttack = now;
+              if (target) {
+                  tower.lastAttack = now; // Update the copy
                   firingIds.add(tower.id);
                   
-                  let enemiesForThisTick = [...currentEnemies];
-                  let livesGainedThisTick = 0;
-                  let resourcesGainedThisTick = 0;
+                  const result = processAttack(tower, target, currentEnemies, now, isBuffed);
+                  
+                  currentEnemies = result.updatedEnemies;
+                  allNewAttacks.push(...result.newAttacks);
+                  allNewDamageNumbers.push(...result.damageNumbers);
+                  allNewSplashRings.push(...result.splashRings);
+                  allNewLifeGainVfx.push(...result.lifeGainVfx);
+                  allSoundEvents.push(...result.soundEvents);
+                  if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
+                  if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
-                  for (const target of targets) {
-                      const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
-                      enemiesForThisTick = result.updatedEnemies;
-                      
-                      allNewAttacks.push(...result.newAttacks);
-                      allNewDamageNumbers.push(...result.damageNumbers);
-                      allNewSplashRings.push(...result.splashRings);
-                      allNewLifeGainVfx.push(...result.lifeGainVfx);
-                      allSoundEvents.push(...result.soundEvents);
-                      if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
-                      if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
-
-                      if (result.resourcesGained > 0) resourcesGainedThisTick += result.resourcesGained;
-                      if (result.livesGained > 0) livesGainedThisTick += result.livesGained;
-                      if (result.killed > 0) killedThisTick += result.killed;
-                      
+                  if (result.resourcesGained > 0) {
+                      currentPlayers.forEach(p => p.resources += result.resourcesGained);
                   }
-                  currentEnemies = enemiesForThisTick;
-
-                  if (livesGainedThisTick > 0) {
-                      setGameState(gs => ({...gs, lives: gs.lives + livesGainedThisTick}));
+                  if (result.livesGained > 0) {
+                      setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
                   }
-                  if (resourcesGainedThisTick > 0) {
-                      currentPlayers = currentPlayers.map(p => ({ ...p, resources: p.resources + resourcesGainedThisTick }));
-                  }
+                  if (result.killed > 0) killedThisTick += result.killed;
               }
-          }
+          });
           
           if (firingIds.size > 0) {
             setFiringTowerIds(firingIds);
