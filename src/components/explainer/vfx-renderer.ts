@@ -1,3 +1,4 @@
+
 // src/components/explainer/vfx-renderer.ts
 
 import type { Tower, SplashRing, Element, Attack, PoisonCloud, PersistentCloudEffect, PersistentCloud } from '@/lib/game-data/types';
