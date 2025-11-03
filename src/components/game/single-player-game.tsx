@@ -625,7 +625,7 @@ export default function SinglePlayerGame({
                     });
                     
                     if (target) {
-                        tower.lastAttack = now;
+                        updatedTowers = { ...updatedTowers, [tower.id]: { ...tower, lastAttack: now } };
                         firingIds.add(tower.id);
                         
                         const result = processAttack(tower, target, currentEnemies, now, isBuffed);
@@ -645,10 +645,9 @@ export default function SinglePlayerGame({
                     }
                 }
             });
+            setTowersByCell(updatedTowers);
 
-            setTowersByCell(updatedTowers); // Apply all cooldown updates at once
-
-            if (firingIds.size > 0) setFiringTowerIds(firingIds);
+            setFiringTowerIds(firingIds);
             if (allNewAttacks.length > 0) setAttacks(prev => [...prev, ...allNewAttacks]);
             if (allNewDamageNumbers.length > 0) setDamageNumbers(prev => [...prev, ...allNewDamageNumbers]);
             if (allNewSplashRings.length > 0) setSplashRings(prev => [...prev, ...allNewSplashRings]);

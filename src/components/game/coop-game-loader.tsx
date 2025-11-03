@@ -692,63 +692,62 @@ export default function CoopGameLoader() {
           let currentEnemies = enemies.map(e => ({...e, wasHit: false }));
           
           let firingIds = new Set<string>();
-          let updatedTowers = { ...towersByCell }; // Create a mutable copy for this frame
-          let resourcesGainedThisTick = { player1: 0, player2: 0 };
+          let updatedTowers = { ...towersByCell }; 
+          const resourcesGainedThisTick = { player1: 0, player2: 0 };
 
 
           Object.values(updatedTowers).forEach(tower => {
-              if (now - tower.lastAttack < tower.attackSpeed) return;
-              
-              const isBuffed = false; // Simplified for now
-              let target: Enemy | null = null;
-              let minDistanceSq = tower.range * tower.range;
-
-              currentEnemies.forEach(enemy => {
-                  if (enemy.deathTimestamp) return;
-                  const distSq = (tower.position.col - enemy.position.col)**2 + (tower.position.row - enemy.position.row)**2;
-                  if (distSq <= minDistanceSq) {
-                      minDistanceSq = distSq;
-                      target = enemy;
-                  }
-              });
-
-              if (target) {
-                  // CRITICAL FIX: Update the lastAttack time on the mutable copy
-                  tower.lastAttack = now;
-                  firingIds.add(tower.id);
+              if (now - tower.lastAttack >= tower.attackSpeed) {
                   
-                  const result = processAttack(tower, target, currentEnemies, now, isBuffed);
-                  
-                  currentEnemies = result.updatedEnemies;
-                  allNewAttacks.push(...result.newAttacks);
-                  allNewDamageNumbers.push(...result.damageNumbers);
-                  allNewSplashRings.push(...result.splashRings);
-                  allNewLifeGainVfx.push(...result.lifeGainVfx);
-                  allSoundEvents.push(...result.soundEvents);
-                  if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
-                  if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
+                  const isBuffed = false; // Simplified for now
+                  let target: Enemy | null = null;
+                  let minDistanceSq = tower.range * tower.range;
 
-                  if (result.resourcesGained > 0) {
-                      players.forEach(p => {
-                          const key = p.id as 'player1' | 'player2';
-                          resourcesGainedThisTick[key] += result.resourcesGained;
-                      });
+                  currentEnemies.forEach(enemy => {
+                      if (enemy.deathTimestamp) return;
+                      const distSq = (tower.position.col - enemy.position.col)**2 + (tower.position.row - enemy.position.row)**2;
+                      if (distSq <= minDistanceSq) {
+                          minDistanceSq = distSq;
+                          target = enemy;
+                      }
+                  });
+
+                  if (target) {
+                      updatedTowers[tower.id] = { ...tower, lastAttack: now };
+                      firingIds.add(tower.id);
+                      
+                      const result = processAttack(tower, target, currentEnemies, now, isBuffed);
+                      
+                      currentEnemies = result.updatedEnemies;
+                      allNewAttacks.push(...result.newAttacks);
+                      allNewDamageNumbers.push(...result.damageNumbers);
+                      allNewSplashRings.push(...result.splashRings);
+                      allNewLifeGainVfx.push(...result.lifeGainVfx);
+                      allSoundEvents.push(...result.soundEvents);
+                      if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
+                      if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
+
+                      if (result.resourcesGained > 0) {
+                          players.forEach(p => {
+                              const key = p.id as 'player1' | 'player2';
+                              resourcesGainedThisTick[key] += result.resourcesGained;
+                          });
+                      }
+                      if (result.livesGained > 0) {
+                          setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
+                      }
+                      if (result.killed > 0) killedThisTick += result.killed;
                   }
-                  if (result.livesGained > 0) {
-                      setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
-                  }
-                  if (result.killed > 0) killedThisTick += result.killed;
               }
           });
           
-          // FINAL STEP: Apply the batched update for tower cooldowns
           setTowersByCell(updatedTowers);
           
+          setFiringTowerIds(firingIds);
           if (firingIds.size > 0) {
-            setFiringTowerIds(firingIds);
             sendGameDataRef.current('VFX_TOWER_FIRING', Array.from(firingIds));
-            setTimeout(() => setFiringTowerIds(new Set()), 150);
           }
+          
           if (allNewAttacks.length > 0) {
             gameBoardRef.current?.queueAttacks(allNewAttacks);
             sendGameDataRef.current('VFX_ATTACK', allNewAttacks);
@@ -775,6 +774,7 @@ export default function CoopGameLoader() {
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
           const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > now);
+          const activePortals = portals.filter(p => p.expiresAt > now || p.expiresAt === 0);
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
