@@ -873,7 +873,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
             if (t >= 1) { splashRingsPoolRef.current.free(s); return; }
             
             const pos = gridToPx({ row: s.y, col: s.x });
-            const maxRadius = s.r * CELL_SIZE;
+            const maxRadius = (s.vfxRadius ?? s.r) * CELL_SIZE;
             const easeOutT = 1 - (1 - t) * (1 - t);
             const tSquared = t * t;
             const tRoot = Math.sqrt(t);
@@ -1828,4 +1828,5 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 GameBoard.displayName = 'GameBoard';
 export default GameBoard;
 
+    
     
