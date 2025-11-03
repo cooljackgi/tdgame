@@ -1,3 +1,4 @@
+
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
@@ -146,6 +147,7 @@ export function processAttack(
             x: currentTarget.position.col,
             y: currentTarget.position.row,
             r: splashEffect.radius!,
+            vfxR: splashEffect.vfxRadius,
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
             element: tower.elements[0],
             vfxType: splashEffect.vfxType

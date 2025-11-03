@@ -94,6 +94,7 @@ export type TowerEffect = {
   chance?: number; // 0 to 1 for stun/crit etc.
   distance?: number; // for pushback
   radius?: number; // for splash damage or cloud radius
+  vfxRadius?: number; // for visual-only radius of effects like splash
   targets?: number; // for multishot
   bounces?: number; // for chain
   vfxType?: SplashRingVfxType;
@@ -165,6 +166,7 @@ export type SplashRing = {
     x: number;
     y: number;
     r: number;
+    vfxR?: number; // Visual radius override
     color: string;
     element: Element;
     start?: number;
