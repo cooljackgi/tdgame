@@ -258,7 +258,7 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
               break;
           }
         default: { // Default shockwave
-          const shockwaveRadius = maxRadius * easeOutT;
+          const shockwaveRadius = (s.vfxRadius ?? s.r) * CELL_SIZE * easeOutT;
           const shockwaveAlpha = 1 - tSquared;
           const shockwaveWidth = (2 + (1 - t) * 4);
           ctx.shadowBlur = 15;
@@ -277,12 +277,9 @@ export function drawSplashRing(ctx: CanvasRenderingContext2D, s: SplashRing, t: 
 export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: PersistentCloud, now: number) {
     const pos = { x: cloud.x * CELL_SIZE, y: cloud.y * CELL_SIZE };
     const maxRadius = cloud.radius * CELL_SIZE;
-    const lifetime = cloud.duration; // Use the effect duration for visual lifetime
-    const t = 1 - Math.max(0, (cloud.expires - now) / lifetime);
     
     ctx.save();
     
-    // Hash the ID to get a stable random seed for this cloud
     const hashStr = (s: string) => {
         let h = 2166136261 >>> 0;
         for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h += (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24); }
@@ -293,7 +290,22 @@ export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: Persis
     if (cloud.effectType === 'poison') {
         const rng = rngFactory(hashStr(cloud.id));
         const bubbleCount = 10 + Math.floor(rng() * 6);
-        const drift = 0.15 + 0.1 * Math.sin(now * 0.001);
+        const remaining = Math.max(0, cloud.expires - now);
+        const lifetime = cloud.duration; // cloud's own visual lifetime
+        const fadeT = Math.min(1, remaining / lifetime);
+        const popInT = 1 - Math.min(1, (now - (cloud.expires - lifetime)) / 500); // 500ms pop-in
+        const visT = 1 - popInT;
+
+        // Base cloud layer
+        const grad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, maxRadius);
+        grad.addColorStop(0, `rgba(34, 197, 94, ${0.1 * fadeT * visT})`);
+        grad.addColorStop(0.7, `rgba(16, 110, 53, ${0.05 * fadeT * visT})`);
+        grad.addColorStop(1, `rgba(16, 110, 53, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, maxRadius, 0, 2 * Math.PI);
+        ctx.fill();
+
 
         for (let i = 0; i < bubbleCount; i++) {
             const baseAngle = rng() * Math.PI * 2;
@@ -306,15 +318,17 @@ export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: Persis
             const prog = ((now + phase) * 0.001 * speed) % (radiusPx * 1.6);
             const rise = -prog + maxRadius * 0.8;
             const wobble = 0.35 * Math.sin((now + phase) * 0.003 + i);
-            const x = pos.x + Math.cos(baseAngle + wobble) * pathR * (1 + 0.15 * drift);
+            const x = pos.x + Math.cos(baseAngle + wobble) * pathR;
             const y = pos.y + Math.sin(baseAngle + wobble) * pathR + rise;
-            if (Math.hypot(x - pos.x, y - pos.y) > maxRadius) continue;
+            
+            const distFromCenter = Math.hypot(x - pos.x, y - pos.y);
+            if (distFromCenter > maxRadius) continue;
             
             const toTop = (pos.y - y + maxRadius) / (2 * maxRadius);
-            const a = Math.max(0, Math.min(1, 0.35 * t * (0.5 + 0.5 * toTop)));
+            const alpha = Math.max(0, Math.min(1, 0.45 * (0.5 + 0.5 * toTop)) * fadeT * visT);
             
             ctx.save();
-            ctx.globalAlpha = a;
+            ctx.globalAlpha = alpha;
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(209,250,229,0.18)';
@@ -333,13 +347,13 @@ export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: Persis
         const radiusPx = maxRadius;
         
         const remaining = Math.max(0, cloud.expires - now);
-        const cloudLifetime = 10000; // Cloud lingers for 10s
-        const fadeT = 1 - Math.max(0, (cloud.expires - now) / cloudLifetime);
+        const cloudLifetime = cloud.duration || 5000;
+        const fadeT = Math.min(1, remaining / cloudLifetime);
 
 
-        const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * (1 - fadeT)));
+        const inner = Math.max(0, radiusPx * 0.35 * (0.7 + 0.3 * fadeT));
         const grad = ctx.createRadialGradient(center.x, center.y, inner, center.x, center.y, radiusPx);
-        grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * (1 - fadeT)})`);
+        grad.addColorStop(0, `rgba(56, 189, 248, ${0.12 * fadeT})`);
         grad.addColorStop(1, `rgba(56, 189, 248, 0)`);
         
         ctx.fillStyle = grad;
@@ -355,13 +369,83 @@ export function drawPersistentCloud(ctx: CanvasRenderingContext2D, cloud: Persis
             const rad = angle * Math.PI / 180;
             const dist = rng() * radiusPx;
             const size = 1 + rng() * 2;
-            const alpha = (0.1 + rng() * 0.2) * (1-fadeT);
+            const alpha = (0.1 + rng() * 0.2) * fadeT;
 
             ctx.fillStyle = `rgba(180, 220, 255, ${alpha})`;
             ctx.beginPath();
             ctx.arc(center.x + Math.cos(rad) * dist, center.y + Math.sin(rad) * dist, size, 0, Math.PI * 2);
             ctx.fill();
         }
+    } else if (cloud.effectType === "burn") {
+        const center = pos;
+        const radiusPx = maxRadius;
+        const remaining = Math.max(0, cloud.expires - now);
+        const lifetime = cloud.duration || 5000;
+        const fadeT = Math.min(1, remaining / lifetime);
+        const life = 1 - fadeT;
+        const pop = 1 - (1 - life) * (1 - life);
+        const baseIntensity = 0.35 + 0.65 * pop;
+
+        const pot = Math.max(0, (cloud.potency ?? 1));
+        const potNorm = Math.min(1, pot / 100); 
+        const strengthMul = 0.5 + 1.0 * potNorm;
+        const densityMul  = 0.5 + 1.1 * potNorm;
+        const intensity = Math.min(baseIntensity * strengthMul, 1.0);
+        
+        const rng = rngFactory(hashStr(cloud.id));
+        const t = now * 0.001;
+        const seed = cloud.id.charCodeAt(0);
+
+        const g = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radiusPx);
+        g.addColorStop(0.00, `rgba(255,170,80,${0.40 * intensity * 0.75})`);
+        g.addColorStop(0.45, `rgba(255,110,30,${0.28 * intensity * 0.75})`);
+        g.addColorStop(0.80, `rgba(140,40,10,${0.14 * intensity * 0.75})`);
+        g.addColorStop(1.00, `rgba(0,0,0,0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+        ctx.fill();
+      
+        const prevComp = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = "lighter";
+        const swirlLayers = 3;
+        for (let k = 0; k < swirlLayers; k++) {
+          const rot = (seed*0.13 + k*2.1) + t*(0.6+0.2*k)*0.8 + pop*0.3;
+          const r0 = radiusPx * (0.45 + 0.18 * k);
+          const baseWidth = radiusPx * (0.08 - 0.02 * k);
+          ctx.lineWidth = Math.max(1.2, baseWidth * (0.5 + 0.5 * intensity));
+          const hue = 25 + k*6;
+          const alpha = Math.max(0.14, 0.18 * intensity);
+          ctx.strokeStyle = `hsla(${hue}, 100%, 55%, ${alpha})`;
+          ctx.beginPath();
+          ctx.arc(center.x, center.y, r0, rot, rot + Math.PI*(0.7 - 0.12*k));
+          ctx.stroke();
+        }
+      
+        const bubbleCount = Math.max(6, Math.round(14 * densityMul));
+        for (let i = 0; i < bubbleCount; i++) {
+          const rA = rng();
+          const rB = rng();
+          const baseAngle = (rA*360) + i*(360/bubbleCount);
+          const swirl = (20*pop) + (t*40*(0.4+0.6*rB)*0.8);
+          const angle = (baseAngle + swirl) * Math.PI/180;
+      
+          const rise   = (0.12 + 0.70*Math.pow(rA,1.6)) * radiusPx;
+          const jitter = Math.sin(t*3 + i) * (radiusPx*0.05) * (0.4+0.6*rB);
+          const dist   = Math.max(radiusPx*0.12, Math.min(radiusPx*0.75, rise + jitter));
+      
+          const baseSize = radiusPx * (0.07 + 0.09*rB) * 0.8;
+          const size     = Math.max(0.9, baseSize * (0.8 + 0.2*pop));
+      
+          const light = 50 + 20*rA;
+          const bubbleAlpha = (0.26 + 0.50*pop) * (0.6+0.4*rB) * intensity;
+      
+          ctx.fillStyle = `hsla(28, 100%, ${light}%, ${bubbleAlpha})`;
+          ctx.beginPath();
+          ctx.arc(center.x + Math.cos(angle)*dist, center.y + Math.sin(angle)*dist, size, 0, Math.PI*2);
+          ctx.fill();
+        }
+        ctx.globalCompositeOperation = prevComp;
     }
     
     ctx.restore();
