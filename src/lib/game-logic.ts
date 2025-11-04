@@ -20,14 +20,15 @@ export const centerOf = (row: number, col: number) => ({
 /**
  * Wendet den Schaden eines Angriffs auf ein einzelnes Ziel an.
  * Berechnet den Schaden basierend auf Rüstung, Verwundbarkeit und kritischen Treffern.
- * Berücksichtigt jetzt Rüstungsdurchdringung.
+ * Berücksichtigt jetzt Rüstungsdurchdringung und den Rüstungsreduktions-Debuff.
  */
 function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDealt: number, killed: boolean } {
-    const armorShredDebuff = enemy.effects.find(e => e.type === 'armor_shred');
+    const armorShredDebuff = enemy.effects.find(e => e.type === 'armor_shred' && e.expires > Date.now());
     const armorReduction = armorShredDebuff ? (armorShredDebuff.potency ?? 0) : 0;
     const currentArmor = enemy.armor * (1 - armorReduction);
     
-    const armorPen = attack.armorPenFlat ?? 0;
+    // Armor Pen from the attack itself is not used anymore, as it's now a debuff.
+    const armorPen = 0; // attack.armorPenFlat ?? 0;
     const effectiveArmor = Math.max(0, currentArmor - armorPen);
     const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
 
@@ -77,7 +78,7 @@ export function processAttack(
     
     let damageAmount = tower.damage * (isBuffed ? 1.15 : 1) * critMultiplier;
     
-    const vulnerability = currentTarget.effects.find(e => e.type === 'vulnerability');
+    const vulnerability = currentTarget.effects.find(e => e.type === 'vulnerability' && e.expires > now);
     if (vulnerability) {
         damageAmount *= (1 + vulnerability.potency);
     }
@@ -93,10 +94,6 @@ export function processAttack(
         armorPenFlat: 0, 
     };
     
-    const armorShredEffect = effects?.find(e => e.type === 'armor_shred');
-    if (armorShredEffect && Math.random() < (armorShredEffect.chance ?? 1)) {
-        primaryAttack.armorPenFlat = tower.damage * (armorShredEffect.potency ?? 0);
-    }
     output.newAttacks.push(primaryAttack);
 
     const { damageDealt, killed } = applyDamage(damageAmount, currentTarget, primaryAttack);
@@ -122,11 +119,24 @@ export function processAttack(
         }
     } else {
         effects?.forEach(effect => {
+            const existingEffect = currentTarget.effects.find(e => e.type === effect.type);
+
             if (effect.type === 'armor_shred' && Math.random() < (effect.chance ?? 1)) {
-                currentTarget.effects.push({ type: 'armor_shred', expires: now + (effect.duration ?? 4000), potency: (effect.potency ?? 0) });
+                if (existingEffect) {
+                    if (effect.potency! > existingEffect.potency) {
+                        existingEffect.potency = effect.potency!;
+                    }
+                    existingEffect.expires = now + (effect.duration ?? 4000);
+                } else {
+                    currentTarget.effects.push({ type: 'armor_shred', expires: now + (effect.duration ?? 4000), potency: (effect.potency ?? 0) });
+                }
             }
             if (effect.type === 'slow' && Math.random() < (effect.chance ?? 1)) {
-                currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
+                 if (existingEffect) {
+                    existingEffect.expires = now + (effect.duration ?? 2000);
+                } else {
+                    currentTarget.effects.push({ type: 'slow', expires: now + (effect.duration ?? 2000), potency: (effect.potency ?? 0.5) });
+                }
             }
             if (effect.type === 'stun' && Math.random() < (effect.chance ?? 1)) {
                 currentTarget.effects.push({ type: 'stun', expires: now + (effect.duration ?? 500), potency: 1 });
@@ -135,7 +145,11 @@ export function processAttack(
                 currentTarget.effects.push({ type: 'burn', expires: now + (effect.duration ?? 3000), potency: (effect.potency ?? 0) * damageAmount, lastTick: now });
             }
             if (effect.type === 'vulnerability' && Math.random() < (effect.chance ?? 1)) {
-                currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
+                if (existingEffect) {
+                    existingEffect.expires = now + (effect.duration ?? 5000);
+                } else {
+                    currentTarget.effects.push({ type: 'vulnerability', expires: now + (effect.duration ?? 5000), potency: (effect.potency ?? 0.1) });
+                }
             }
         });
     }
