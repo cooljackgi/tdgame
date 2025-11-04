@@ -165,8 +165,8 @@ export type SplashRing = {
     id: string;
     x: number;
     y: number;
-    r: number;
-    vfxR?: number; // Visual radius override
+    r: number; // damage radius
+    vfxRadius?: number; // visual radius override
     color: string;
     element: Element;
     start?: number;

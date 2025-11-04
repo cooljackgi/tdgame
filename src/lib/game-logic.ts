@@ -147,7 +147,7 @@ export function processAttack(
             x: currentTarget.position.col,
             y: currentTarget.position.row,
             r: splashEffect.radius!,
-            vfxR: splashEffect.vfxRadius,
+            vfxRadius: splashEffect.vfxRadius,
             color: elementProjectileColors[tower.elements[0] || 'neutral'],
             element: tower.elements[0],
             vfxType: splashEffect.vfxType
