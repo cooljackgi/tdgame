@@ -375,7 +375,7 @@ export default function SinglePlayerGame({
         setPortalEntrance(null);
     }, []);
 
-    const handlePlaceTower = useCallback((row: number, col: number) => {
+    const handlePlaceAction = useCallback((row: number, col: number) => {
         const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
         if (portalPhase !== 'idle') {
             if (portalPhase === 'entrance') {
@@ -386,6 +386,7 @@ export default function SinglePlayerGame({
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
                 setPlayers(newState.players);
                 setWorkers(newState.workers);
+                setPortals(newState.portals ?? []);
                 cancelInteractions();
                 return;
             }
@@ -902,7 +903,7 @@ export default function SinglePlayerGame({
                     splashRings={splashRings}
                     persistentClouds={persistentClouds}
                     currentPath={currentPath} 
-                    handlePlaceTower={handlePlaceTower}
+                    handlePlaceTower={handlePlaceAction}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
                     portalEntrance={portalEntrance}

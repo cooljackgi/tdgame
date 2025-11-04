@@ -937,34 +937,25 @@ export default function CoopGameLoader() {
   }, [cancelInteractions]);
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players: players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+    const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
     
     if (portalPhase !== 'idle') {
-      if (portalPhase === 'entrance') {
-          setPortalEntrance({ row, col });
-          setPortalPhase('exit');
-          return;
-      } else if (portalPhase === 'exit' && portalEntrance) {
-          const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
-          setPlayers(newState.players);
-          setWorkers(newState.workers);
-          setPortals(newState.portals ?? []);
-          cancelInteractions();
-          return;
-      }
-    }
-    
-    if (selectedTowerToBuild) {
-        const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
-        setPlayers(newState.players);
-        setGhosts(newState.ghosts);
-        setWorkers(newState.workers);
+        if (portalPhase === 'entrance') {
+            setPortalEntrance({ row, col });
+            setPortalPhase('exit');
+            return;
+        } else if (portalPhase === 'exit' && portalEntrance) {
+            dispatchAction('place_portal', { entrance: portalEntrance, exit: { row, col } });
+            cancelInteractions();
+            return;
+        }
+    } else if (selectedTowerToBuild) {
+        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
     } else {
-        const newState = enqueueMoveOrder(state, 'worker-1', row, col);
-        setWorkers(newState.workers);
+        dispatchAction('move_worker', { row, col });
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
-  
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
+
   if (loading || configLoading || !gameDataLoaded || !localPlayerId || !localPlayer || !gameConfig) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spiel...</p></div>;
   }
