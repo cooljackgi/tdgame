@@ -296,7 +296,7 @@ export default function CoopGameLoader() {
                     } else {
                         toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
                     }
-                } else if (isIntermission) {
+                } else if (gameStatus === 'playing' && isIntermission) {
                     if (countdownRef.current) window.clearInterval(countdownRef.current);
                     countdownRef.current = null;
                     startWave(currentWave);

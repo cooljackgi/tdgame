@@ -1513,7 +1513,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         <path
                             d={pathD}
                             fill="none"
-                            stroke="hsl(35 91% 50%)"
+                            stroke="hsl(140 90% 50%)"
                             strokeWidth="3"
                             strokeDasharray="10 5"
                             strokeLinecap="round"
