@@ -173,14 +173,12 @@ export default function CoopGameLoader() {
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
         
-        const playerId = payload.playerId;
-        
         const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
 
         switch(action){
             case 'place_portal': {
                 const { entrance, exit } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueuePlacePortalOrder(state, workerId, entrance, exit, Date.now());
                 setPlayers(updatedState.players);
                 setWorkers(updatedState.workers);
@@ -189,14 +187,14 @@ export default function CoopGameLoader() {
             }
             case 'move_worker': {
                 const { row, col } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueueMoveOrder(state, workerId, row, col);
                 setWorkers(updatedState.workers);
                 break;
             }
             case 'build': {
                 const { row, col, towerId } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueueBuildOrder(state, workerId, row, col, towerId, Date.now());
 
                 setPlayers(updatedState.players);
@@ -209,10 +207,10 @@ export default function CoopGameLoader() {
                 const key = `${row}_${col}`;
                 const existingTower = towersByCell[key];
                 
-                if (!existingTower || existingTower.ownerId !== playerId) return;
+                if (!existingTower || existingTower.ownerId !== payload.playerId) return;
 
                 const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
-                const upgrader = players.find(p => p.id === playerId);
+                const upgrader = players.find(p => p.id === payload.playerId);
 
                 if (!upgradeSpec || !upgrader) return;
                 
@@ -226,7 +224,7 @@ export default function CoopGameLoader() {
                 const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
 
                 setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
-                setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p));
+                setPlayers(prev => prev.map(p => p.id === payload.playerId ? { ...p, resources: p.resources - cost } : p));
                 
                 setLastUpgradedTowerId(upgradedTower.id);
                 setTimeout(()=>setLastUpgradedTowerId(null), 500);
@@ -237,7 +235,7 @@ export default function CoopGameLoader() {
                  const { row, col } = payload;
                  const key = `${row}_${col}`;
                  const towerToSell = towersByCell[key];
-                 if (!towerToSell || towerToSell.ownerId !== playerId) return;
+                 if (!towerToSell || towerToSell.ownerId !== payload.playerId) return;
 
                  const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
                  audioManager.play(sound);
@@ -245,7 +243,7 @@ export default function CoopGameLoader() {
 
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
-                 setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p));
+                 setPlayers(prev => prev.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p));
 
                  break;
             }
@@ -264,7 +262,7 @@ export default function CoopGameLoader() {
                 }
             
                 const updatedPlayers = players.map(p =>
-                    p.id === playerId
+                    p.id === payload.playerId
                         ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
                         : p
                 );
@@ -1054,3 +1052,6 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
+
+    
