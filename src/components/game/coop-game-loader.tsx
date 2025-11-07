@@ -176,145 +176,140 @@ export default function CoopGameLoader() {
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
         
-        const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
-        
-        let newState: Partial<GameSessionState> = {};
-        
-        switch(action){
-            case 'place_portal': {
-                const { entrance, exit } = payload;
-                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueuePlacePortalOrder(state, workerId, entrance, exit, Date.now());
-                newState = { players: updatedState.players, workers: updatedState.workers, portals: updatedState.portals };
-                break;
+        if (action === 'start_wave_now') {
+            if (gameStatus === 'waiting') {
+                const activePlayers = players.filter(p => p && p.id !== 'spectator');
+                if (activePlayers.length >= 2) {
+                    setGameStatus('playing');
+                    setIsIntermission(true);
+                    setWaveStartCountdown(INTERMISSION_TIME);
+                } else {
+                    toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
+                }
+            } else if (gameStatus === 'playing' && isIntermission) {
+                if (countdownRef.current) window.clearInterval(countdownRef.current);
+                countdownRef.current = null;
+                startWave(currentWave);
             }
-            case 'move_worker': {
-                const { row, col } = payload;
-                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueueMoveOrder(state, workerId, row, col);
-                newState = { workers: updatedState.workers };
-                break;
-            }
-            case 'build': {
-                 setPlayers(prevPlayers => {
-                    const player = prevPlayers.find(p => p.id === payload.playerId);
-                    if (!player) return prevPlayers;
+            return;
+        }
 
-                    const towerSpec = gameConfig.towers.find(t => t.id === payload.towerId);
-                    if (!towerSpec || player.resources < towerSpec.cost) {
-                        return prevPlayers;
-                    }
+        let stateChanged = false;
+        
+        setPlayers(prevPlayers => {
+            const tempState: GameSessionState = { players: prevPlayers, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+
+            switch(action){
+                case 'place_portal': {
+                    const { entrance, exit } = payload;
+                    const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueuePlacePortalOrder(tempState, workerId, entrance, exit, Date.now());
                     
-                    const localState = { ...state, players: prevPlayers };
-                    const updatedState = enqueueBuildOrder(localState, payload.playerId === 'player1' ? 'worker-1' : 'worker-2', payload.row, payload.col, payload.towerId, Date.now());
+                    setWorkers(updatedState.workers);
+                    setPortals(updatedState.portals);
+                    stateChanged = true;
+                    return updatedState.players;
+                }
+                case 'move_worker': {
+                    const { row, col } = payload;
+                    const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueueMoveOrder(tempState, workerId, row, col);
+                    
+                    setWorkers(updatedState.workers);
+                    stateChanged = true;
+                    return prevPlayers; // Player state doesn't change on move
+                }
+                case 'build': {
+                    const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueueBuildOrder(tempState, workerId, payload.row, payload.col, payload.towerId, Date.now());
                     
                     setGhosts(updatedState.ghosts);
                     setWorkers(updatedState.workers);
+                    stateChanged = true;
                     return updatedState.players;
-                });
-                return; // State updates are handled inside, no need to call setHostRevision here
-            }
-            case 'upgrade': {
-                const { row, col, upgradeId } = payload;
-                const key = `${row}_${col}`;
-                const existingTower = towersByCell[key];
-                
-                if (!existingTower || existingTower.ownerId !== payload.playerId) return;
-
-                const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
-                const upgrader = players.find(p => p.id === payload.playerId);
-
-                if (!upgradeSpec || !upgrader) return;
-                
-                const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
-                if (upgrader.resources < cost) return;
-
-                const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
-                audioManager.play(sound);
-                sendGameDataRef.current('AUDIO_EVENT', sound);
-
-                const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
-
-                setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
-                setPlayers(prev => prev.map(p => p.id === payload.playerId ? { ...p, resources: p.resources - cost } : p));
-                
-                setLastUpgradedTowerId(upgradedTower.id);
-                setTimeout(()=>setLastUpgradedTowerId(null), 500);
-                if (sendGameDataRef.current) sendGameDataRef.current('TOWER_UPGRADE_VFX', { towerId: upgradedTower.id });
-                break;
-            }
-            case 'sell': {
-                 const { row, col } = payload;
-                 const key = `${row}_${col}`;
-                 const towerToSell = towersByCell[key];
-                 if (!towerToSell || towerToSell.ownerId !== payload.playerId) return;
-
-                 const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
-                 audioManager.play(sound);
-                 sendGameDataRef.current('AUDIO_EVENT', sound);
-
-                 const refund = Math.round(towerToSell.cost * 0.75);
-                 setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
-                 setPlayers(prev => prev.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p));
-                 break;
-            }
-            case 'pick_element': {
-                const { element } = payload;
-                const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
-                audioManager.play(sound);
-                sendGameDataRef.current('AUDIO_EVENT', sound);
-                
-                const waveForPick = currentWave;
-                const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
-
-                if (!needsToPick) {
-                    console.warn(`[HOST] Element pick rejected: not an element wave. Wave is ${waveForPick}`);
-                    return;
                 }
-            
-                const updatedPlayers = players.map(p =>
-                    p.id === payload.playerId
-                        ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
-                        : p
-                );
-                setPlayers(updatedPlayers);
-            
-                const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
-                
-                const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && players.find(origP => origP.id === p.id));
-                const allPlayersHavePicked = activePlayers.every(p => {
-                    if (!p || !p.unlockedElements) return false;
-                    if (p.unlockedElements.length >= 8) return true; // Maxed out
-                    return p.unlockedElements.length >= expectedElementsAfterPick;
-                });
+                case 'upgrade': {
+                    const { row, col, upgradeId } = payload;
+                    const key = `${row}_${col}`;
+                    const existingTower = towersByCell[key];
+                    if (!existingTower || existingTower.ownerId !== payload.playerId) return prevPlayers;
 
-                if (allPlayersHavePicked) {
-                    setCurrentWave(prev => prev + 1);
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                    setGameStatus("playing");
+                    const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
+                    const upgrader = prevPlayers.find(p => p.id === payload.playerId);
+                    if (!upgradeSpec || !upgrader) return prevPlayers;
+                    
+                    const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
+                    if (upgrader.resources < cost) return prevPlayers;
+
+                    const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
+                    audioManager.play(sound);
+                    sendGameDataRef.current('AUDIO_EVENT', sound);
+
+                    const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
+
+                    setTowersByCell(prev => ({ ...prev, [key]: upgradedTower }));
+                    setLastUpgradedTowerId(upgradedTower.id);
+                    setTimeout(()=>setLastUpgradedTowerId(null), 500);
+                    if (sendGameDataRef.current) sendGameDataRef.current('TOWER_UPGRADE_VFX', { towerId: upgradedTower.id });
+                    stateChanged = true;
+                    return prevPlayers.map(p => p.id === payload.playerId ? { ...p, resources: p.resources - cost } : p);
                 }
-                break;
-            }
-            case 'start_wave_now':
-                if (gameStatus === 'waiting') {
-                    if (players.some(p => p.id === 'player2')) {
-                        setGameStatus('playing');
+                case 'sell': {
+                     const { row, col } = payload;
+                     const key = `${row}_${col}`;
+                     const towerToSell = towersByCell[key];
+                     if (!towerToSell || towerToSell.ownerId !== payload.playerId) return prevPlayers;
+
+                     const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
+                     audioManager.play(sound);
+                     sendGameDataRef.current('AUDIO_EVENT', sound);
+
+                     const refund = Math.round(towerToSell.cost * 0.75);
+                     setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
+                     stateChanged = true;
+                     return prevPlayers.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p);
+                }
+                case 'pick_element': {
+                    const { element } = payload;
+                    const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
+                    audioManager.play(sound);
+                    sendGameDataRef.current('AUDIO_EVENT', sound);
+                    
+                    const waveForPick = currentWave;
+                    const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
+
+                    if (!needsToPick) return prevPlayers;
+
+                    const updatedPlayers = prevPlayers.map(p =>
+                        p.id === payload.playerId
+                            ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
+                            : p
+                    );
+                    
+                    const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
+                    const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && prevPlayers.find(origP => origP.id === p.id));
+                    const allPlayersHavePicked = activePlayers.every(p => {
+                        if (!p || !p.unlockedElements) return false;
+                        if (p.unlockedElements.length >= 8) return true; // Maxed out
+                        return p.unlockedElements.length >= expectedElementsAfterPick;
+                    });
+
+                    if (allPlayersHavePicked) {
+                        setCurrentWave(prev => prev + 1);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
-                    } else {
-                        toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
+                        setGameStatus("playing");
                     }
-                } else if (gameStatus === 'playing' && isIntermission) {
-                    if (countdownRef.current) window.clearInterval(countdownRef.current);
-                    countdownRef.current = null;
-                    startWave(currentWave);
+                    stateChanged = true;
+                    return updatedPlayers;
                 }
-                return; // startWave handles its own revision update
-        }
+            }
+            return prevPlayers; // No change
+        });
         
-        // This is the key change. We trigger a state revision after an action is processed.
-        setHostRevision(r => r + 1);
+        if (stateChanged) {
+            setHostRevision(r => r + 1);
+        }
 
     }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig]);
     
@@ -665,27 +660,39 @@ export default function CoopGameLoader() {
           }
 
           const currentStatus = gameStatus;
+          
           const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
           const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
-          setWorkers(workerState.workers);
-          setGhosts(workerState.ghosts);
-          setPortals(workerState.portals ?? portals);
+          
+          let stateToUpdate: Partial<GameSessionState> = {
+            workers: workerState.workers,
+            ghosts: workerState.ghosts,
+            portals: workerState.portals,
+          };
           if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
-            setTowersByCell(workerState.towersByCell);
+            stateToUpdate.towersByCell = workerState.towersByCell;
           }
 
-
           if (currentStatus !== 'playing') {
+            setWorkers(stateToUpdate.workers!);
+            setGhosts(stateToUpdate.ghosts!);
+            setPortals(stateToUpdate.portals!);
+            if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
             return;
           }
           
-          setPlayers(prevPlayers => prevPlayers.map(p => ({
+          stateToUpdate.players = players.map(p => ({
               ...p,
               resources: p.resources + (p.incomePerSecond * (delta / 1000)),
-          })));
+          }));
           
           if (isIntermission) {
+              setPlayers(stateToUpdate.players);
+              setWorkers(stateToUpdate.workers!);
+              setGhosts(stateToUpdate.ghosts!);
+              setPortals(stateToUpdate.portals!);
+              if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
               setHostRevision(r => r + 1);
               return;
           }
@@ -754,7 +761,9 @@ export default function CoopGameLoader() {
                       if (result.resourcesGained > 0) {
                           players.forEach(p => {
                               const key = p.id as 'player1' | 'player2';
-                              resourcesGainedThisTick[key] += result.resourcesGained;
+                              if(resourcesGainedThisTick[key] !== undefined) {
+                                resourcesGainedThisTick[key] += result.resourcesGained;
+                              }
                           });
                       }
                       if (result.livesGained > 0) {
@@ -765,7 +774,7 @@ export default function CoopGameLoader() {
               }
           });
           
-          setTowersByCell(updatedTowers);
+          stateToUpdate.towersByCell = updatedTowers;
           
           setFiringTowerIds(firingIds);
           if (firingIds.size > 0) {
@@ -881,9 +890,9 @@ export default function CoopGameLoader() {
               }
           }
           
-          setEnemies(stillAlive);
-          setGravityWells(activeGravityWells);
-          setPersistentClouds(activePersistentClouds);
+          stateToUpdate.enemies = stillAlive;
+          stateToUpdate.gravityWells = activeGravityWells;
+          stateToUpdate.persistentClouds = activePersistentClouds;
           if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
           
           if (livesLostThisTick > 0) {
@@ -898,12 +907,10 @@ export default function CoopGameLoader() {
               setTotalLeaked(l => l + livesLostThisTick);
           }
           
-          if (resourcesGainedThisTick.player1 > 0 || resourcesGainedThisTick.player2 > 0) {
-              setPlayers(prev => prev.map(p => {
-                  const gain = resourcesGainedThisTick[p.id as 'player1' | 'player2'] || 0;
-                  return { ...p, resources: p.resources + gain };
-              }));
-          }
+          stateToUpdate.players = stateToUpdate.players!.map(p => {
+              const gain = resourcesGainedThisTick[p.id as 'player1' | 'player2'] || 0;
+              return { ...p, resources: p.resources + gain };
+          });
           
             const enemiesLeft = stillAlive.filter(e => !e.deathTimestamp).length === 0;
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
@@ -911,25 +918,37 @@ export default function CoopGameLoader() {
             if (enemiesLeft && spawnQueueEmpty && !isIntermission) {
                 let updatedPortals = portals || [];
                 updatedPortals.forEach(p => p.expiresAt = now + 500); // Portals expire shortly after wave end
-                setPortals(updatedPortals);
+                stateToUpdate.portals = updatedPortals;
 
                 const nextWaveIndex = currentWave + 1;
                 
                 if (gameConfig.waves.length > nextWaveIndex) {
                     if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
-                        setGameStatus('picking-element');
+                        stateToUpdate.gameStatus = 'picking-element';
                     } else {
-                        setCurrentWave(nextWaveIndex);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
+                        stateToUpdate.currentWave = nextWaveIndex;
+                        stateToUpdate.isIntermission = true;
+                        stateToUpdate.waveStartCountdown = INTERMISSION_TIME;
                     }
                 } else {
                     onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
-                    setGameStatus('gameover');
+                    stateToUpdate.gameStatus = 'gameover';
                 }
             }
-          
-          setHostRevision(r => r + 1);
+
+            setPlayers(stateToUpdate.players);
+            setWorkers(stateToUpdate.workers!);
+            setGhosts(stateToUpdate.ghosts!);
+            setPortals(stateToUpdate.portals!);
+            setEnemies(stateToUpdate.enemies);
+            setGravityWells(stateToUpdate.gravityWells);
+            setPersistentClouds(stateToUpdate.persistentClouds);
+            if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
+            if (stateToUpdate.gameStatus) setGameStatus(stateToUpdate.gameStatus);
+            if (stateToUpdate.currentWave) setCurrentWave(stateToUpdate.currentWave);
+            if (stateToUpdate.isIntermission !== undefined) setIsIntermission(stateToUpdate.isIntermission);
+            if (stateToUpdate.waveStartCountdown !== undefined) setWaveStartCountdown(stateToUpdate.waveStartCountdown);
+            setHostRevision(r => r + 1);
       };
 
       if(isGameHost){
@@ -1084,6 +1103,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-
-    
