@@ -163,9 +163,12 @@ export default function CoopGameLoader() {
 
         spawnQueueRef.current = enemiesToSpawn;
         waveStartTimeRef.current = Date.now();
+        
+        // This is a state update batch
         setIsIntermission(false);
         setCurrentWave(waveIndex);
         setWaveStartCountdown(0);
+        setEnemies([]); // Clear old enemies
         setHostRevision(r => r + 1);
 
     }, [isGameHost, difficulty, gameConfig]);
@@ -174,33 +177,42 @@ export default function CoopGameLoader() {
         if (!isGameHost || !gameConfig) return;
         
         const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
-
+        
+        let newState: Partial<GameSessionState> = {};
+        
         switch(action){
             case 'place_portal': {
                 const { entrance, exit } = payload;
                 const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueuePlacePortalOrder(state, workerId, entrance, exit, Date.now());
-                setPlayers(updatedState.players);
-                setWorkers(updatedState.workers);
-                setPortals(updatedState.portals ?? []);
+                newState = { players: updatedState.players, workers: updatedState.workers, portals: updatedState.portals };
                 break;
             }
             case 'move_worker': {
                 const { row, col } = payload;
                 const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
                 const updatedState = enqueueMoveOrder(state, workerId, row, col);
-                setWorkers(updatedState.workers);
+                newState = { workers: updatedState.workers };
                 break;
             }
             case 'build': {
-                const { row, col, towerId } = payload;
-                const workerId = payload.playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueueBuildOrder(state, workerId, row, col, towerId, Date.now());
+                 setPlayers(prevPlayers => {
+                    const player = prevPlayers.find(p => p.id === payload.playerId);
+                    if (!player) return prevPlayers;
 
-                setPlayers(updatedState.players);
-                setGhosts(updatedState.ghosts);
-                setWorkers(updatedState.workers);
-                break;
+                    const towerSpec = gameConfig.towers.find(t => t.id === payload.towerId);
+                    if (!towerSpec || player.resources < towerSpec.cost) {
+                        return prevPlayers;
+                    }
+                    
+                    const localState = { ...state, players: prevPlayers };
+                    const updatedState = enqueueBuildOrder(localState, payload.playerId === 'player1' ? 'worker-1' : 'worker-2', payload.row, payload.col, payload.towerId, Date.now());
+                    
+                    setGhosts(updatedState.ghosts);
+                    setWorkers(updatedState.workers);
+                    return updatedState.players;
+                });
+                return; // State updates are handled inside, no need to call setHostRevision here
             }
             case 'upgrade': {
                 const { row, col, upgradeId } = payload;
@@ -244,7 +256,6 @@ export default function CoopGameLoader() {
                  const refund = Math.round(towerToSell.cost * 0.75);
                  setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                  setPlayers(prev => prev.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p));
-
                  break;
             }
             case 'pick_element': {
@@ -299,9 +310,12 @@ export default function CoopGameLoader() {
                     countdownRef.current = null;
                     startWave(currentWave);
                 }
-                break;
+                return; // startWave handles its own revision update
         }
+        
+        // This is the key change. We trigger a state revision after an action is processed.
         setHostRevision(r => r + 1);
+
     }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig]);
     
   // --- WebRTC Logic ---
@@ -688,6 +702,18 @@ export default function CoopGameLoader() {
           let newPersistentClouds: PersistentCloud[] = [];
           
           let currentEnemies = enemies.map(e => ({...e, wasHit: false }));
+
+           // --- Spawning Logic (moved inside game loop) ---
+            const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
+            if (spawnQueueRef.current.length > 0) {
+                const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
+                if(enemiesToSpawnNow.length > 0) {
+                    spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
+                    const nowEpoch = Date.now();
+                    const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPath}));
+                    currentEnemies.push(...newEnemiesThisFrame);
+                }
+            }
           
           let firingIds = new Set<string>();
           let updatedTowers = { ...towersByCell }; 
@@ -879,19 +905,21 @@ export default function CoopGameLoader() {
               }));
           }
           
+            const enemiesLeft = stillAlive.filter(e => !e.deathTimestamp).length === 0;
+            const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
-            if (stillAlive.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermission) {
+            if (enemiesLeft && spawnQueueEmpty && !isIntermission) {
                 let updatedPortals = portals || [];
                 updatedPortals.forEach(p => p.expiresAt = now + 500); // Portals expire shortly after wave end
                 setPortals(updatedPortals);
 
                 const nextWaveIndex = currentWave + 1;
-                setCurrentWave(nextWaveIndex);
                 
                 if (gameConfig.waves.length > nextWaveIndex) {
                     if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
                         setGameStatus('picking-element');
                     } else {
+                        setCurrentWave(nextWaveIndex);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                     }
@@ -985,7 +1013,11 @@ export default function CoopGameLoader() {
                 currentWave={currentWave} 
                 totalWaves={gameConfig.waves.length} 
                 difficulty={difficulty} 
-                handleGameControl={() => {}} 
+                handleGameControl={(cmd: 'start'|'start_wave_now'|'pause'|'resume') => {
+                    if (cmd === 'start' || cmd === 'start_wave_now') {
+                      handleStartWaveNowAction(); // feuert dispatchAction('start_wave_now', {})
+                    }
+                  }}
                 gameStatus={gameStatus} 
                 resetGame={onExit}
                 towers={gameConfig.towers} 
