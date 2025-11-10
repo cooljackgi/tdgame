@@ -240,6 +240,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     onFocusTower(tower);
     setIsBuildSheetOpen(true);
   };
+  
+  const isBossWaveNext = isIntermission && (currentWave + 1) > 0 && (currentWave + 1) % 10 === 0;
 
   return (
     <div className="w-full min-h-dvh flex flex-col">
@@ -271,6 +273,11 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
         id="tutorial-game-board"
         className="relative w-full flex-1 min-h-0 overflow-hidden"
       >
+        {isBossWaveNext && (
+            <div className="boss-announcement">
+                <h2 className="boss-announcement-text">BOSS-WELLE NÄHERT SICH!</h2>
+            </div>
+        )}
         <GameBoard
           ref={gameBoardRef}
           placedTowers={placedTowers}
