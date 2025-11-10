@@ -341,3 +341,52 @@
   50% { filter: brightness(1.5); opacity: 0.5; }
 }
 .animate-dmg-flash { animation: dmgFlash .15s ease-out; }
+
+/* Boss Wave Announcement */
+@keyframes boss-text-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+    filter: blur(10px);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.1) translateY(0);
+    filter: blur(0);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-10px);
+    filter: blur(5px);
+  }
+}
+
+.boss-announcement {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  pointer-events: none;
+  text-align: center;
+}
+
+.boss-announcement-text {
+  font-size: 2.5rem; /* 40px */
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  color: hsl(var(--destructive));
+  text-shadow: 0 0 10px hsl(var(--destructive) / 0.7), 0 0 20px hsl(var(--destructive) / 0.5), 0 2px 2px black;
+  animation: boss-text-reveal 4s ease-in-out forwards;
+}
+
+@media (min-width: 768px) {
+  .boss-announcement-text {
+    font-size: 4rem; /* 64px */
+  }
+}

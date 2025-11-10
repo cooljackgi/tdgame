@@ -185,6 +185,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     </>
   );
 
+  const isBossWaveNext = isIntermission && (currentWave + 1) > 0 && (currentWave + 1) % 10 === 0;
+
   return (
     <div className="grid grid-cols-[320px_1fr_320px] gap-6 max-w-screen-2xl mx-auto h-full">
       {/* Left Sidebar */}
@@ -239,6 +241,11 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 background: 'linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%)',
             }}
         >
+            {isBossWaveNext && (
+                <div className="boss-announcement">
+                    <h2 className="boss-announcement-text">BOSS-WELLE NÄHERT SICH!</h2>
+                </div>
+            )}
             <GameBoard
                 ref={gameBoardRef}
                 placedTowers={placedTowers}
