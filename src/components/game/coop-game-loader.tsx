@@ -206,7 +206,7 @@ export default function CoopGameLoader() {
                     const updatedState = enqueuePlacePortalOrder(tempState, workerId, entrance, exit, Date.now());
                     
                     setWorkers(updatedState.workers);
-                    setPortals(updatedState.portals);
+                    setPortals(updatedState.portals ?? []);
                     stateChanged = true;
                     return updatedState.players;
                 }
@@ -677,7 +677,7 @@ export default function CoopGameLoader() {
           if (currentStatus !== 'playing') {
             setWorkers(stateToUpdate.workers!);
             setGhosts(stateToUpdate.ghosts!);
-            setPortals(stateToUpdate.portals!);
+            setPortals(stateToUpdate.portals ?? []);
             if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
             return;
           }
@@ -691,7 +691,7 @@ export default function CoopGameLoader() {
               setPlayers(stateToUpdate.players);
               setWorkers(stateToUpdate.workers!);
               setGhosts(stateToUpdate.ghosts!);
-              setPortals(stateToUpdate.portals!);
+              setPortals(stateToUpdate.portals ?? []);
               if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
               setHostRevision(r => r + 1);
               return;
@@ -807,7 +807,7 @@ export default function CoopGameLoader() {
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
           const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > now);
-          const activePortals = portals.filter(p => p.expiresAt > now || p.expiresAt === 0);
+          const activePortals = (portals ?? []).filter(p => p.expiresAt > now || p.expiresAt === 0);
 
           for (let enemy of currentEnemies) {
               if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
@@ -916,8 +916,7 @@ export default function CoopGameLoader() {
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
             if (enemiesLeft && spawnQueueEmpty && !isIntermission) {
-                let updatedPortals = portals || [];
-                updatedPortals.forEach(p => p.expiresAt = now + 500); // Portals expire shortly after wave end
+                const updatedPortals = (portals || []).map(p => ({...p, expiresAt: now + 500}));
                 stateToUpdate.portals = updatedPortals;
 
                 const nextWaveIndex = currentWave + 1;
@@ -939,7 +938,7 @@ export default function CoopGameLoader() {
             setPlayers(stateToUpdate.players);
             setWorkers(stateToUpdate.workers!);
             setGhosts(stateToUpdate.ghosts!);
-            setPortals(stateToUpdate.portals!);
+            setPortals(stateToUpdate.portals ?? []);
             setEnemies(stateToUpdate.enemies);
             setGravityWells(stateToUpdate.gravityWells);
             setPersistentClouds(stateToUpdate.persistentClouds);
@@ -1103,3 +1102,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
