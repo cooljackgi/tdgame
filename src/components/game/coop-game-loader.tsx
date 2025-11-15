@@ -271,34 +271,35 @@ export default function CoopGameLoader() {
                      return prevPlayers.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p);
                 }
                 case 'pick_element': {
-                  if (gameStatus !== 'picking-element') return prevPlayers;
+                    if (gameStatus !== 'picking-element') return prevPlayers;
+                    const { element, playerId } = payload;
+                    
+                    const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                    const updatedPlayers = prevPlayers.map(p => {
+                        if (p.id !== playerId) return p;
+                        if (p.unlockedElements.length >= expectedElements) return p;
+                        
+                        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
+                        sendGameDataRef.current('AUDIO_EVENT', { kind: 'sfx', name: 'upgrade_tower' });
+                        return { 
+                          ...p, 
+                          unlockedElements: Array.from(new Set([...p.unlockedElements, element])) 
+                        };
+                    });
 
-                  const { element, playerId } = payload;
-                  const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-
-                  const updatedPlayers = prevPlayers.map(p => {
-                      if (p.id !== playerId || p.unlockedElements.length >= expectedElements) {
-                          return p;
-                      }
-                      const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
-                      audioManager.play(sound);
-                      sendGameDataRef.current('AUDIO_EVENT', sound);
-                      return { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) };
-                  });
-
-                  const someoneStillNeedsPick = updatedPlayers.some(
+                    const someoneStillNeedsPick = updatedPlayers.some(
                       p => p.id !== 'spectator' && p.unlockedElements.length < expectedElements && p.unlockedElements.length < 8
-                  );
+                    );
 
-                  if (!someoneStillNeedsPick) {
-                      setCurrentWave(w => w + 1);
-                      setIsIntermission(true);
-                      setWaveStartCountdown(INTERMISSION_TIME);
-                      setGameStatus('playing');
-                  }
-                  
-                  stateChanged = true;
-                  return updatedPlayers;
+                    if (!someoneStillNeedsPick) {
+                        setCurrentWave(currentWave + 1);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setGameStatus('playing');
+                    }
+
+                    stateChanged = true;
+                    return updatedPlayers;
                 }
             }
             return prevPlayers; // No change
@@ -999,24 +1000,24 @@ export default function CoopGameLoader() {
     }
   }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
 
-  if (loading || configLoading || !gameDataLoaded || !localPlayerId || !localPlayer || !gameConfig) {
+  if (loading || configLoading || !gameDataLoaded || !localPlayer || !gameConfig) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spiel...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTowerAction = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col, playerId: focusedTower.ownerId });
   const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
+  
   const handleStartWaveNowAction = () => dispatchAction('start_wave_now', {});
-  const handleGameControlAction = (cmd: 'start'|'start_wave_now'|'pause'|'resume') => {
-      if (isGameHost) {
-          if (cmd === 'start' || cmd === 'start_wave_now') {
-              handleStartWaveNowAction();
-          } else if (cmd === 'pause') {
-              setGameStatus('paused');
-          } else if (cmd === 'resume') {
-              setGameStatus('playing');
-          }
-      }
+  const handleGameControlAction = (cmd: 'start' | 'start_wave_now' | 'pause' | 'resume') => {
+    if (!isGameHost) return;
+    if (cmd === 'start' || cmd === 'start_wave_now') {
+      handleStartWaveNowAction();
+    } else if (cmd === 'pause') {
+      setGameStatus('paused');
+    } else if (cmd === 'resume') {
+      setGameStatus('playing');
+    }
   };
   
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
@@ -1108,5 +1109,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-```
