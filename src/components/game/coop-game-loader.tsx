@@ -271,35 +271,25 @@ export default function CoopGameLoader() {
                      return prevPlayers.map(p => p.id === payload.playerId ? { ...p, resources: p.resources + refund } : p);
                 }
                 case 'pick_element': {
+                    if (gameStatus !== 'picking-element') return prevPlayers;
                     const { element } = payload;
+                    
+                    const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                    const player = prevPlayers.find(p => p.id === payload.playerId);
+                    if (!player || player.unlockedElements.length >= expectedElements) {
+                        return prevPlayers; // Already picked or ahead somehow
+                    }
+                    
                     const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
                     audioManager.play(sound);
                     sendGameDataRef.current('AUDIO_EVENT', sound);
                     
-                    const waveForPick = currentWave;
-                    const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
-
-                    const updatedPlayers = prevPlayers.map(p =>
+                    stateChanged = true;
+                    return prevPlayers.map(p =>
                         p.id === payload.playerId
                             ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
                             : p
                     );
-                    
-                    const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && prevPlayers.find(origP => origP.id === p.id));
-                    const allPlayersHavePicked = activePlayers.every(p => {
-                        if (!p || !p.unlockedElements) return false;
-                        if (p.unlockedElements.length >= 8) return true; // Maxed out
-                        return p.unlockedElements.length >= expectedElementsAfterPick;
-                    });
-
-                    if (allPlayersHavePicked) {
-                        setCurrentWave(prev => prev + 1);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                        setGameStatus("playing");
-                    }
-                    stateChanged = true;
-                    return updatedPlayers;
                 }
             }
             return prevPlayers; // No change
@@ -920,9 +910,8 @@ export default function CoopGameLoader() {
                 const nextWaveIndex = currentWave + 1;
                 
                 if (gameConfig.waves.length > nextWaveIndex) {
-                    
-                    const expectedPicks = Math.floor(nextWaveIndex / 5);
-                    const someoneNeedsPick = players.some(p => p.id !== 'spectator' && (p.unlockedElements.length - 1) < expectedPicks);
+                    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+                    const someoneNeedsPick = players.some(p => p.id !== 'spectator' && p.unlockedElements.length < expectedElements && p.unlockedElements.length < 8);
                     
                     if ((nextWaveIndex) % 5 === 0 && someoneNeedsPick) {
                         stateToUpdate.gameStatus = 'picking-element';
@@ -945,10 +934,11 @@ export default function CoopGameLoader() {
             setGravityWells(stateToUpdate.gravityWells);
             setPersistentClouds(stateToUpdate.persistentClouds);
             if (stateToUpdate.towersByCell) setTowersByCell(stateToUpdate.towersByCell);
+            if (typeof stateToUpdate.currentWave === 'number') setCurrentWave(stateToUpdate.currentWave);
+            if (typeof stateToUpdate.isIntermission === 'boolean') setIsIntermission(stateToUpdate.isIntermission);
+            if (typeof stateToUpdate.waveStartCountdown === 'number') setWaveStartCountdown(stateToUpdate.waveStartCountdown);
             if (stateToUpdate.gameStatus) setGameStatus(stateToUpdate.gameStatus);
-            if (stateToUpdate.currentWave) setCurrentWave(stateToUpdate.currentWave);
-            if (stateToUpdate.isIntermission !== undefined) setIsIntermission(stateToUpdate.isIntermission);
-            if (stateToUpdate.waveStartCountdown !== undefined) setWaveStartCountdown(stateToUpdate.waveStartCountdown);
+
             setHostRevision(r => r + 1);
       };
 
@@ -963,10 +953,9 @@ export default function CoopGameLoader() {
 
 
   useEffect(() => {
-      // Corrected logic for showing the picking dialog.
-      // It should only depend on the game's state.
-      const shouldBePicking = gameStatus === 'picking-element';
-      setIsPicking(shouldBePicking);
+      // Corrected and simplified logic for showing the picking dialog.
+      // It now only depends on the game's state.
+      setIsPicking(gameStatus === 'picking-element');
   }, [gameStatus]);
 
   const toggleMute = () => {
@@ -1035,11 +1024,7 @@ export default function CoopGameLoader() {
                 currentWave={currentWave} 
                 totalWaves={gameConfig.waves.length} 
                 difficulty={difficulty} 
-                handleGameControl={(cmd: 'start'|'start_wave_now'|'pause'|'resume') => {
-                    if (cmd === 'start' || cmd === 'start_wave_now') {
-                      handleStartWaveNowAction(); // feuert dispatchAction('start_wave_now', {})
-                    }
-                  }}
+                handleGameControl={() => setGameStatus(prev => prev === 'playing' ? 'paused' : 'playing')}
                 gameStatus={gameStatus} 
                 resetGame={onExit}
                 towers={gameConfig.towers} 
