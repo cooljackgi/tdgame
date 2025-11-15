@@ -130,8 +130,6 @@ export default function CoopGameLoader() {
     const startWave = useCallback((waveIndex: number) => {
         if (!isGameHost || !gameConfig) return;
 
-        audioManager.play({ kind: 'sfx', name: 'wave_start' });
-        audioManager.playWaveMusic();
         const spec = gameConfig.waves[waveIndex];
         if (!spec) return;
 
@@ -165,10 +163,12 @@ export default function CoopGameLoader() {
         waveStartTimeRef.current = Date.now();
         
         // This is a state update batch
+        setEnemies([]); // Clear old enemies before wave
         setIsIntermission(false);
         setCurrentWave(waveIndex);
         setWaveStartCountdown(0);
-        setEnemies([]); // Clear old enemies
+        audioManager.play({ kind: 'sfx', name: 'wave_start' });
+        audioManager.playWaveMusic();
         setHostRevision(r => r + 1);
 
     }, [isGameHost, difficulty, gameConfig]);
@@ -191,6 +191,7 @@ export default function CoopGameLoader() {
                 countdownRef.current = null;
                 startWave(currentWave);
             }
+            setHostRevision(r => r + 1);
             return;
         }
 
@@ -276,9 +277,7 @@ export default function CoopGameLoader() {
                     sendGameDataRef.current('AUDIO_EVENT', sound);
                     
                     const waveForPick = currentWave;
-                    const needsToPick = waveForPick > 0 && waveForPick % 5 === 0;
-
-                    if (!needsToPick) return prevPlayers;
+                    const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
 
                     const updatedPlayers = prevPlayers.map(p =>
                         p.id === payload.playerId
@@ -286,7 +285,6 @@ export default function CoopGameLoader() {
                             : p
                     );
                     
-                    const expectedElementsAfterPick = 1 + Math.floor(waveForPick / 5);
                     const activePlayers = updatedPlayers.filter(p => p && p.id !== 'spectator' && prevPlayers.find(origP => origP.id === p.id));
                     const allPlayersHavePicked = activePlayers.every(p => {
                         if (!p || !p.unlockedElements) return false;
@@ -922,7 +920,11 @@ export default function CoopGameLoader() {
                 const nextWaveIndex = currentWave + 1;
                 
                 if (gameConfig.waves.length > nextWaveIndex) {
-                    if ((nextWaveIndex) % 5 === 0 && (players.some(p => p.unlockedElements.length < 8))) {
+                    
+                    const expectedPicks = Math.floor(nextWaveIndex / 5);
+                    const someoneNeedsPick = players.some(p => p.id !== 'spectator' && (p.unlockedElements.length - 1) < expectedPicks);
+                    
+                    if ((nextWaveIndex) % 5 === 0 && someoneNeedsPick) {
                         stateToUpdate.gameStatus = 'picking-element';
                     } else {
                         stateToUpdate.currentWave = nextWaveIndex;
@@ -961,9 +963,11 @@ export default function CoopGameLoader() {
 
 
   useEffect(() => {
-    const isPickingElement = gameStatus === 'picking-element' && localPlayer && localPlayer.unlockedElements.length < 1 + Math.floor(currentWave / 5);
-    setIsPicking(isPickingElement);
-  }, [gameStatus, localPlayer, currentWave]);
+      // Corrected logic for showing the picking dialog.
+      // It should only depend on the game's state.
+      const shouldBePicking = gameStatus === 'picking-element';
+      setIsPicking(shouldBePicking);
+  }, [gameStatus]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -1102,4 +1106,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
