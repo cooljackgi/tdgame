@@ -279,6 +279,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     </Card>
   </div>
   );
-}
+};
 
 export default Lobby;
