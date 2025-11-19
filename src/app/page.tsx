@@ -89,7 +89,7 @@ export default function Home() {
         gameName: gameName,
         player1Id: user.uid,
         player2Id: null,
-        members: { [user.uid]: true },
+        members: [user.uid],
         difficulty: difficulty,
         players: { player1: player1, player2: null },
         gameState: { lives: difficultyMod.startLives },

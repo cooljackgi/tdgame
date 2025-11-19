@@ -47,9 +47,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   
   // Stream 1: List ONLY open games for players to join
   useEffect(() => {
+    // This query is now more specific: it only fetches games that are explicitly waiting for a second player.
     const gamesQuery = query(
       collection(db, 'games'),
       where('gameStatus', '==', 'waiting'),
+      where('player2Id', '==', null), // Explicitly check for empty P2 slot
       orderBy('createdAt', 'desc')
     );
 
@@ -64,9 +66,9 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
           player1Id: data.player1Id || null,
           gameStatus: data.gameStatus,
         };
-      });
-      // Filter out the user's active game from the public list
-      setOpenGames(activeGame ? gamesList.filter(g => g.id !== activeGame.id) : gamesList);
+      }).filter(game => game.player1Id !== currentUser.uid); // Ensure you don't see your own waiting game in the list
+      
+      setOpenGames(gamesList);
       setLoading(false);
     }, (error) => {
         console.error("Error fetching open lobby games:", error);
@@ -74,7 +76,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     });
 
     return () => unsubscribe();
-  }, [activeGame]); // Re-run when activeGame changes to update the public list
+  }, [currentUser.uid]); // Rerunning on user change is sufficient
 
   // Stream 2: Find if the current user is ALREADY in a game (waiting or playing)
   useEffect(() => {
@@ -116,7 +118,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       if (!snap.exists()) return;
       const data = snap.data();
       
-      const isMember = data.members && Object.prototype.hasOwnProperty.call(data.members, currentUser.uid);
+      const isMember = Array.isArray(data.members) && data.members.includes(currentUser.uid);
       if (!isMember) return;
 
       if (data.gameStatus === 'playing' && !didRedirectRef.current) {
@@ -135,7 +137,8 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     try {
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
-      router.push(`/game/${gameId}`);
+      // The redirect is now handled by the useEffect that listens to the active game status change
+      // router.push(`/game/${gameId}`); 
     } catch (error: any) {
       console.error("Failed to join game:", error);
       toast({
@@ -250,8 +253,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               <ul className="space-y-4">
                 {openGames.map(game => {
                   const player1 = game.player1;
-                  const player2 = game.player2;
-                  const isFull = !!player2;
                   const isJoiningThisGame = joiningGameId === game.id;
                   
                   return (
@@ -260,18 +261,14 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
                         <p className="font-semibold">{game.gameName}</p>
                         <p className="text-sm text-muted-foreground flex items-center">
                           {player1?.avatarUrl && <img src={player1.avatarUrl} alt="P1" className="h-5 w-5 rounded-full mr-1"/>}
-                          {player1?.name || 'Spieler 1'} vs. {isFull ? 'Spiel voll' : '...'}
+                          {player1?.name || 'Spieler 1'} vs. ...
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        {!isFull ? (
-                             <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
-                                {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
-                                {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
-                            </Button>
-                        ) : (
-                             <p className="text-sm text-muted-foreground">Spiel voll</p>
-                        )}
+                         <Button onClick={() => handleJoinGame(game.id)} disabled={isJoiningThisGame}>
+                            {isJoiningThisGame ? <Loader2 className="mr-2 animate-spin" /> : <Users className="mr-2" />}
+                            {isJoiningThisGame ? 'Beitreten...' : 'Beitreten'}
+                        </Button>
                       </div>
                     </li>
                   );
@@ -279,8 +276,8 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               </ul>
             )}
           </CardContent>
-        </Card>
-    </div>
+    </Card>
+  </div>
   );
 }
 
