@@ -41,6 +41,7 @@ export default function CoopGameLoader() {
   
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Lade Spiel...');
 
   // Core Game State
   const [players, setPlayers] = useState<Player[]>([]);
@@ -186,7 +187,8 @@ export default function CoopGameLoader() {
         
         const performUpdate = () => {
             setPlayers(prevPlayers => {
-                const tempState: GameSessionState = { players: prevPlayers, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+                let currentPlayers = [...prevPlayers];
+                const tempState: GameSessionState = { players: currentPlayers, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
 
                 switch(action){
                     case 'place_portal': {
@@ -197,7 +199,8 @@ export default function CoopGameLoader() {
                         setWorkers(updatedState.workers);
                         if (updatedState.portals) setPortals(updatedState.portals);
                         stateChanged = true;
-                        return updatedState.players;
+                        currentPlayers = updatedState.players;
+                        break;
                     }
                     case 'move_worker': {
                         const { row, col, playerId } = payload;
@@ -206,7 +209,8 @@ export default function CoopGameLoader() {
                         
                         setWorkers(updatedState.workers);
                         stateChanged = true;
-                        return prevPlayers; // Player state doesn't change on move
+                        // Player state doesn't change on move
+                        break;
                     }
                     case 'build': {
                         const { playerId, row, col, towerId } = payload;
@@ -216,20 +220,21 @@ export default function CoopGameLoader() {
                         setGhosts(updatedState.ghosts);
                         setWorkers(updatedState.workers);
                         stateChanged = true;
-                        return updatedState.players;
+                        currentPlayers = updatedState.players;
+                        break;
                     }
                     case 'upgrade': {
                         const { row, col, upgradeId, playerId } = payload;
                         const key = `${row}_${col}`;
                         const existingTower = towersByCell[key];
-                        if (!existingTower || existingTower.ownerId !== playerId) return prevPlayers;
+                        if (!existingTower || existingTower.ownerId !== playerId) break;
 
                         const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
-                        const upgrader = prevPlayers.find(p => p.id === playerId);
-                        if (!upgradeSpec || !upgrader) return prevPlayers;
+                        const upgrader = currentPlayers.find(p => p.id === playerId);
+                        if (!upgradeSpec || !upgrader) break;
                         
                         const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
-                        if (upgrader.resources < cost) return prevPlayers;
+                        if (upgrader.resources < cost) break;
 
                         const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
                         audioManager.play(sound);
@@ -242,13 +247,14 @@ export default function CoopGameLoader() {
                         setTimeout(()=>setLastUpgradedTowerId(null), 500);
                         if (sendGameDataRef.current) sendGameDataRef.current('TOWER_UPGRADE_VFX', { towerId: upgradedTower.id });
                         stateChanged = true;
-                        return prevPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p);
+                        currentPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p);
+                        break;
                     }
                     case 'sell': {
                          const { row, col, playerId } = payload;
                          const key = `${row}_${col}`;
                          const towerToSell = towersByCell[key];
-                         if (!towerToSell || towerToSell.ownerId !== playerId) return prevPlayers;
+                         if (!towerToSell || towerToSell.ownerId !== playerId) break;
 
                          const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
                          audioManager.play(sound);
@@ -257,26 +263,30 @@ export default function CoopGameLoader() {
                          const refund = Math.round(towerToSell.cost * 0.75);
                          setTowersByCell(prev => { const { [key]:_, ...rest } = prev; return rest; });
                          stateChanged = true;
-                         return prevPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p);
+                         currentPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p);
+                         break;
                     }
                     case 'pick_element': {
-                         if (gameStatus !== 'picking-element') return prevPlayers;
-                        const { element, playerId } = payload;
+                        if (gameStatus !== 'picking-element') break;
+                        const { element } = payload;
                         
                         const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-                        const updatedPlayers = prevPlayers.map(p => {
-                            if (p.id !== playerId) return p;
+
+                        currentPlayers = currentPlayers.map(p => {
+                            if (p.id !== payload.playerId) return p;
+                            // Safety check: Don't allow pick if player already has enough elements
                             if (p.unlockedElements.length >= expectedElements) return p;
                             
                             audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
                             sendGameDataRef.current('AUDIO_EVENT', { kind: 'sfx', name: 'upgrade_tower' });
+                            
                             return { 
                               ...p, 
                               unlockedElements: Array.from(new Set([...p.unlockedElements, element])) 
                             };
                         });
-
-                        const someoneStillNeedsPick = updatedPlayers.some(
+                        
+                        const someoneStillNeedsPick = currentPlayers.some(
                           p => p.id !== 'spectator' && p.unlockedElements.length < expectedElements && p.unlockedElements.length < 8
                         );
 
@@ -286,12 +296,12 @@ export default function CoopGameLoader() {
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
                         }
-
+                        
                         stateChanged = true;
-                        return updatedPlayers;
+                        break;
                     }
                 }
-                return prevPlayers; // No change
+                return currentPlayers;
             });
         };
         
@@ -562,51 +572,73 @@ export default function CoopGameLoader() {
         if (!user || !gameId || configLoading) return;
         const gameDocRef = doc(db, 'games', gameId);
 
-        const unsub = onSnapshot(gameDocRef, (snap) => {
-            if (!snap.exists()) {
-                toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
+        let gameUnsub: Unsubscribe | null = null;
+
+        const joinAndListen = async () => {
+            try {
+                // Try to join the game. The function is idempotent.
+                const joinGameCallable = httpsCallable(functions, 'joinGame');
+                setLoadingMessage('Trete Spiel bei...');
+                await joinGameCallable({ gameId });
+                setLoadingMessage('Synchronisiere Spielzustand...');
+
+                // Once joined, start listening for updates.
+                gameUnsub = onSnapshot(gameDocRef, (snap) => {
+                    if (!snap.exists()) {
+                        toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
+                        router.push('/');
+                        return;
+                    }
+                    const data = snap.data();
+                    if (!data) return;
+
+                    let role: 'player1' | 'player2' | 'spectator' = 'spectator';
+                    if (data.player1Id === user.uid) role = 'player1';
+                    else if (data.player2Id === user.uid) role = 'player2';
+                    setLocalPlayerId(role);
+
+                    // Host loads initial state only once from DB
+                    if (role === 'player1' && !didSetLoadedRef.current) {
+                        setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                        setTowersByCell(data.towersByCell || {});
+                        setCurrentWave(data.currentWave || 0);
+                        setIsIntermission(data.isIntermission ?? true);
+                        setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
+                        setGameStatus(data.gameStatus || 'waiting');
+                        setWorkers(data.workers || [
+                          { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
+                          { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
+                        ]);
+                        setGhosts(data.ghosts || []);
+                        setPortals(data.portals || []);
+                    }
+                    
+                    setPlayers(normalizePlayers(data.players));
+                    setDifficulty(data.difficulty || 'Normal');
+                    
+                    if (!didSetLoadedRef.current) {
+                      didSetLoadedRef.current = true;
+                      setGameDataLoaded(true);
+                      setLoading(false);
+                    }
+
+                }, (err) => {
+                    console.error("Error listening to game document:", err);
+                    toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
+                    router.push('/');
+                });
+            } catch (error: any) {
+                console.error("Failed to join or listen to game:", error);
+                toast({ title: "Beitritt fehlgeschlagen", description: error.message, variant: "destructive" });
                 router.push('/');
-                return;
             }
-            const data = snap.data();
-            if (!data) return;
+        };
 
-            let role: 'player1' | 'player2' | 'spectator' = 'spectator';
-            if (data.player1Id === user.uid) role = 'player1';
-            else if (data.player2Id === user.uid) role = 'player2';
-            setLocalPlayerId(role);
+        joinAndListen();
 
-            if (role === 'player1' && !didSetLoadedRef.current) {
-                setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                setTowersByCell(data.towersByCell || {});
-                setCurrentWave(data.currentWave || 0);
-                setIsIntermission(data.isIntermission ?? true);
-                setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                setGameStatus(data.gameStatus || 'waiting');
-                setWorkers(data.workers || [
-                  { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
-                  { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
-                ]);
-                setGhosts(data.ghosts || []);
-                setPortals(data.portals || []);
-            }
-            
-            setPlayers(normalizePlayers(data.players));
-            setDifficulty(data.difficulty || 'Normal');
-            
-            if (!didSetLoadedRef.current) {
-              didSetLoadedRef.current = true;
-              setGameDataLoaded(true);
-              setLoading(false);
-            }
-
-        }, (err) => {
-            console.error("Error listening to game document:", err);
-            toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
-            router.push('/');
-        });
-
-        return () => unsub();
+        return () => {
+            if (gameUnsub) gameUnsub();
+        }
     }, [user, gameId, router, toast, configLoading]);
     
     useEffect(() => {
@@ -981,12 +1013,6 @@ export default function CoopGameLoader() {
     });
   };
   
-  const handleEnterPortalMode = useCallback(() => {
-    cancelInteractions();
-    setPortalPhase('entrance');
-    audioManager.play({ kind: 'sfx', name: 'ui_click' });
-  }, [cancelInteractions]);
-  
   const handlePlaceAction = useCallback((row: number, col: number) => {
     const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
     
@@ -1008,7 +1034,7 @@ export default function CoopGameLoader() {
   }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
 
   if (loading || configLoading || !gameDataLoaded || !localPlayer || !gameConfig) {
-    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spiel...</p></div>;
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">{loadingMessage}</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
@@ -1017,19 +1043,14 @@ export default function CoopGameLoader() {
   
   const handleStartWaveNowAction = () => dispatchAction('start_wave_now', {});
   const handleGameControlAction = (cmd: 'start' | 'start_wave_now' | 'pause' | 'resume') => {
-      if (!isGameHost) {
-        if (cmd === 'start' || cmd === 'start_wave_now') {
-          handleStartWaveNowAction();
-        }
-        return;
-      };
+      if (!isGameHost && cmd !== 'start_wave_now') return;
 
       if (cmd === 'start' || cmd === 'start_wave_now') {
-        handleStartWaveNowAction();
+          handleStartWaveNowAction();
       } else if (cmd === 'pause') {
-        setGameStatus('paused');
+          setGameStatus('paused');
       } else if (cmd === 'resume') {
-        setGameStatus('playing');
+          setGameStatus('playing');
       }
   };
   

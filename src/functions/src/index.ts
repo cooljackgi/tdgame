@@ -51,16 +51,20 @@ export const joinGame = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("not-found", "Game not found.");
       }
       const gameData = gameDoc.data();
-      if (gameData?.player1Id === uid) return;
-      if (gameData?.player2Id) {
-         if (gameData.player2Id !== uid) {
-            throw new functions.https.HttpsError("already-exists", "The game is already full.");
-         }
-         return; 
+      
+      // If user is already in the game (P1 or P2), do nothing.
+      if (gameData?.members && gameData.members[uid]) {
+        console.log(`User ${uid} is already a member of game ${gameId}. Allowing rejoin.`);
+        return;
       }
+      
+      // If P2 slot is already taken by someone else, throw error.
+      if (gameData?.player2Id) {
+        throw new functions.https.HttpsError("already-exists", "The game is already full.");
+      }
+
+      // If we reach here, the user is new and the P2 slot is free.
       const resources = gameData?.players?.player1?.resources ?? 1250;
-      // The game status is NOT changed here anymore. It remains 'waiting'.
-      // The host will trigger the start of the game from the game screen.
       transaction.update(gameRef, { 
         player2Id: uid, 
         'members': { ...gameData?.members, [uid]: true },
@@ -75,7 +79,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
         },
       });
     });
-    return { success: true, message: `User ${uid} joined or was already in game ${gameId}` };
+    return { success: true, message: `User ${uid} successfully joined or was re-admitted to game ${gameId}` };
   } catch (error: any) {
     console.error(`Error joining game ${gameId} for user ${uid}:`, error);
     if (error.code === 'already-exists' || error.code === 'not-found' || error.code === 'internal') {
