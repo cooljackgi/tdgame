@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -118,7 +117,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       if (!snap.exists()) return;
       const data = snap.data();
       
-      const isMember = data.members && Object.prototype.hasOwnProperty.call(data.members, currentUser.uid);
+      const isMember = Array.isArray(data.members) && data.members.includes(currentUser.uid);
       if (!isMember) return;
 
       if (data.gameStatus === 'playing' && !didRedirectRef.current) {
@@ -277,9 +276,8 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
             )}
           </CardContent>
     </Card>
+  </div>
   );
-}
+};
 
 export default Lobby;
-
-    
