@@ -782,6 +782,7 @@ export default function CoopGameLoader() {
                   });
 
                   if (target) {
+                      // Corrected: Update the copy immediately
                       updatedTowers[tower.id] = { ...tower, lastAttack: now };
                       firingIds.add(tower.id);
                       
@@ -1143,3 +1144,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
