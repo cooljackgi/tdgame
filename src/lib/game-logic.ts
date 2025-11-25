@@ -27,10 +27,16 @@ function applyDamage(amount: number, enemy: Enemy, attack: Attack): { damageDeal
     const armorReduction = armorShredDebuff ? (armorShredDebuff.potency ?? 0) : 0;
     const currentArmor = enemy.armor * (1 - armorReduction);
     
-    // Armor Pen from the attack itself is not used anymore, as it's now a debuff.
-    const armorPen = 0; // attack.armorPenFlat ?? 0;
+    const armorPen = 0;
     const effectiveArmor = Math.max(0, currentArmor - armorPen);
-    const damageDealt = Math.max(1, Math.floor(amount - effectiveArmor));
+    
+    // Berechne den Schaden nach Rüstungsabzug
+    const calculatedDamage = Math.floor(amount - effectiveArmor);
+    
+    // Stelle sicher, dass immer mindestens 10% des ursprünglichen Schadens durchkommen, aber mindestens 1.
+    const minDamage = Math.max(1, Math.floor(amount * 0.1));
+    
+    const damageDealt = Math.max(calculatedDamage, minDamage);
 
     enemy.health -= damageDealt;
 
