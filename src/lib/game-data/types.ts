@@ -237,12 +237,52 @@ export type Enemy = {
 
 
 export enum DeltaType {
-    ENEMY_SPAWN, ENEMY_MOVE, ENEMY_DAMAGE, ENEMY_DIE, ENEMY_REACH_END, ENEMY_ADD_EFFECT, ENEMY_REMOVE_EFFECT,
-    TOWER_ATTACK, VFX_DAMAGE_NUMBER, VFX_SPLASH, GAME_STATE_UPDATE, PLAYER_UPDATE, TOWERS_UPDATE, CLIENT_STATS_UPDATE,
-    TOWER_UPGRADE_VFX, ENEMY_PATH_UPDATE, BUILD_TOWER_REQUEST, UPGRADE_TOWER_REQUEST, SELL_TOWER_REQUEST,
+    SNAPSHOT,           // payload: GameSessionState
+    ENEMY_UPDATE,       // payload: Enemy[]
+    GAME_STATE_UPDATE,  // payload: Partial<GameState> & { currentWave, gameStatus, isIntermission, waveStartCountdown }
+    PLAYER_UPDATE,      // payload: Player[]
+    TOWERS_UPDATE,      // payload: Record<string, PlacedTower>
+    VFX_ATTACK,
+    VFX_DAMAGE,
+    VFX_SPLASH,
+    VFX_TOWER_UPGRADE,
+    VFX_TOWER_PLACE,
+    AUDIO,
+    PING,
+    REQUEST,
+    REQUEST_RESOLVE,
+    WORKER_UPDATE,       // payload: Worker[]
+    GHOST_UPDATE,        // payload: GhostFoundation[]
+    PORTAL_UPDATE,       // payload: Portal[]
+    STATS_UPDATE,        // payload: { totalKilled, totalLeaked }
 }
 
-export type GameDelta = [DeltaType, ...any[]];
+
+export type GameDelta = 
+    | [type: DeltaType.SNAPSHOT, payload: GameSessionState]
+    | [type: DeltaType.ENEMY_UPDATE, payload: Enemy[]]
+    | [type: DeltaType.GAME_STATE_UPDATE, payload: {
+        lives: number;
+        currentWave: number;
+        gameStatus: GameStatus;
+        isIntermission: boolean;
+        waveStartCountdown: number;
+    }]
+    | [type: DeltaType.PLAYER_UPDATE, payload: Player[]]
+    | [type: DeltaType.TOWERS_UPDATE, payload: Record<string, PlacedTower>]
+    | [type: DeltaType.VFX_ATTACK, payload: Attack[]]
+    | [type: DeltaType.VFX_DAMAGE, payload: DamageNumber[]]
+    | [type: DeltaType.VFX_SPLASH, payload: SplashRing[]]
+    | [type: DeltaType.VFX_TOWER_UPGRADE, payload: { towerId: string }]
+    | [type: DeltaType.VFX_TOWER_PLACE, payload: { towerId: string }]
+    | [type: DeltaType.AUDIO, payload: SoundEvent]
+    | [type: DeltaType.PING, payload: PingPayload]
+    | [type: DeltaType.REQUEST, payload: RequestPayload]
+    | [type: DeltaType.REQUEST_RESOLVE, payload: RequestResolve]
+    | [type: DeltaType.WORKER_UPDATE, payload: Worker[]]
+    | [type: DeltaType.GHOST_UPDATE, payload: GhostFoundation[]]
+    | [type: DeltaType.PORTAL_UPDATE, payload: Portal[]]
+    | [type: DeltaType.STATS_UPDATE, payload: { totalKilled: number, totalLeaked: number }];
 
 
 export type WaveEnemyData = {
@@ -293,6 +333,7 @@ export interface Worker {
 
 export interface GhostFoundation { id: string; row: number; col: number; towerId: string; startedAt: number; buildTimeMs: number; progress: number; }
 
+export type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
 export interface GameSessionState {
   players: Player[];
   gameState: GameState;
@@ -300,11 +341,12 @@ export interface GameSessionState {
   enemies: Enemy[];
   currentWave: number;
   difficulty: Difficulty;
-  gameStatus: 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
+  gameStatus: GameStatus;
   currentPath: Node[];
   waveStartCountdown: number;
   isIntermission: boolean;
   workers: Worker[];
   ghosts: GhostFoundation[];
-  portals?: Portal[];
+  portals: Portal[];
 }
+
