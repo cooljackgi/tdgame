@@ -44,13 +44,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   const { toast } = useToast();
   const didRedirectRef = useRef(false);
   
-  // Stream 1: List ONLY open games for players to join
   useEffect(() => {
-    // This query is now more specific: it only fetches games that are explicitly waiting for a second player.
     const gamesQuery = query(
       collection(db, 'games'),
       where('gameStatus', '==', 'waiting'),
-      where('player2Id', '==', null), // Explicitly check for empty P2 slot
+      where('player2Id', '==', null),
       orderBy('createdAt', 'desc')
     );
 
@@ -65,7 +63,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
           player1Id: data.player1Id || null,
           gameStatus: data.gameStatus,
         };
-      }).filter(game => game.player1Id !== currentUser.uid); // Ensure you don't see your own waiting game in the list
+      }).filter(game => game.player1Id !== currentUser.uid);
       
       setOpenGames(gamesList);
       setLoading(false);
@@ -75,9 +73,8 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     });
 
     return () => unsubscribe();
-  }, [currentUser.uid]); // Rerunning on user change is sufficient
+  }, [currentUser.uid]);
 
-  // Stream 2: Find if the current user is ALREADY in a game (waiting or playing)
   useEffect(() => {
       if (!currentUser?.uid) return;
 
@@ -93,23 +90,30 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
           if (!snapshot.empty) {
               const gameDoc = snapshot.docs[0];
               const data = gameDoc.data();
-              setActiveGame({
+              const gameData = {
                  id: gameDoc.id,
                  gameName: data.gameName || `Spiel ${gameDoc.id.substring(0, 5)}`,
                  player1: data.players?.player1 || null,
                  player2: data.players?.player2 || null,
                  player1Id: data.player1Id || null,
                  gameStatus: data.gameStatus,
-              });
+              };
+              setActiveGame(gameData);
+              
+              // New logic: if P2 joins and game is waiting, redirect
+              if(gameData.gameStatus === 'waiting' && gameData.player2Id === currentUser.uid && !didRedirectRef.current) {
+                didRedirectRef.current = true;
+                toast({ title: "Spiel beigetreten!", description: "Du wirst zum Spiel weitergeleitet..."});
+                router.push(`/game/${gameData.id}`);
+              }
           } else {
               setActiveGame(null);
           }
       });
       
       return () => unsubscribe();
-  }, [currentUser.uid]);
+  }, [currentUser.uid, router, toast]);
   
-  // Stream 3: Listen to the specific active game and redirect if it starts
   useEffect(() => {
     if (!activeGame || !currentUser.uid) return;
     
@@ -137,7 +141,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
       // The redirect is now handled by the useEffect that listens to the active game status change
-      // router.push(`/game/${gameId}`); 
     } catch (error: any) {
       console.error("Failed to join game:", error);
       toast({
