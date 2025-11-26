@@ -708,7 +708,22 @@ export default function CoopGameLoader() {
           const lobbyIsWaiting = currentStatus === 'waiting' && !hasTwoPlayers;
           const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element';
 
-          if (gameIsPaused || lobbyIsWaiting) return;
+          if (gameIsPaused || lobbyIsWaiting) {
+              if (epochNow > lastDeltaSentRef.current + 100) {
+                // Ensure state is synced even when paused
+                deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
+                    lives: gameState.lives,
+                    currentWave: currentWave,
+                    gameStatus: currentStatus,
+                    isIntermission: isIntermission,
+                    waveStartCountdown: waveStartCountdown,
+                }]);
+                sendGameDataRef.current('deltas', deltaQueueRef.current);
+                deltaQueueRef.current = [];
+                lastDeltaSentRef.current = epochNow;
+              }
+              return;
+          }
           
           const stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
@@ -729,7 +744,7 @@ export default function CoopGameLoader() {
             deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]);
           }
 
-          if (currentStatus === 'playing' && !isIntermission) {
+          if (currentStatus === 'playing') {
             
               const updatedPlayersWithIncome = players.map(p => ({
                   ...p,
@@ -737,12 +752,21 @@ export default function CoopGameLoader() {
               }));
               setPlayers(updatedPlayersWithIncome);
               deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, updatedPlayersWithIncome]);
+
+               // This is the main fix: always send the game state update in the loop
+              deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
+                    lives: gameState.lives,
+                    currentWave: currentWave,
+                    gameStatus: gameStatus,
+                    isIntermission: isIntermission,
+                    waveStartCountdown: waveStartCountdown,
+              }]);
               
               if (isIntermission) {
                   setWaveStartCountdown(prev => Math.max(0, prev - (delta/1000)));
                   if (waveStartCountdown <= 0) startWave(currentWave);
-                  return;
-              }
+                  // Return here so game logic doesn't run during intermission
+              } else { // Welle ist aktiv
               
               let livesLostThisTick = 0;
               let killedThisTick = 0;
@@ -977,6 +1001,7 @@ export default function CoopGameLoader() {
                       setGameStatus('gameover');
                   }
               }
+            }
           }
           
           if (epochNow > lastDeltaSentRef.current + 100) {
@@ -1142,6 +1167,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
