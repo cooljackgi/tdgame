@@ -135,7 +135,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     try {
       const joinGameCallable = httpsCallable(functions, 'joinGame');
       await joinGameCallable({ gameId });
-      // **FIX**: Redirect immediately after successfully joining.
       toast({ title: "Beitritt erfolgreich!", description: "Du wirst zum Spiel weitergeleitet..." });
       router.push(`/game/${gameId}`);
     } catch (error: any) {

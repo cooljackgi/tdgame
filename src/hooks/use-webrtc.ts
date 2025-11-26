@@ -290,7 +290,7 @@ export function useWebRTC(
                 };
                 sendHello();
                 if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
-                helloIntervalRef.current = setInterval(sendHello, 25000);
+                helloIntervalRef.current = setInterval(sendHello, 10000); // Send hello more frequently for rejoin
             };
             
             ws.onmessage = async (event) => {

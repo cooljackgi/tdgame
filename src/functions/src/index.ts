@@ -52,18 +52,24 @@ export const joinGame = functions.https.onCall(async (data, context) => {
       }
       const gameData = gameDoc.data();
       
-      const membersArray = Array.isArray(gameData?.members) ? gameData.members : [];
-      if (membersArray.includes(uid)) {
-        console.log(`User ${uid} is already a member of game ${gameId}. Allowing rejoin.`);
-        return;
+      // If user is player 1, do nothing.
+      if (gameData?.player1Id === uid) {
+          return;
       }
       
+      // If a player 2 is already set, check if it's the same user trying to rejoin.
       if (gameData?.player2Id) {
-        throw new functions.https.HttpsError("already-exists", "The game is already full.");
+         if (gameData.player2Id !== uid) { // A different player is P2
+            throw new functions.https.HttpsError("already-exists", "The game is already full.");
+         }
+         // The current user is already P2, do nothing further. This allows rejoining.
+         return; 
       }
 
+      // If we reach here, P2 slot is free.
       const resources = gameData?.players?.player1?.resources ?? 1250;
-      const newMembers = [...membersArray, uid];
+      const membersArray = Array.isArray(gameData?.members) ? gameData.members : [];
+      const newMembers = [...new Set([...membersArray, uid])];
 
       transaction.update(gameRef, { 
         player2Id: uid, 
