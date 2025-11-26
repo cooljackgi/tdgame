@@ -486,15 +486,21 @@ export default function CoopGameLoader() {
     };
     
     useEffect(() => {
-      audioManager.init();
-      const onFirstPointer = () => audioManager.primeHaptics();
+      if (hasInteracted) return;
+      const onFirstPointer = async () => {
+        try {
+            await audioManager.init();
+            audioManager.primeHaptics();
+            setHasInteracted(true);
+        } catch {}
+      };
       window.addEventListener('pointerdown', onFirstPointer, { once: true });
       window.addEventListener('touchstart', onFirstPointer, { once: true });
       return () => {
           window.removeEventListener('pointerdown', onFirstPointer);
           window.removeEventListener('touchstart', onFirstPointer);
       };
-    }, []);
+    }, [hasInteracted]);
 
     useEffect(() => {
       if (!gameId) return;
@@ -547,6 +553,9 @@ export default function CoopGameLoader() {
                     const joinGameCallable = httpsCallable(functions, 'joinGame');
                     setLoadingMessage('Trete Spiel bei...');
                     await joinGameCallable({ gameId });
+                } else if (initialData.player1Id !== user.uid && initialData.player2Id !== user.uid) {
+                    // This is a spectator joining
+                    console.log("Joining as spectator.");
                 }
 
                 setLoadingMessage('Synchronisiere Spielzustand...');
@@ -579,7 +588,6 @@ export default function CoopGameLoader() {
                             setCurrentWave(loadedState.currentWave || 0);
                             setTotalKilled(loadedState.totalKilled || 0);
                             setTotalLeaked(loadedState.totalLeaked || 0);
-                            // Ensure players state is updated with loaded resources etc.
                             setPlayers(normalizePlayers(loadedState.players || data.players));
                         } else {
                             // Fresh start
@@ -597,7 +605,6 @@ export default function CoopGameLoader() {
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
                     } else if (!gameDataLoaded) {
-                         // Client/Spectator just gets the status to show loading screen
                          setGameStatus(data.gameStatus);
                     }
                     
@@ -687,7 +694,6 @@ export default function CoopGameLoader() {
           if (delta === 0) return;
           lastTick.current = now;
 
-          // --- FPS Calculation ---
           frameCountRef.current++;
           if (Date.now() - lastFpsUpdateRef.current >= 1000) {
             setFps(frameCountRef.current);
@@ -718,6 +724,10 @@ export default function CoopGameLoader() {
           if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
           if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
           
+          if(ghostsChanged || towersChanged || portalsChanged) {
+            deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]);
+            deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]);
+          }
 
           if (currentStatus === 'playing' && !isIntermission) {
             
@@ -749,7 +759,6 @@ export default function CoopGameLoader() {
               let currentEnemies = [...enemies];
               let updatedTowers = {...towersByCell};
 
-               // --- Spawning Logic (moved inside game loop) ---
                 const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
                 if (spawnQueueRef.current.length > 0) {
                     const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
@@ -765,7 +774,7 @@ export default function CoopGameLoader() {
 
               Object.values(updatedTowers).forEach(tower => {
                   if (epochNow - tower.lastAttack >= tower.attackSpeed) {
-                      const isBuffed = false; // Simplified
+                      const isBuffed = false;
                       let targets: Enemy[] = [];
                       if (tower.effects?.some(e => e.type === 'multishot')) {
                           const effect = tower.effects.find(e => e.type === 'multishot')!;
@@ -949,8 +958,7 @@ export default function CoopGameLoader() {
                           gameStateChanges.waveStartCountdown = INTERMISSION_TIME;
                       }
                       
-                      // Save state at the end of the wave
-                      if (Date.now() - lastSaveTimeRef.current > 5000) { // Throttle saves
+                      if (Date.now() - lastSaveTimeRef.current > 5000) {
                           const stateToSave = { players, gameState, towersByCell, currentWave: gameStateChanges.currentWave ?? currentWave, totalKilled, totalLeaked, difficulty };
                           updateDoc(doc(db, 'games', gameId), { detailedState: stateToSave });
                           lastSaveTimeRef.current = Date.now();
@@ -1134,6 +1142,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 

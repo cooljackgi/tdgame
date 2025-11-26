@@ -138,7 +138,6 @@ export default function SinglePlayerGame({
             } catch (error) {
                 console.error("Failed to load game config, using defaults:", error);
                 toast({ title: 'Fehler beim Laden der Konfiguration', description: 'Standardwerte werden verwendet.', variant: 'destructive' });
-                // Fallback is handled within loadGameConfig, but we could explicitly set it here too.
             } finally {
                 setConfigLoading(false);
             }
@@ -148,7 +147,7 @@ export default function SinglePlayerGame({
 
 
     useEffect(() => {
-        if (configLoading) return; // Wait for config to load
+        if (configLoading) return;
 
         if (initialSavedGame) {
             const now = Date.now();
@@ -214,13 +213,13 @@ export default function SinglePlayerGame({
 
 
     useEffect(() => {
+        if (hasInteracted) return;
         const onFirstPointer = async () => {
             try {
-                await audioManager.init(); // AudioContext unlock
-                audioManager.primeHaptics(); // ab jetzt darf vibriert werden
+                await audioManager.init();
+                audioManager.primeHaptics();
+                setHasInteracted(true);
             } catch {}
-            window.removeEventListener('pointerdown', onFirstPointer);
-            window.removeEventListener('touchstart', onFirstPointer);
         };
         window.addEventListener('pointerdown', onFirstPointer, { once: true });
         window.addEventListener('touchstart', onFirstPointer, { once: true });
@@ -228,7 +227,7 @@ export default function SinglePlayerGame({
             window.removeEventListener('pointerdown', onFirstPointer);
             window.removeEventListener('touchstart', onFirstPointer);
         };
-    }, []);
+    }, [hasInteracted]);
 
     useEffect(() => {
       const saveGame = () => {
@@ -471,7 +470,6 @@ export default function SinglePlayerGame({
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, [cancelInteractions]);
 
-    // --- CHEAT/DEBUG FUNCTIONS ---
     const generateLayout = useCallback((towersToPlace: Tower[]) => {
         if (!gameConfig) return;
         const mazePath: Node[] = [
