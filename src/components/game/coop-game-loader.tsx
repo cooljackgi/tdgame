@@ -616,7 +616,7 @@ export default function CoopGameLoader() {
             return;
         }
 
-        if(gameStatus !== 'playing' || !isIntermission) {
+        if((gameStatus !== 'playing' && gameStatus !== 'waiting') || !isIntermission) {
             if(countdownRef.current) clearInterval(countdownRef.current);
             return;
         };
@@ -645,18 +645,22 @@ export default function CoopGameLoader() {
   
   useEffect(() => {
       if (!gameConfig || !isGameHost) return;
-      let gameLoopRef: number;
+      
+      let stopped = false;
       lastTickRef.current = performance.now();
 
       const gameLoop = () => {
-          gameLoopRef = requestAnimationFrame(gameLoop);
+          if (stopped) return;
+          requestAnimationFrame(gameLoop);
+          
           const now = performance.now();
           const delta = now - lastTickRef.current;
           if (delta === 0) return;
           lastTickRef.current = now;
 
+          // --- FPS Calculation ---
           frameCountRef.current++;
-          if (now - lastFpsUpdateRef.current >= 1000) {
+          if (Date.now() - lastFpsUpdateRef.current >= 1000) {
             setFps(frameCountRef.current);
             frameCountRef.current = 0;
             lastFpsUpdateRef.current = Date.now();
@@ -666,23 +670,32 @@ export default function CoopGameLoader() {
           const currentStatus = gameStatus;
           const hasTwoPlayers = players.length >= 2;
           
-          if (currentStatus === 'paused') return;
+          // Pause game logic if not appropriate status
+          if (currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element') {
+              return;
+          }
+
+          // Don't run game logic if waiting for players
+          if (currentStatus === 'waiting' && !hasTwoPlayers) {
+              return;
+          }
           
-          if (currentStatus === 'waiting' && !hasTwoPlayers) return;
+          const stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
-          let stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
-          
+          // --- Worker logic runs always (waiting and playing) ---
           const workerState = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
-          
+          const towersChanged = Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length;
+          const ghostsChanged = workerState.ghosts.length !== ghosts.length;
           setWorkers(workerState.workers);
-          setGhosts(workerState.ghosts);
-          if (workerState.portals?.length !== (portals?.length || 0)) {
+          if (ghostsChanged) setGhosts(workerState.ghosts);
+          if (towersChanged) setTowersByCell(workerState.towersByCell);
+          setPlayers(workerState.players);
+          if(workerState.portals?.length !== (portals?.length || 0)) {
             setPortals(workerState.portals);
           }
-          if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
-            setTowersByCell(workerState.towersByCell);
-          }
-           setPlayers(workerState.players);
+          if (towersChanged) deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, workerState.towersByCell]);
+          if (ghostsChanged) deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, workerState.ghosts]);
+          
 
           if (currentStatus === 'playing' && !isIntermission) {
             
@@ -788,20 +801,30 @@ export default function CoopGameLoader() {
                   }
               });
               
-              setTowersByCell(updatedTowers);
+              const finalTowerState = { ...towersByCell, ...updatedTowers };
+              setTowersByCell(finalTowerState);
+              if (Object.keys(finalTowerState).length !== Object.keys(towersByCell).length) {
+                  deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, finalTowerState]);
+              }
+
               if (firingIds.size > 0) {
                  setFiringTowerIds(new Set(firingIds));
                  setTimeout(() => setFiringTowerIds(new Set()), 150);
               }
               
-              if (newAttacks.length > 0) { gameBoardRef.current?.queueAttacks(newAttacks); deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]); }
-              if (newDamageNumbers.length > 0) { gameBoardRef.current?.queueDamageNumbers(newDamageNumbers); deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]); }
-              if (newSplashRings.length > 0) { gameBoardRef.current?.queueSplashRings(newSplashRings); deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]); }
+              // --- Host-side VFX ---
+              if (newAttacks.length > 0) gameBoardRef.current?.queueAttacks(newAttacks);
+              if (newDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(newDamageNumbers);
+              if (newSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(newSplashRings);
               if (newLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(newLifeGainVfx);
-              newSoundEvents.forEach(ev => {
-                  audioManager.play(ev);
-                  deltaQueueRef.current.push([DeltaType.AUDIO, ev]);
-              });
+              newSoundEvents.forEach(ev => audioManager.play(ev));
+
+              // --- Network VFX Deltas ---
+              if (newAttacks.length > 0) deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]);
+              if (newDamageNumbers.length > 0) deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]);
+              if (newSplashRings.length > 0) deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]);
+              newSoundEvents.forEach(ev => deltaQueueRef.current.push([DeltaType.AUDIO, ev]));
+
 
               const stillAlive: Enemy[] = [];
               const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > epochNow);
@@ -860,6 +883,8 @@ export default function CoopGameLoader() {
               }
               
               setEnemies(stillAlive);
+              deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, stillAlive]);
+              
               setGravityWells(activeGravityWells);
               setPersistentClouds(activePersistentClouds);
               if (killedThisTick > 0) setTotalKilled(k => k + killedThisTick);
@@ -915,11 +940,11 @@ export default function CoopGameLoader() {
       };
 
       if(isGameHost){
-          gameLoopRef = requestAnimationFrame(gameLoop);
+          gameLoop();
       }
       
       return () => {
-          if (gameLoopRef) cancelAnimationFrame(gameLoopRef);
+          stopped = true;
       }
   }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, currentWave, currentPath, players, gravityWells, persistentClouds, portals, startWave, gameState, workers, ghosts, gameConfig, onGameEnd, waveStartCountdown, onHostAction, totalKilled, totalLeaked]);
 
@@ -1067,3 +1092,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
