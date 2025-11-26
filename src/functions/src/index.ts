@@ -68,7 +68,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
 
       // If we reach here, P2 slot is free.
       const resources = gameData?.players?.player1?.resources ?? 1250;
-      const membersArray = Array.isArray(gameData?.members) ? gameData.members : [];
+      const membersArray = Array.isArray(gameData?.members) ? gameData.members : (gameData?.members ? Object.keys(gameData.members) : []);
       const newMembers = [...new Set([...membersArray, uid])];
 
       transaction.update(gameRef, { 
