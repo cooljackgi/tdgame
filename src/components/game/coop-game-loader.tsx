@@ -659,7 +659,7 @@ export default function CoopGameLoader() {
                     countdownRef.current = undefined;
                     
                     if (gameStatus === 'waiting') {
-                        setGameStatus('playing'); // First wave start
+                        setGameStatus('playing');
                     }
                     startWave(currentWave);
                 }
@@ -1142,6 +1142,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
