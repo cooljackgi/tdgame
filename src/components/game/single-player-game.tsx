@@ -87,7 +87,7 @@ export default function SinglePlayerGame({
 
     // --- Game Loop Refs ---
     const gameLoopRef = useRef<number>();
-    const lastTickRef = useRef(Date.now());
+    const lastTickRef = useRef(performance.now());
     const enemyIdCounter = useRef(0);
     const gameBoardRef = useRef<GameBoardHandle>(null);
     const spawnQueueRef = useRef<any[]>([]);
@@ -539,23 +539,27 @@ export default function SinglePlayerGame({
         if (!gameConfig) return;
         const gameLoop = () => {
             gameLoopRef.current = requestAnimationFrame(gameLoop);
-            const now = Date.now();
+            const now = performance.now();
             const delta = now - lastTickRef.current;
-            if (delta < 16) return;
             lastTickRef.current = now;
 
             // FPS Calculation
             frameCountRef.current++;
-            if (now - lastFpsUpdateRef.current >= 1000) {
+            if (Date.now() - lastFpsUpdateRef.current >= 1000) {
                 setFps(frameCountRef.current);
                 frameCountRef.current = 0;
-                lastFpsUpdateRef.current = now;
+                lastFpsUpdateRef.current = Date.now();
             }
 
+            const epochNow = Date.now();
             const currentStatus = gameStatusRef.current;
+            if (currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element' || currentStatus === 'tutorial') {
+                return;
+            }
+            
             const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
             
-            const workerState = tickWorkers(state, delta * (currentStatus === 'paused' ? 0.1 : 1), now, gameConfig.towers);
+            const workerState = tickWorkers(state, delta, epochNow, gameConfig.towers);
             setWorkers(workerState.workers);
             setGhosts(workerState.ghosts);
             if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
@@ -565,9 +569,7 @@ export default function SinglePlayerGame({
                 setPortals(workerState.portals || []);
             }
 
-            if (currentStatus !== 'playing') {
-                return;
-            }
+            if (currentStatus !== 'playing') return;
             
             setPlayers(prev => prev.map(p => ({
                 ...p,
@@ -631,7 +633,7 @@ export default function SinglePlayerGame({
             }
 
             for (const tower of towers) {
-                if (now - tower.lastAttack >= tower.attackSpeed) {
+                if (epochNow - tower.lastAttack >= tower.attackSpeed) {
                     const isBuffed = currentBuffedTowerIds.has(tower.id);
                     let targets: Enemy[] = [];
 
@@ -658,12 +660,12 @@ export default function SinglePlayerGame({
                     }
                     
                     if (targets.length > 0) {
-                        tower.lastAttack = now;
+                        tower.lastAttack = epochNow;
                         firingIds.add(tower.id);
                         
                         let enemiesForThisTick = [...currentEnemies];
                         for (const target of targets) {
-                            const result = processAttack(tower, target, enemiesForThisTick, now, isBuffed);
+                            const result = processAttack(tower, target, enemiesForThisTick, epochNow, isBuffed);
                             enemiesForThisTick = result.updatedEnemies;
                             
                             allNewAttacks.push(...result.newAttacks);
@@ -692,11 +694,11 @@ export default function SinglePlayerGame({
 
             let livesLostThisTick = 0;
             const nextEnemies: Enemy[] = [];
-            const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > now), ...newGravityWells];
-            const activePersistentClouds = [...persistentCloudsRef.current.filter(w => w.expires > now), ...newPersistentClouds];
+            const activeGravityWells = [...gravityWellsRef.current.filter(w => w.expires > epochNow), ...newGravityWells];
+            const activePersistentClouds = [...persistentCloudsRef.current.filter(w => w.expires > epochNow), ...newPersistentClouds];
             
             for (let enemy of currentEnemies) {
-              if (enemy.deathTimestamp && now - enemy.deathTimestamp > 2500) {
+              if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) {
                 continue;
               }
 
@@ -705,7 +707,7 @@ export default function SinglePlayerGame({
                 continue;
               }
               
-              let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > now) };
+              let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > epochNow) };
 
               for (const cloud of activePersistentClouds) {
                 const distSq = (cloud.x - updatedEnemy.position.col) ** 2 + (cloud.y - updatedEnemy.position.row) ** 2;
@@ -714,10 +716,10 @@ export default function SinglePlayerGame({
                     if (!existingEffect) {
                         updatedEnemy.effects.push({
                             type: cloud.effectType,
-                            expires: now + cloud.duration,
+                            expires: epochNow + cloud.duration,
                             potency: cloud.potency,
                             duration: cloud.duration,
-                            lastTick: now,
+                            lastTick: epochNow,
                         });
                     }
                 }
@@ -728,7 +730,7 @@ export default function SinglePlayerGame({
                  gameBoardRef.current?.queueDamageNumbers([{ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy.id, color: '#f97316' }]);
               }
               if (dotResult.killed && !updatedEnemy.deathTimestamp) {
-                updatedEnemy.deathTimestamp = now;
+                updatedEnemy.deathTimestamp = epochNow;
               }
               if(updatedEnemy.deathTimestamp) {
                 nextEnemies.push(updatedEnemy);
@@ -747,13 +749,13 @@ export default function SinglePlayerGame({
                   for (const portal of portalsRef.current) {
                       if (!portal.active) continue;
                       const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
-                      if (entranceDistSq < 0.5 && now - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
+                      if (entranceDistSq < 0.5 && epochNow - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
                           updatedEnemy.position = { ...portal.exit };
-                          updatedEnemy.lastTeleportAt = now;
+                          updatedEnemy.lastTeleportAt = epochNow;
                           updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
                           updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
                           updatedEnemy.pathIndex = 0;
-                          updatedEnemy.lastMove = now;
+                          updatedEnemy.lastMove = epochNow;
                           teleported = true;
                           break; 
                       }
@@ -782,7 +784,7 @@ export default function SinglePlayerGame({
               const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
               const stepMs = 1000 / Math.max(0.001, speed);
               
-              let timeToMove = now - updatedEnemy.lastMove;
+              let timeToMove = epochNow - updatedEnemy.lastMove;
               
               while (timeToMove >= stepMs) {
                   if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
@@ -800,7 +802,7 @@ export default function SinglePlayerGame({
               
                if (updatedEnemy) {
                  if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
-                      updatedEnemy.deathTimestamp = now;
+                      updatedEnemy.deathTimestamp = epochNow;
                  }
                  nextEnemies.push(updatedEnemy);
                }
@@ -967,6 +969,8 @@ export default function SinglePlayerGame({
         </div>
     );
 }
+    
+
 
 
     
