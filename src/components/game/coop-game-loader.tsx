@@ -134,7 +134,7 @@ export default function CoopGameLoader() {
 
   // --- Refs to hold stable function references ---
   const sendActionRef = useRef<(type: string, payload: any) => void>(() => {});
-  const sendGameDataRef = useRef<(deltas: GameDelta[]) => void>(() => {});
+  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
   
     const startWave = useCallback((waveIndex: number) => {
         if (!isGameHost || !gameConfig) return;
@@ -331,62 +331,64 @@ export default function CoopGameLoader() {
     
   // --- WebRTC Logic ---
   
-  const handleGameData = useCallback((deltas: GameDelta[]) => {
+  const handleGameData = useCallback(({ type, payload }: NetMsg) => {
     if (isGameHost) return;
-
-    for (const delta of deltas) {
-      const type = delta[0];
-      const payload = delta[1];
-
-      switch(type) {
-        case DeltaType.SNAPSHOT:
-          setPlayers((payload as GameSessionState).players);
-          setEnemies((payload as GameSessionState).enemies);
-          setTowersByCell((payload as GameSessionState).towersByCell);
-          setGameState((payload as GameSessionState).gameState);
-          setCurrentWave((payload as GameSessionState).currentWave);
-          setIsIntermission((payload as GameSessionState).isIntermission);
-          setWaveStartCountdown((payload as GameSessionState).waveStartCountdown);
-          setGameStatus((payload as GameSessionState).gameStatus);
-          setWorkers((payload as GameSessionState).workers);
-          setGhosts((payload as GameSessionState).ghosts);
-          setPortals((payload as GameSessionState).portals || []);
-          break;
-        case DeltaType.ENEMY_UPDATE: setEnemies(payload as Enemy[]); break;
-        case DeltaType.PLAYER_UPDATE: setPlayers(payload as Player[]); break;
-        case DeltaType.TOWERS_UPDATE: setTowersByCell(payload as Record<string, PlacedTower>); break;
-        case DeltaType.GAME_STATE_UPDATE: 
-            setGameState(gs => ({...gs, lives: payload.lives}));
-            setCurrentWave(payload.currentWave);
-            setGameStatus(payload.gameStatus);
-            setIsIntermission(payload.isIntermission);
-            setWaveStartCountdown(payload.waveStartCountdown);
-            break;
-        case DeltaType.STATS_UPDATE:
-            setTotalKilled(payload.totalKilled);
-            setTotalLeaked(payload.totalLeaked);
-            break;
-        case DeltaType.WORKER_UPDATE: setWorkers(payload as Worker[]); break;
-        case DeltaType.GHOST_UPDATE: setGhosts(payload as GhostFoundation[]); break;
-        case DeltaType.PORTAL_UPDATE: setPortals(payload as Portal[]); break;
-        case DeltaType.AUDIO: audioManager.play(payload as SoundEvent); break;
-        case DeltaType.VFX_ATTACK: gameBoardRef.current?.queueAttacks(payload as Attack[]); break;
-        case DeltaType.VFX_DAMAGE: gameBoardRef.current?.queueDamageNumbers(payload as DamageNumber[]); break;
-        case DeltaType.VFX_SPLASH: gameBoardRef.current?.queueSplashRings(payload as SplashRing[]); break;
-        case DeltaType.VFX_TOWER_UPGRADE: 
-            audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
-            setLastUpgradedTowerId(payload.towerId);
-            setTimeout(() => setLastUpgradedTowerId(null), 500);
-            break;
-        case DeltaType.VFX_TOWER_PLACE: 
-            audioManager.play({ kind: 'sfx', name: 'build_tower' });
-            setJustPlacedTowerId(payload.towerId);
-            setTimeout(() => setJustPlacedTowerId(null), 400);
-            break;
-        case DeltaType.PING: gameBoardRef.current?.queuePing(payload as PingPayload); break;
-        case DeltaType.REQUEST: gameBoardRef.current?.queueRequest(payload as RequestPayload); break;
-        case DeltaType.REQUEST_RESOLVE: gameBoardRef.current?.resolveRequest(payload as RequestResolve); break;
-      }
+    
+    if (type === 'deltas') {
+        const deltas = payload as GameDelta[];
+        for (const delta of deltas) {
+            const deltaType = delta[0];
+            const deltaPayload = delta[1];
+            switch(deltaType) {
+                case DeltaType.SNAPSHOT:
+                  setPlayers((deltaPayload as GameSessionState).players);
+                  setEnemies((deltaPayload as GameSessionState).enemies);
+                  setTowersByCell((deltaPayload as GameSessionState).towersByCell);
+                  setGameState((deltaPayload as GameSessionState).gameState);
+                  setCurrentWave((deltaPayload as GameSessionState).currentWave);
+                  setIsIntermission((deltaPayload as GameSessionState).isIntermission);
+                  setWaveStartCountdown((deltaPayload as GameSessionState).waveStartCountdown);
+                  setGameStatus((deltaPayload as GameSessionState).gameStatus);
+                  setWorkers((deltaPayload as GameSessionState).workers);
+                  setGhosts((deltaPayload as GameSessionState).ghosts);
+                  setPortals((deltaPayload as GameSessionState).portals || []);
+                  break;
+                case DeltaType.ENEMY_UPDATE: setEnemies(deltaPayload as Enemy[]); break;
+                case DeltaType.PLAYER_UPDATE: setPlayers(deltaPayload as Player[]); break;
+                case DeltaType.TOWERS_UPDATE: setTowersByCell(deltaPayload as Record<string, PlacedTower>); break;
+                case DeltaType.GAME_STATE_UPDATE: 
+                    setGameState(gs => ({...gs, lives: deltaPayload.lives}));
+                    setCurrentWave(deltaPayload.currentWave);
+                    setGameStatus(deltaPayload.gameStatus);
+                    setIsIntermission(deltaPayload.isIntermission);
+                    setWaveStartCountdown(deltaPayload.waveStartCountdown);
+                    break;
+                case DeltaType.STATS_UPDATE:
+                    setTotalKilled(deltaPayload.totalKilled);
+                    setTotalLeaked(deltaPayload.totalLeaked);
+                    break;
+                case DeltaType.WORKER_UPDATE: setWorkers(deltaPayload as Worker[]); break;
+                case DeltaType.GHOST_UPDATE: setGhosts(deltaPayload as GhostFoundation[]); break;
+                case DeltaType.PORTAL_UPDATE: setPortals(deltaPayload as Portal[]); break;
+                case DeltaType.AUDIO: audioManager.play(deltaPayload as SoundEvent); break;
+                case DeltaType.VFX_ATTACK: gameBoardRef.current?.queueAttacks(deltaPayload as Attack[]); break;
+                case DeltaType.VFX_DAMAGE: gameBoardRef.current?.queueDamageNumbers(deltaPayload as DamageNumber[]); break;
+                case DeltaType.VFX_SPLASH: gameBoardRef.current?.queueSplashRings(deltaPayload as SplashRing[]); break;
+                case DeltaType.VFX_TOWER_UPGRADE: 
+                    audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
+                    setLastUpgradedTowerId(deltaPayload.towerId);
+                    setTimeout(() => setLastUpgradedTowerId(null), 500);
+                    break;
+                case DeltaType.VFX_TOWER_PLACE: 
+                    audioManager.play({ kind: 'sfx', name: 'build_tower' });
+                    setJustPlacedTowerId(deltaPayload.towerId);
+                    setTimeout(() => setJustPlacedTowerId(null), 400);
+                    break;
+                case DeltaType.PING: gameBoardRef.current?.queuePing(deltaPayload as PingPayload); break;
+                case DeltaType.REQUEST: gameBoardRef.current?.queueRequest(deltaPayload as RequestPayload); break;
+                case DeltaType.REQUEST_RESOLVE: gameBoardRef.current?.resolveRequest(deltaPayload as RequestResolve); break;
+            }
+        }
     }
   }, [isGameHost]);
 
@@ -766,11 +768,12 @@ export default function CoopGameLoader() {
              setTimeout(() => setFiringTowerIds(new Set()), 150);
           }
           
-          if (newAttacks.length > 0) gameBoardRef.current?.queueAttacks(newAttacks);
-          if (newDamageNumbers.length > 0) gameBoardRef.current?.queueDamageNumbers(newDamageNumbers);
-          if (newSplashRings.length > 0) gameBoardRef.current?.queueSplashRings(newSplashRings);
+          if (newAttacks.length > 0) deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]);
+          if (newDamageNumbers.length > 0) deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]);
+          if (newSplashRings.length > 0) deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]);
           if (newLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(newLifeGainVfx);
-          if (newSoundEvents.length > 0) newSoundEvents.forEach(ev => audioManager.play(ev));
+          if (newSoundEvents.length > 0) newSoundEvents.forEach(ev => deltaQueueRef.current.push([DeltaType.AUDIO, ev]));
+
 
           const stillAlive: Enemy[] = [];
           const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > now);
@@ -872,10 +875,10 @@ export default function CoopGameLoader() {
               }
           }
           
-          if (now > lastDeltaSentRef.current + 60) {
+          if (now > lastDeltaSentRef.current + 100) { // Send updates every 100ms
               deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, stillAlive]);
               deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, players]);
-              deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersByCell]);
+              deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, updatedTowers]);
               deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { lives: gameState.lives, currentWave, gameStatus, isIntermission, waveStartCountdown }]);
               deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled, totalLeaked }]);
               deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, workers]);
@@ -885,7 +888,7 @@ export default function CoopGameLoader() {
               const deltasToSend = [...deltaQueueRef.current];
               deltaQueueRef.current = [];
               if (deltasToSend.length > 0) {
-                sendGameDataRef.current(deltasToSend);
+                 sendGameDataRef.current('deltas', deltasToSend);
               }
               lastDeltaSentRef.current = now;
           }
@@ -1044,3 +1047,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
