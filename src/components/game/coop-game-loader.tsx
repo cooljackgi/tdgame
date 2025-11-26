@@ -311,16 +311,12 @@ export default function CoopGameLoader() {
         };
         
         if (action === 'start_wave_now') {
-            if (gameStatus === 'waiting') {
-                const activePlayers = players.filter(p => p && p.id !== 'spectator');
-                if (activePlayers.length >= 2) {
+            if (gameStatus === 'waiting' && players.length < 2) {
+              toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
+            } else if (gameStatus === 'waiting' || (gameStatus === 'playing' && isIntermission)) {
+                if (gameStatus === 'waiting') {
                     setGameStatus('playing');
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                } else {
-                    toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
                 }
-            } else if (gameStatus === 'playing' && isIntermission) {
                  startWave(currentWave);
             }
         } else {
@@ -539,13 +535,16 @@ export default function CoopGameLoader() {
 
         const joinAndListen = async () => {
             try {
-                // Try to join the game. The function is idempotent.
-                const joinGameCallable = httpsCallable(functions, 'joinGame');
-                setLoadingMessage('Trete Spiel bei...');
-                await joinGameCallable({ gameId });
+                if (user) {
+                    const gameSnap = await getDoc(gameDocRef);
+                    if (gameSnap.exists() && gameSnap.data().player1Id !== user.uid && !gameSnap.data().player2Id) {
+                        const joinGameCallable = httpsCallable(functions, 'joinGame');
+                        setLoadingMessage('Trete Spiel bei...');
+                        await joinGameCallable({ gameId });
+                    }
+                }
                 setLoadingMessage('Synchronisiere Spielzustand...');
 
-                // Once joined, start listening for updates.
                 gameUnsub = onSnapshot(gameDocRef, (snap) => {
                     if (!snap.exists()) {
                         toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
@@ -571,15 +570,14 @@ export default function CoopGameLoader() {
                         setCurrentWave(data.currentWave || 0);
                         setIsIntermission(data.isIntermission ?? true);
                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                        setGameStatus(data.gameStatus); // Use status from DB
+                        setGameStatus(data.gameStatus);
                         setWorkers(data.workers || [
                           { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
                           { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                         ]);
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
-                    } else if (!gameDataLoaded) {
-                         // Client just gets minimal state to start, snapshot will provide the rest
+                    } else if (role === 'player2' && !gameDataLoaded) {
                          setGameStatus(data.gameStatus);
                     }
                     
@@ -618,21 +616,22 @@ export default function CoopGameLoader() {
             return;
         }
 
-        if(gameStatus !== 'playing') return;
+        if(gameStatus !== 'playing' || !isIntermission) {
+            if(countdownRef.current) clearInterval(countdownRef.current);
+            return;
+        };
 
-        if(isIntermission) {
-            countdownRef.current = window.setInterval(() => {
-                setWaveStartCountdown(prev => {
-                    const newTime = Math.max(0, prev - 1);
-                    if (newTime === 0) {
-                        if (countdownRef.current) clearInterval(countdownRef.current);
-                        countdownRef.current = undefined;
-                        startWave(currentWave);
-                    }
-                    return newTime;
-                });
-            }, 1000);
-        }
+        countdownRef.current = window.setInterval(() => {
+            setWaveStartCountdown(prev => {
+                const newTime = Math.max(0, prev - 1);
+                if (newTime === 0) {
+                    if (countdownRef.current) clearInterval(countdownRef.current);
+                    countdownRef.current = undefined;
+                    startWave(currentWave);
+                }
+                return newTime;
+            });
+        }, 1000);
 
         return () => {
             if (countdownRef.current) clearInterval(countdownRef.current);
@@ -653,26 +652,23 @@ export default function CoopGameLoader() {
           gameLoopRef = requestAnimationFrame(gameLoop);
           const now = performance.now();
           const delta = now - lastTickRef.current;
+          if (delta === 0) return;
           lastTickRef.current = now;
 
           frameCountRef.current++;
           if (now - lastFpsUpdateRef.current >= 1000) {
             setFps(frameCountRef.current);
             frameCountRef.current = 0;
-            lastFpsUpdateRef.current = now;
+            lastFpsUpdateRef.current = Date.now();
           }
 
           const epochNow = Date.now();
           const currentStatus = gameStatus;
           const hasTwoPlayers = players.length >= 2;
           
-          if (currentStatus === 'paused') {
-            return; // Completely halt game logic when paused
-          }
+          if (currentStatus === 'paused') return;
           
-          if (currentStatus === 'waiting' && !hasTwoPlayers) {
-            return;
-          }
+          if (currentStatus === 'waiting' && !hasTwoPlayers) return;
           
           let stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
@@ -686,7 +682,7 @@ export default function CoopGameLoader() {
           if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCell).length) {
             setTowersByCell(workerState.towersByCell);
           }
-           setPlayers(workerState.players); // Players might have spent resources
+           setPlayers(workerState.players);
 
           if (currentStatus === 'playing' && !isIntermission) {
             
@@ -733,7 +729,6 @@ export default function CoopGameLoader() {
 
               Object.values(updatedTowers).forEach(tower => {
                   if (epochNow - tower.lastAttack >= tower.attackSpeed) {
-                      let updatedTower = tower;
                       const isBuffed = false; // Simplified
                       let targets: Enemy[] = [];
                       if (tower.effects?.some(e => e.type === 'multishot')) {
@@ -758,8 +753,7 @@ export default function CoopGameLoader() {
                       }
 
                       if (targets.length > 0) {
-                          updatedTower.lastAttack = epochNow;
-                          updatedTowers[tower.id] = updatedTower;
+                          tower.lastAttack = epochNow;
                           firingIds.add(tower.id);
                           
                           let enemiesForThisTick = [...currentEnemies];
@@ -804,7 +798,7 @@ export default function CoopGameLoader() {
               if (newDamageNumbers.length > 0) { gameBoardRef.current?.queueDamageNumbers(newDamageNumbers); deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]); }
               if (newSplashRings.length > 0) { gameBoardRef.current?.queueSplashRings(newSplashRings); deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]); }
               if (newLifeGainVfx.length > 0) gameBoardRef.current?.queueLifeGainVfx(newLifeGainVfx);
-              if (newSoundEvents.length > 0) newSoundEvents.forEach(ev => {
+              newSoundEvents.forEach(ev => {
                   audioManager.play(ev);
                   deltaQueueRef.current.push([DeltaType.AUDIO, ev]);
               });
@@ -911,17 +905,9 @@ export default function CoopGameLoader() {
           }
           
           if (epochNow > lastDeltaSentRef.current + 100) {
-              deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, enemies]);
-              deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, players]);
-              deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersByCell]);
-              deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { lives: gameState.lives, currentWave, gameStatus, isIntermission, waveStartCountdown }]);
-              deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled, totalLeaked }]);
-              deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, workers]);
-              deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, ghosts]);
-              deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, portals]);
-
-              if (deltaQueueRef.current.length > 0) {
-                 sendGameDataRef.current('deltas', [...deltaQueueRef.current]);
+              const deltasToSend = [...deltaQueueRef.current];
+              if (deltasToSend.length > 0) {
+                 sendGameDataRef.current('deltas', deltasToSend);
               }
               deltaQueueRef.current = [];
               lastDeltaSentRef.current = epochNow;
@@ -1081,6 +1067,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-
-    
