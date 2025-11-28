@@ -71,6 +71,8 @@ export const joinGame = functions.https.onCall(async (data, context) => {
       const membersArray = Array.isArray(gameData?.members) ? gameData.members : (gameData?.members ? Object.keys(gameData.members) : []);
       const newMembers = [...new Set([...membersArray, uid])];
 
+      // The game status is NOT changed here anymore. It remains 'waiting'.
+      // The host will trigger the start of the game from the game screen.
       transaction.update(gameRef, { 
         player2Id: uid, 
         'members': newMembers,
