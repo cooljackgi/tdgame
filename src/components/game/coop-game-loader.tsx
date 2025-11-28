@@ -205,6 +205,10 @@ export default function CoopGameLoader() {
                         if (updatedState.portals) setPortals(updatedState.portals);
                         stateChanged = true;
                         currentPlayers = updatedState.players;
+
+                        if (playerId === localPlayerId) {
+                            cancelInteractions();
+                        }
                         break;
                     }
                     case 'move_worker': {
@@ -226,6 +230,10 @@ export default function CoopGameLoader() {
                         setWorkers(updatedState.workers);
                         stateChanged = true;
                         currentPlayers = updatedState.players;
+                        
+                        if (playerId === localPlayerId) {
+                           setSelectedTowerToBuild(null);
+                        }
                         break;
                     }
                     case 'upgrade': {
@@ -252,8 +260,6 @@ export default function CoopGameLoader() {
 
                         const nextTowersByCell = { ...towersByCell, [key]: upgradedTower };
                         setTowersByCell(nextTowersByCell);
-                        setLastUpgradedTowerId(upgradedTower.id);
-                        setTimeout(()=>setLastUpgradedTowerId(null), 500);
 
                         deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id }]);
                         deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, nextTowersByCell]);
@@ -262,11 +268,17 @@ export default function CoopGameLoader() {
                             const nextSpec = gameConfig.towers.find(t => t.id === upgId);
                             return nextSpec && (upgrader.unlockedElements || []).some(el => nextSpec.elements.includes(el));
                         });
+                        
+                        // --- UI Logic only for the action initiator ---
+                        if (playerId === localPlayerId) {
+                            setLastUpgradedTowerId(upgradedTower.id);
+                            setTimeout(() => setLastUpgradedTowerId(null), 500);
 
-                        if (!hasFurtherUpgrades) {
-                            setFocusedTower(null); // This closes the menu locally on host
-                        } else {
-                            setFocusedTower(upgradedTower); // Update focused tower
+                            if (!hasFurtherUpgrades) {
+                                setFocusedTower(null); 
+                            } else {
+                                setFocusedTower(upgradedTower);
+                            }
                         }
 
                         stateChanged = true;
@@ -291,6 +303,10 @@ export default function CoopGameLoader() {
                          });
                          stateChanged = true;
                          currentPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p);
+                         
+                         if (playerId === localPlayerId) {
+                             setFocusedTower(null);
+                         }
                          break;
                     }
                     case 'pick_element': {
@@ -349,7 +365,7 @@ export default function CoopGameLoader() {
             performUpdate();
         }
 
-    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig]);
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions]);
     
   // --- WebRTC Logic ---
   
@@ -619,11 +635,6 @@ export default function CoopGameLoader() {
 
                     setDifficulty(data.difficulty || 'Normal');
                     
-                    if (role !== 'player1' || !gameDataLoaded) {
-                      const playersData = normalizePlayers(data.players);
-                      setPlayers(playersData);
-                    }
-
                     if (role === 'player1' && !gameDataLoaded) {
                         // Host loads state from DB, if it exists
                         const loadedState = data.detailedState;
@@ -636,6 +647,7 @@ export default function CoopGameLoader() {
                             setPlayers(normalizePlayers(loadedState.players || data.players));
                         } else {
                             // Fresh start
+                            setPlayers(normalizePlayers(data.players));
                             setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
                             setTowersByCell(data.towersByCell || {});
                         }
@@ -649,8 +661,11 @@ export default function CoopGameLoader() {
                         ]);
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
-                    } else if (!gameDataLoaded) {
-                         setGameStatus(data.gameStatus);
+                    } else if (role !== 'player1') { // Client or Spectator
+                         setPlayers(normalizePlayers(data.players));
+                         if (!gameDataLoaded) {
+                           setGameStatus(data.gameStatus);
+                         }
                     }
                     
                     if (!gameDataLoaded) {
@@ -675,7 +690,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
+    }, [user, gameId, router, toast, configLoading]);
     
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
@@ -1187,6 +1202,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
