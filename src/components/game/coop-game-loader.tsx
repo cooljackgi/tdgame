@@ -238,6 +238,9 @@ export default function CoopGameLoader() {
                         const upgrader = currentPlayers.find(p => p.id === playerId);
                         if (!upgradeSpec || !upgrader) break;
                         
+                        const hasRequiredElements = upgradeSpec.elements.every(el => upgrader.unlockedElements.includes(el));
+                        if (!hasRequiredElements) break;
+                        
                         const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
                         if (upgrader.resources < cost) break;
 
@@ -616,8 +619,10 @@ export default function CoopGameLoader() {
 
                     setDifficulty(data.difficulty || 'Normal');
                     
-                    const playersData = normalizePlayers(data.players);
-                    setPlayers(playersData);
+                    if (role !== 'player1' || !gameDataLoaded) {
+                      const playersData = normalizePlayers(data.players);
+                      setPlayers(playersData);
+                    }
 
                     if (role === 'player1' && !gameDataLoaded) {
                         // Host loads state from DB, if it exists
@@ -1182,6 +1187,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
