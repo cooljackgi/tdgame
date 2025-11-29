@@ -353,12 +353,15 @@ export default function CoopGameLoader() {
         };
         
         if (action === 'start_wave_now') {
-            if (gameStatus === 'waiting' && players.length < 2) {
-              toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
-            } else if (gameStatus === 'waiting' || (gameStatus === 'playing' && isIntermission)) {
-                if (gameStatus === 'waiting') {
-                    setGameStatus('playing');
+            if (gameStatus === 'waiting') {
+                if (players.length < 2) {
+                    toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
+                    return;
                 }
+                // Correctly transition from waiting to playing countdown
+                setGameStatus('playing');
+                setWaveStartCountdown(INTERMISSION_TIME);
+            } else if (gameStatus === 'playing' && isIntermission) {
                  startWave(currentWave);
             }
         } else {
@@ -704,7 +707,7 @@ export default function CoopGameLoader() {
         }
 
         const hasTwoPlayers = players.length >= 2;
-        const gameIsActive = (gameStatus === 'playing' && isIntermission) || (gameStatus === 'waiting' && hasTwoPlayers);
+        const gameIsActive = (gameStatus === 'playing' && isIntermission);
 
         if (!gameIsActive) {
             if (countdownRef.current) clearInterval(countdownRef.current);
@@ -1008,19 +1011,26 @@ export default function CoopGameLoader() {
                   return p;
               }));
               
-              const enemiesLeft = stillAlive.filter(e => !e.deathTimestamp).length === 0;
+              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
-              if (enemiesLeft && spawnQueueEmpty && !isIntermission) {
+              if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
                   const nextWaveIndex = currentWave + 1;
                   const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
                   const allPlayersHaveEnoughElements = players.every(p => p.id === 'spectator' || p.unlockedElements.length >= expectedElements || p.unlockedElements.length >= ALL_PICKABLE_ELEMENTS.length);
 
-                  if (Date.now() - lastSaveTimeRef.current > 5000) {
-                      const stateToSave = { players, gameState, towersByCell, currentWave, totalKilled, totalLeaked, difficulty };
-                      updateDoc(doc(db, 'games', gameId), { detailedState: stateToSave });
-                      lastSaveTimeRef.current = Date.now();
-                  }
+                  // Update Firestore state at the end of the wave
+                  const gameDocRef = doc(db, 'games', gameId);
+                  updateDoc(gameDocRef, {
+                      'detailedState.players': players,
+                      'detailedState.gameState': gameState,
+                      'detailedState.towersByCell': towersByCell,
+                      'detailedState.currentWave': nextWaveIndex,
+                      currentWave: nextWaveIndex, // Also update top-level field for queries
+                      isIntermission: true,
+                      waveStartCountdown: INTERMISSION_TIME,
+                  });
+                  lastSaveTimeRef.current = Date.now();
 
                   if (gameConfig.waves.length > nextWaveIndex) {
                       if ((nextWaveIndex) % 5 === 0 && !allPlayersHaveEnoughElements) {
@@ -1202,6 +1212,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
