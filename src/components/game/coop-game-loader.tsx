@@ -1010,44 +1010,43 @@ export default function CoopGameLoader() {
                   return p;
               }));
               
-              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
+              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
-              if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                    const nextWave = currentWave + 1;
+                    const gameDocRef = doc(db, 'games', gameId);
+
+                    const shouldPickElement = (nextWave > 0) && (nextWave % 5 === 0) && players.some(p => p.unlockedElements.length < (1 + Math.floor((nextWave - 1) / 5)));
                     
-                  // Set local state immediately for responsiveness
-                  const nextWave = currentWave + 1;
-                  setCurrentWave(nextWave);
-                  setIsIntermission(true);
-                  setWaveStartCountdown(INTERMISSION_TIME);
-                  setPortals(prev => prev.map(p => ({...p, expiresAt: epochNow + 500})));
-                  
-                  // Decide if it's time to pick an element
-                  const shouldPickElement = (nextWave > 0) && (nextWave % 5 === 0) && players.some(p => p.unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1);
-                  if (shouldPickElement) {
-                      setGameStatus('picking-element');
-                  }
-                  
-                  // Update Firestore state at the end of the wave
-                  const gameDocRef = doc(db, 'games', gameId);
-                  updateDoc(gameDocRef, {
-                      'detailedState.players': players,
-                      'detailedState.gameState': gameState,
-                      'detailedState.towersByCell': towersByCell,
-                      'detailedState.currentWave': nextWave,
-                      currentWave: nextWave, // Also update top-level field for queries
-                      gameStatus: shouldPickElement ? 'picking-element' : 'playing',
-                      isIntermission: true,
-                      waveStartCountdown: INTERMISSION_TIME,
-                  });
-                  lastSaveTimeRef.current = Date.now();
+                    if (shouldPickElement) {
+                        setGameStatus('picking-element');
+                        updateDoc(gameDocRef, { gameStatus: 'picking-element' });
+                    } else {
+                        setCurrentWave(nextWave);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
 
-                  if (gameConfig.waves.length <= nextWave) {
-                      onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
-                      setGameStatus('gameover');
-                  }
+                        updateDoc(gameDocRef, {
+                            currentWave: nextWave,
+                            gameStatus: 'playing',
+                            isIntermission: true,
+                            waveStartCountdown: INTERMISSION_TIME,
+                            'detailedState.players': players,
+                            'detailedState.gameState': gameState,
+                            'detailedState.towersByCell': towersByCell,
+                            'detailedState.currentWave': nextWave,
+                        });
+                        lastSaveTimeRef.current = Date.now();
+                    }
+
+                    if (gameConfig.waves.length <= nextWave) {
+                        onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
+                        setGameStatus('gameover');
+                    }
+                }
               }
-            }
           }
           
           if (epochNow > lastDeltaSentRef.current + 100) {
@@ -1213,14 +1212,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
