@@ -313,7 +313,7 @@ export default function CoopGameLoader() {
                         if (gameStatus !== 'picking-element') break;
                         const { element } = payload;
                         
-                        const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                        const expectedElements = 1 + Math.floor(currentWave / 5);
 
                         let allPicked = true;
                         currentPlayers = currentPlayers.map(p => {
@@ -338,7 +338,6 @@ export default function CoopGameLoader() {
                         });
                         
                         if (allPicked) {
-                            setCurrentWave(currentWave + 1);
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
@@ -1015,33 +1014,35 @@ export default function CoopGameLoader() {
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
-                  const nextWaveIndex = currentWave + 1;
-                  const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-                  const allPlayersHaveEnoughElements = players.every(p => p.id === 'spectator' || p.unlockedElements.length >= expectedElements || p.unlockedElements.length >= ALL_PICKABLE_ELEMENTS.length);
-
+                    
+                  // Set local state immediately for responsiveness
+                  const nextWave = currentWave + 1;
+                  setCurrentWave(nextWave);
+                  setIsIntermission(true);
+                  setWaveStartCountdown(INTERMISSION_TIME);
+                  setPortals(prev => prev.map(p => ({...p, expiresAt: epochNow + 500})));
+                  
+                  // Decide if it's time to pick an element
+                  const shouldPickElement = (nextWave > 0) && (nextWave % 5 === 0) && players.some(p => p.unlockedElements.length < ALL_PICKABLE_ELEMENTS.length + 1);
+                  if (shouldPickElement) {
+                      setGameStatus('picking-element');
+                  }
+                  
                   // Update Firestore state at the end of the wave
                   const gameDocRef = doc(db, 'games', gameId);
                   updateDoc(gameDocRef, {
                       'detailedState.players': players,
                       'detailedState.gameState': gameState,
                       'detailedState.towersByCell': towersByCell,
-                      'detailedState.currentWave': nextWaveIndex,
-                      currentWave: nextWaveIndex, // Also update top-level field for queries
+                      'detailedState.currentWave': nextWave,
+                      currentWave: nextWave, // Also update top-level field for queries
+                      gameStatus: shouldPickElement ? 'picking-element' : 'playing',
                       isIntermission: true,
                       waveStartCountdown: INTERMISSION_TIME,
                   });
                   lastSaveTimeRef.current = Date.now();
 
-                  if (gameConfig.waves.length > nextWaveIndex) {
-                      if ((nextWaveIndex) % 5 === 0 && !allPlayersHaveEnoughElements) {
-                          setGameStatus('picking-element');
-                      } else {
-                          setCurrentWave(nextWaveIndex);
-                          setIsIntermission(true);
-                          setWaveStartCountdown(INTERMISSION_TIME);
-                          setPortals(prev => prev.map(p => ({...p, expiresAt: epochNow + 500})));
-                      }
-                  } else {
+                  if (gameConfig.waves.length <= nextWave) {
                       onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
                       setGameStatus('gameover');
                   }
@@ -1212,6 +1213,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 

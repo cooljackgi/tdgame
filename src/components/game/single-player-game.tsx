@@ -826,18 +826,20 @@ export default function SinglePlayerGame({
                 setPlayers(prev => [{ ...prev[0], resources: prev[0].resources + resourcesGainedThisTick }]);
             }
             
-            if (nextEnemies.filter(e => !e.deathTimestamp).length === 0 && spawnQueueRef.current.length === 0 && !isIntermissionRef.current) {
-                const nextWave = currentWaveRef.current + 1;
-                
-                if (gameConfig.waves[nextWave]) {
-                  setPortals([]); // Portale am Ende der Welle entfernen
-                  if ((nextWave) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 8) {
-                    setGameStatus('picking-element');
-                  } else {
-                    setCurrentWave(nextWave);
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                  }
+            const allEnemiesDefeated = nextEnemies.length > 0 && nextEnemies.every(e => e.deathTimestamp);
+            const spawnQueueEmpty = spawnQueueRef.current.length === 0;
+
+            if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
+                if (gameConfig.waves[currentWaveRef.current + 1]) {
+                    setCurrentWave(prev => prev + 1);
+                    setPortals([]);
+                    
+                    if ((currentWaveRef.current + 1) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 8) {
+                        setGameStatus('picking-element');
+                    } else {
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                    }
                 } else {
                     handleGameEnd(true);
                 }
@@ -972,3 +974,4 @@ export default function SinglePlayerGame({
 
 
     
+
