@@ -313,7 +313,7 @@ export default function CoopGameLoader() {
                         if (gameStatus !== 'picking-element') break;
                         const { element } = payload;
                         
-                        const expectedElements = 1 + Math.floor(currentWave / 5);
+                        const expectedElements = 1 + Math.floor((currentWave) / 5);
 
                         let allPicked = true;
                         currentPlayers = currentPlayers.map(p => {
@@ -323,7 +323,7 @@ export default function CoopGameLoader() {
                             }
                             
                             if (p.unlockedElements.length >= expectedElements) {
-                                allPicked = false; // This player already picked, don't change others
+                                allPicked = false;
                                 return p;
                             }
                             
@@ -1013,38 +1013,38 @@ export default function CoopGameLoader() {
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
               const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
-                if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
-                    const nextWave = currentWave + 1;
-                    const gameDocRef = doc(db, 'games', gameId);
-
-                    const shouldPickElement = (nextWave > 0) && (nextWave % 5 === 0) && players.some(p => p.unlockedElements.length < (1 + Math.floor((nextWave - 1) / 5)));
+               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                    const nextWaveIndex = currentWave + 1;
                     
-                    if (shouldPickElement) {
+                    // Korrekte Formel für die Elementauswahl-Prüfung
+                    const expectedElementsAfterThisWave = 1 + Math.floor(nextWaveIndex / 5);
+                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElementsAfterThisWave);
+                    
+                    if (gameConfig.waves.length <= nextWaveIndex) {
+                        onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
+                        setGameStatus('gameover');
+                    } else if (shouldPickElement) {
                         setGameStatus('picking-element');
-                        updateDoc(gameDocRef, { gameStatus: 'picking-element' });
                     } else {
-                        setCurrentWave(nextWave);
+                        setCurrentWave(nextWaveIndex);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                         setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-
-                        updateDoc(gameDocRef, {
-                            currentWave: nextWave,
-                            gameStatus: 'playing',
-                            isIntermission: true,
-                            waveStartCountdown: INTERMISSION_TIME,
-                            'detailedState.players': players,
-                            'detailedState.gameState': gameState,
-                            'detailedState.towersByCell': towersByCell,
-                            'detailedState.currentWave': nextWave,
-                        });
-                        lastSaveTimeRef.current = Date.now();
                     }
 
-                    if (gameConfig.waves.length <= nextWave) {
-                        onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
-                        setGameStatus('gameover');
-                    }
+                    // Save state at the end of the wave
+                    const gameDocRef = doc(db, 'games', gameId);
+                    updateDoc(gameDocRef, {
+                        currentWave: nextWaveIndex,
+                        gameStatus: shouldPickElement ? 'picking-element' : 'playing',
+                        isIntermission: !shouldPickElement,
+                        waveStartCountdown: shouldPickElement ? 999 : INTERMISSION_TIME,
+                        'detailedState.players': players,
+                        'detailedState.gameState': gameState,
+                        'detailedState.towersByCell': towersByCell,
+                        'detailedState.currentWave': nextWaveIndex,
+                    }).catch(err => console.error("Error saving game state:", err));
+                    lastSaveTimeRef.current = Date.now();
                 }
               }
           }
@@ -1102,8 +1102,8 @@ export default function CoopGameLoader() {
     }
   }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
 
-  if (loading || configLoading || !gameDataLoaded || !localPlayer || !gameConfig) {
-    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">{loadingMessage}</p></div>;
+  if (configLoading || !gameConfig || !localPlayer) {
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spieldaten...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
@@ -1212,3 +1212,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
