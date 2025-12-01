@@ -103,7 +103,7 @@ export default function CoopGameLoader() {
   // Refs for stable access in game loop
   const currentPathRef = useRef(currentPath);
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
-  
+
   const onFocusTower = (tower: PlacedTower) => {
     cancelInteractions();
     setFocusedTower(tower);
@@ -1117,10 +1117,6 @@ export default function CoopGameLoader() {
     }
   }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
 
-  if (configLoading || !gameConfig || !localPlayer) {
-    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spieldaten...</p></div>;
-  }
-  
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTowerAction = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col, playerId: focusedTower.ownerId });
   
@@ -1140,17 +1136,27 @@ export default function CoopGameLoader() {
           setGameStatus('playing');
       }
   };
-  
-  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
-  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
-  const interactionPrompt = portalPhase !== 'idle'
-  ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
-  : selectedTowerToBuild
-  ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
-  : focusedTower
-  ? `Fokus: ${focusedTower?.name}`
-  : 'Wähle einen Turm zum Bauen oder einen Arbeiter';
+  // Correct placement of hooks, before any early returns.
+  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
+  const LayoutComponent = useMemo(() => (isMobile ? MobileLayout : DesktopLayout), [isMobile]);
+  
+  const interactionPrompt = useMemo(() => {
+    if (portalPhase !== 'idle') {
+      return portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals';
+    }
+    if (selectedTowerToBuild) {
+      return `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`;
+    }
+    if (focusedTower) {
+      return `Fokus: ${focusedTower?.name}`;
+    }
+    return 'Wähle einen Turm zum Bauen oder einen Arbeiter';
+  }, [portalPhase, selectedTowerToBuild, focusedTower]);
+  
+  if (configLoading || !gameConfig || !localPlayer) {
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">{loadingMessage}</p></div>;
+  }
 
   return (
     <div className="w-full h-full flex flex-col" onClick={() => { if (!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -1238,5 +1244,6 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
