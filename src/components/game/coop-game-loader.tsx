@@ -671,7 +671,6 @@ export default function CoopGameLoader() {
                     setDifficulty(data.difficulty || 'Normal');
                     
                     if (role === 'player1' && !gameDataLoaded) {
-                        // Host loads state from DB, if it exists
                         const loadedState = data.detailedState;
                         if (loadedState) {
                             setGameState(loadedState.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
@@ -681,12 +680,10 @@ export default function CoopGameLoader() {
                             setTotalLeaked(loadedState.totalLeaked || 0);
                             setPlayers(normalizePlayers(loadedState.players || data.players));
                         } else {
-                            // Fresh start
                             setPlayers(normalizePlayers(data.players));
                             setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
                             setTowersByCell(data.towersByCell || {});
                         }
-                        
                         setGameStatus(data.gameStatus);
                         setIsIntermission(data.isIntermission ?? true);
                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
@@ -696,7 +693,7 @@ export default function CoopGameLoader() {
                         ]);
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
-                    } else if (role !== 'player1') { // Client or Spectator
+                    } else if (role !== 'player1') {
                          setPlayers(normalizePlayers(data.players));
                          if (!gameDataLoaded) {
                            setGameStatus(data.gameStatus);
@@ -1059,22 +1056,6 @@ export default function CoopGameLoader() {
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                         setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                        
-                        if (epochNow - lastSaveTimeRef.current > 30000) { // Save every 30s
-                            const gameDocRef = doc(db, 'games', gameId);
-                            updateDoc(gameDocRef, {
-                                currentWave: nextWaveIndex,
-                                isIntermission: true,
-                                waveStartCountdown: INTERMISSION_TIME,
-                                'detailedState.players': playersRef.current,
-                                'detailedState.gameState': gameStateRef.current,
-                                'detailedState.towersByCell': towersByCellRef.current,
-                                'detailedState.currentWave': nextWaveIndex,
-                                'detailedState.totalKilled': totalKilledRef.current,
-                                'detailedState.totalLeaked': totalLeakedRef.current,
-                            }).catch(err => console.error("Error saving game state:", err));
-                            lastSaveTimeRef.current = epochNow;
-                        }
                     }
                 }
               }
@@ -1097,7 +1078,7 @@ export default function CoopGameLoader() {
       return () => {
           stopped = true;
       }
-  }, [isGameHost, difficulty, user, gameId, gameConfig]);
+  }, [isGameHost, difficulty, user, gameId, gameConfig, startWave]);
 
 
   useEffect(() => {
@@ -1114,7 +1095,7 @@ export default function CoopGameLoader() {
   };
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: waveStartCountdownRef.current, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
     
     if (portalPhase !== 'idle') {
         if (portalPhase === 'entrance') {
@@ -1131,7 +1112,7 @@ export default function CoopGameLoader() {
     } else {
         dispatchAction('move_worker', { row, col });
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, difficulty]);
 
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTowerAction = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col, playerId: focusedTower.ownerId });
@@ -1171,6 +1152,8 @@ export default function CoopGameLoader() {
   if (configLoading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">{loadingMessage}</p></div>;
   }
+  
+  const placedTowers = Object.values(towersByCell);
 
   return (
     <div className="w-full h-full flex flex-col" onClick={() => { if (!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -1258,5 +1241,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-    
