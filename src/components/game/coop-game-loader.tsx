@@ -312,7 +312,8 @@ export default function CoopGameLoader() {
                         if (gameStatus !== 'picking-element') break;
                         const { element, playerId } = payload;
                         
-                        const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                        // Wave has already been incremented before pick starts
+                        const expectedElements = 1 + Math.floor(currentWave / 5);
 
                         let allPicked = true;
                         currentPlayers = currentPlayers.map(p => {
@@ -322,7 +323,7 @@ export default function CoopGameLoader() {
                             }
                             
                             if (p.unlockedElements.length >= expectedElements) {
-                                allPicked = false;
+                                allPicked = false; // Already picked
                                 return p;
                             }
                             
@@ -1010,23 +1011,28 @@ export default function CoopGameLoader() {
 
               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
                   const nextWaveIndex = currentWave + 1;
-                  const playersHaveEnoughElements = players.every(p => p.unlockedElements.length >= (1 + Math.floor(nextWaveIndex / 5)));
-                  const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && !playersHaveEnoughElements;
                   const gameDocRef = doc(db, 'games', gameId);
+                  
+                  const playersHaveEnoughElements = players.every(p => {
+                      const expected = 1 + Math.floor(nextWaveIndex / 5);
+                      return p.unlockedElements.length >= expected;
+                  });
 
+                  const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && !playersHaveEnoughElements;
+                  
                   if (gameConfig.waves.length <= nextWaveIndex) {
                       onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
                       setGameStatus('gameover');
                       updateDoc(gameDocRef, { gameStatus: 'gameover' });
                   } else if (shouldPickElement) {
                       setGameStatus('picking-element');
-                      setIsIntermission(true); // Pause for picking
+                      setIsIntermission(true); // Pause the game for picking
                       setWaveStartCountdown(999);
                       updateDoc(gameDocRef, {
-                          currentWave: currentWave,
                           gameStatus: 'picking-element',
                           isIntermission: true,
-                          waveStartCountdown: 999
+                          waveStartCountdown: 999,
+                          currentWave: currentWave // Don't increment wave yet
                       });
                   } else {
                       setCurrentWave(nextWaveIndex);
@@ -1147,13 +1153,13 @@ export default function CoopGameLoader() {
             resetGame={onExit}
             towers={gameConfig.towers} 
             setTowers={() => {}} 
-            placedTowers={towersByCell} 
+            placedTowers={placedTowers} 
             enemies={enemies}
             workers={workers}
             ghosts={ghosts}
             portals={portals}
-            damageNumbers={[]} 
-            splashRings={[]}
+            damageNumbers={damageNumbers} 
+            splashRings={splashRings}
             persistentClouds={persistentClouds}
             currentPath={currentPath} 
             handlePlaceTower={handlePlaceAction}
@@ -1181,8 +1187,8 @@ export default function CoopGameLoader() {
             justPlacedTowerId={justPlacedTowerId}
             isCoop={true} 
             playerRole={localPlayerId}
-            handleLoadTestLayout={() => {}}
-            handleLoadAllTowersLayout={() => {}}
+            handleLoadTestLayout={handleLoadTestLayout}
+            handleLoadAllTowersLayout={handleLoadAllTowersLayout}
             isCheating={difficulty === 'Chaos'} 
             cheat_addResources={() => setPlayers(prev => [{...prev[0], resources: prev[0].resources + 10000}])} 
             cheat_skipWaves={() => setCurrentWave(prev => prev + 5)}
@@ -1190,7 +1196,7 @@ export default function CoopGameLoader() {
             cheat_unlockAll={() => setPlayers(prev => [{...prev[0], unlockedElements: ['neutral', ...ALL_PICKABLE_ELEMENTS]}])}
             firingTowerIds={firingTowerIds} 
             allTowers={gameConfig.towers}
-            attacks={[]}
+            attacks={attacks}
             isWsConnected={isConnected}
             hostPacketsPerSecond={stats.sentPacketsPerSecond}
             hostBytesSentPerSecond={stats.sentBytesPerSecond}
@@ -1213,5 +1219,3 @@ export default function CoopGameLoader() {
     </div>
   );
 }
-
-    
