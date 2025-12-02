@@ -668,15 +668,10 @@ export default function CoopGameLoader() {
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
                     
-                    if (role === localPlayerIdRef.current && gameDataLoaded) { // Avoid re-init if role hasn't changed
-                        setPlayers(normalizePlayers(data.players));
-                        return;
-                    }
-                    
                     setLocalPlayerId(role);
                     setDifficulty(data.difficulty || 'Normal');
                     
-                    if (role === 'player1') {
+                    if (role === 'player1' && !gameDataLoaded) {
                         const loadedState = data.detailedState;
                         if (loadedState) {
                             setPlayers(normalizePlayers(loadedState.players || data.players));
@@ -701,10 +696,14 @@ export default function CoopGameLoader() {
                         setPortals(data.portals || []);
                     } else { 
                         setPlayers(normalizePlayers(data.players));
-                        setGameStatus(data.gameStatus);
+                        if (!gameDataLoaded) { // Only set status on first load for clients
+                          setGameStatus(data.gameStatus);
+                        }
                     }
                     
-                    setGameDataLoaded(true);
+                    if (!gameDataLoaded) {
+                      setGameDataLoaded(true);
+                    }
                     setLoading(false);
 
                 }, (err) => {
@@ -770,16 +769,15 @@ export default function CoopGameLoader() {
       if (!gameConfig || !isGameHost) return;
       
       let stopped = false;
-      const lastTick = { current: performance.now() };
-
+      
       const gameLoop = () => {
           if (stopped) return;
           requestAnimationFrame(gameLoop);
           
           const now = performance.now();
-          const delta = now - lastTick.current;
+          const delta = now - lastTickRef.current;
           if (delta === 0) return;
-          lastTick.current = now;
+          lastTickRef.current = now;
 
           frameCountRef.current++;
           if (Date.now() - lastFpsUpdateRef.current >= 1000) {
@@ -1045,15 +1043,23 @@ export default function CoopGameLoader() {
                         setGameStatus('gameover');
                     } else {
                         const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && playersRef.current.some(p => p.unlockedElements.length < (1 + Math.floor(nextWaveIndex / 5)));
-                        setCurrentWave(nextWaveIndex);
+                        
+                        const newGameState = {
+                            currentWave: nextWaveIndex,
+                            isIntermission: true,
+                            gameStatus: shouldPickElement ? 'picking-element' : 'playing',
+                            waveStartCountdown: shouldPickElement ? 999 : INTERMISSION_TIME
+                        };
 
-                        if (shouldPickElement) {
-                            setGameStatus('picking-element');
-                        } else {
-                            setIsIntermission(true);
-                            setWaveStartCountdown(INTERMISSION_TIME);
-                            setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                        }
+                        // Update local state
+                        setCurrentWave(newGameState.currentWave);
+                        setIsIntermission(newGameState.isIntermission);
+                        setGameStatus(newGameState.gameStatus as GameStatus);
+                        setWaveStartCountdown(newGameState.waveStartCountdown);
+                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                        
+                        // Send delta to client
+                        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { ...newGameState, lives: gameStateRef.current.lives }]);
                     }
                 }
               }
@@ -1238,5 +1244,6 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
