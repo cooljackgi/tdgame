@@ -15,7 +15,7 @@ import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
-import { NetMsg, useWebRTC } from '@/hooks/use-webrtc';
+import { useWebRTC } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
@@ -667,25 +667,15 @@ export default function CoopGameLoader() {
                     let role: 'player1' | 'player2' | 'spectator' = 'spectator';
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
-                    
                     setLocalPlayerId(role);
+                    
                     setDifficulty(data.difficulty || 'Normal');
                     
                     // The host only loads data ONCE. After that, it's the source of truth.
                     if (role === 'player1' && !gameDataLoaded) {
-                        const loadedState = data.detailedState;
-                        if (loadedState) {
-                            setPlayers(normalizePlayers(loadedState.players || data.players));
-                            setGameState(loadedState.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                            setTowersByCell(loadedState.towersByCell || {});
-                            setCurrentWave(loadedState.currentWave || 0);
-                            setTotalKilled(loadedState.totalKilled || 0);
-                            setTotalLeaked(loadedState.totalLeaked || 0);
-                        } else {
-                            setPlayers(normalizePlayers(data.players));
-                            setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                            setTowersByCell(data.towersByCell || {});
-                        }
+                        setPlayers(normalizePlayers(data.players));
+                        setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                        setTowersByCell(data.towersByCell || {});
                         setGameStatus(data.gameStatus);
                         setIsIntermission(data.isIntermission ?? true);
                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
@@ -696,15 +686,16 @@ export default function CoopGameLoader() {
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
                         setGameDataLoaded(true); // LOCK IN THE DATA
-                    } else { 
+                    } else if (role !== 'player1') { 
                         // Clients and spectators always update based on the simplified DB state
                         setPlayers(normalizePlayers(data.players));
                         if (!gameDataLoaded) { // Only set status on first load for clients
                           setGameStatus(data.gameStatus);
+                          setGameDataLoaded(true);
                         }
                     }
                     
-                    if (!loading) {
+                    if (loading) {
                       setLoading(false);
                     }
                 }, (err) => {
@@ -724,7 +715,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading]);
+    }, [user, gameId, router, toast, configLoading, gameDataLoaded, loading]);
     
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
@@ -764,7 +755,6 @@ export default function CoopGameLoader() {
   const frameCountRef = useRef(0);
   const lastTickRef = useRef(performance.now());
   
-  const lastSaveTimeRef = useRef(0);
 
   useEffect(() => {
       if (!gameConfig || !isGameHost) return;
@@ -1238,6 +1228,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
