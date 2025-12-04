@@ -687,7 +687,8 @@ export default function CoopGameLoader() {
                         setPortals(data.portals || []);
                         setGameDataLoaded(true); // LOCK IN THE DATA
                     } else if (role !== 'player1') { 
-                        // Clients and spectators always update based on the simplified DB state
+                        // Clients and spectators always update their player list,
+                        // but not the core game state which comes from WebRTC.
                         setPlayers(normalizePlayers(data.players));
                         if (!gameDataLoaded) { // Only set status on first load for clients
                           setGameStatus(data.gameStatus);
@@ -782,7 +783,7 @@ export default function CoopGameLoader() {
           const hasTwoPlayers = playersRef.current.length >= 2;
           
           const lobbyIsWaiting = currentStatus === 'waiting' && !hasTwoPlayers;
-          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element';
+          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element' || currentStatus === 'tutorial';
 
           // --- IMMER den aktuellen Zustand in die Queue legen ---
           deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
@@ -1033,18 +1034,18 @@ export default function CoopGameLoader() {
                         onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCellRef.current);
                         setGameStatus('gameover');
                     } else {
+                        // THIS IS THE FIX. Set intermission immediately, then update other state.
+                        setIsIntermission(true);
                         const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && playersRef.current.some(p => p.unlockedElements.length < (1 + Math.floor(nextWaveIndex / 5)));
                         
                         if (shouldPickElement) {
                            setGameStatus('picking-element');
+                           setWaveStartCountdown(999);
                         } else {
                            setCurrentWave(nextWaveIndex);
                            setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                           setWaveStartCountdown(INTERMISSION_TIME);
                         }
-
-                        // This is now the single point of truth for ending a wave
-                        setIsIntermission(true);
-                        setWaveStartCountdown(shouldPickElement ? 999 : INTERMISSION_TIME);
                     }
                 }
               }
@@ -1228,6 +1229,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
