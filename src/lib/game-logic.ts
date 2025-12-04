@@ -1,4 +1,3 @@
-
 // src/lib/game-logic.ts
 import type {
   Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
@@ -324,77 +323,96 @@ export function startNextOrder(state: GameSessionState, w: Worker): GameSessionS
 
 
 export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-  let newState = { ...state };
-  for (const w of newState.workers) {
-    const updatedState = stepWorker(newState, w, dtMs, now, allTowers);
-    newState = { ...updatedState };
+  const updatedWorkers = state.workers.map(w => stepWorker(w, dtMs, now));
+  
+  let newState = {
+      ...state,
+      workers: updatedWorkers,
+      // Pass through other state parts that might be modified
+      ghosts: [...state.ghosts],
+      towersByCell: {...state.towersByCell},
+      portals: [...(state.portals || [])],
+      players: [...state.players]
+  };
+
+  // Check for completed builds and update state
+  for (const worker of updatedWorkers) {
+      if (worker.state === 'idle' && worker.queue.length === 0 && !worker.current) {
+          continue; // Worker is truly idle
+      }
+      
+      const justFinishedOrder = worker.current && now >= (worker.current.eta ?? Infinity);
+      
+      if (justFinishedOrder) {
+          const order = worker.current!.order;
+          if (order.type === 'build_tower') {
+              newState = completeConstruction(newState, worker, allTowers);
+          } else if (order.type === 'place_portal') {
+              newState = completePlacePortalPhase(newState, worker);
+          }
+          
+          // After completing, immediately try to start the next order
+          const workerInNewState = newState.workers.find(w_ => w_.id === worker.id)!;
+          newState = startNextOrder(newState, workerInNewState);
+      }
   }
+
   return newState;
 }
 
-function stepWorker(state: GameSessionState, w: Worker, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-  if (w.state === "idle") {
-    if (w.queue.length > 0) {
-      return startNextOrder(state, w);
-    }
-    return state;
-  }
+function stepWorker(w: Worker, dtMs: number, now: number): Worker {
+    const newWorker = { ...w };
 
-  if (w.state === "moving") {
-    const targetX = w.moveTarget ? w.moveTarget.x : w.current!.targetX;
-    const targetY = w.moveTarget ? w.moveTarget.y : w.current!.targetY;
+    if (newWorker.state === "idle") {
+        return newWorker;
+    }
+
+    if (newWorker.state === "moving") {
+        const targetX = newWorker.moveTarget ? newWorker.moveTarget.x : newWorker.current!.targetX;
+        const targetY = newWorker.moveTarget ? newWorker.moveTarget.y : newWorker.current!.targetY;
+        
+        const dx = targetX - newWorker.x, dy = targetY - newWorker.y;
+        const dist = Math.hypot(dx, dy);
+        const step = (newWorker.speed * dtMs) / 1000;
+
+        newWorker.z = 4 * Math.sin(now / 180);
+
+        if (dist <= step) {
+            newWorker.x = targetX;
+            newWorker.y = targetY;
+
+            if (newWorker.moveTarget) {
+                newWorker.moveTarget = null;
+                newWorker.state = "idle";
+            } else {
+                newWorker.state = "building";
+                newWorker.current!.startedAt = now;
+                const o = newWorker.current!.order;
+                newWorker.current!.eta = now + (o.type === "build_tower" ? o.buildTimeMs : (o.phase === "entrance" ? o.buildTimeMsEntrance : o.buildTimeMsExit));
+            }
+        } else {
+            newWorker.x += (dx / dist) * step;
+            newWorker.y += (dy / dist) * step;
+        }
+        return newWorker;
+    }
+
+    if (newWorker.state === "building") {
+        if (!newWorker.current) {
+            newWorker.state = "idle";
+            return newWorker;
+        }
+        const { order, startedAt, eta } = newWorker.current;
+        const p = Math.min(1, (now - (startedAt ?? now)) / ((eta ?? now) - (startedAt ?? now) || 1));
+        
+        if (order.type === 'build_tower') {
+            // Ghost progress is handled separately now to avoid direct mutation
+        }
+
+        // Completion logic is now outside this function
+    }
     
-    const dx = targetX - w.x, dy = targetY - w.y;
-    const dist = Math.hypot(dx, dy);
-    const step = (w.speed * dtMs) / 1000;
-
-    w.z = 4 * Math.sin(now / 180);
-
-    if (dist <= step) {
-      w.x = targetX;
-      w.y = targetY;
-
-      if (w.moveTarget) {
-        w.moveTarget = null;
-        w.state = "idle";
-        return startNextOrder(state, w);
-      } else {
-        w.state = "building";
-        w.current!.startedAt = now;
-        const o = w.current!.order;
-        w.current!.eta = now + (o.type === "build_tower" ? o.buildTimeMs : (o.phase === "entrance" ? o.buildTimeMsEntrance : o.buildTimeMsExit));
-      }
-    } else {
-      w.x += (dx / dist) * step;
-      w.y += (dy / dist) * step;
-    }
-    return state;
-  }
-
-  if (w.state === "building") {
-    if (!w.current) {
-      w.state = "idle";
-      return state;
-    }
-    
-    const { order, startedAt, eta } = w.current;
-    const p = Math.min(1, (now - (startedAt ?? now)) / (eta! - (startedAt ?? now) || 1));
-    
-    if (order.type === 'build_tower') {
-      const ghost = state.ghosts.find(g => g.row === order.row && g.col === order.col);
-      if(ghost) ghost.progress = p;
-    }
-
-    if (now >= (eta ?? now)) {
-      if (order.type === 'build_tower') {
-        return completeConstruction(state, w, allTowers);
-      } else {
-        return completePlacePortalPhase(state, w);
-      }
-    }
-    return state;
-  }
-  return state;
+    return newWorker;
 }
 
 function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tower[]): GameSessionState {
@@ -425,9 +443,8 @@ function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tow
   audioManager.play({kind: 'sfx', name: 'build_tower'});
 
   w.current = undefined;
-  w.state = "idle";
   
-  return startNextOrder(newState, w);
+  return newState;
 }
 
 function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
@@ -464,6 +481,8 @@ function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessi
 
         w.current = undefined;
         w.state = "idle";
-        return startNextOrder(state, w);
+        
+        const workerInNewState = state.workers.find(w_ => w_.id === w.id)!;
+        return startNextOrder(state, workerInNewState);
     }
 }
