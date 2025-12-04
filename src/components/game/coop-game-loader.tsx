@@ -629,7 +629,7 @@ export default function CoopGameLoader() {
 
 
     useEffect(() => {
-        if (!user || !gameId || configLoading || gameDataLoaded) return;
+        if (!user || !gameId || configLoading) return;
         const gameDocRef = doc(db, 'games', gameId);
 
         let gameUnsub: Unsubscribe | null = null;
@@ -671,6 +671,7 @@ export default function CoopGameLoader() {
                     setLocalPlayerId(role);
                     setDifficulty(data.difficulty || 'Normal');
                     
+                    // The host only loads data ONCE. After that, it's the source of truth.
                     if (role === 'player1' && !gameDataLoaded) {
                         const loadedState = data.detailedState;
                         if (loadedState) {
@@ -694,18 +695,18 @@ export default function CoopGameLoader() {
                         ]);
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
+                        setGameDataLoaded(true); // LOCK IN THE DATA
                     } else { 
+                        // Clients and spectators always update based on the simplified DB state
                         setPlayers(normalizePlayers(data.players));
                         if (!gameDataLoaded) { // Only set status on first load for clients
                           setGameStatus(data.gameStatus);
                         }
                     }
                     
-                    if (!gameDataLoaded) {
-                      setGameDataLoaded(true);
+                    if (!loading) {
+                      setLoading(false);
                     }
-                    setLoading(false);
-
                 }, (err) => {
                     console.error("Error listening to game document:", err);
                     toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
@@ -723,7 +724,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
+    }, [user, gameId, router, toast, configLoading]);
     
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
@@ -1044,22 +1045,16 @@ export default function CoopGameLoader() {
                     } else {
                         const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && playersRef.current.some(p => p.unlockedElements.length < (1 + Math.floor(nextWaveIndex / 5)));
                         
-                        const newGameState = {
-                            currentWave: nextWaveIndex,
-                            isIntermission: true,
-                            gameStatus: shouldPickElement ? 'picking-element' : 'playing',
-                            waveStartCountdown: shouldPickElement ? 999 : INTERMISSION_TIME
-                        };
+                        if (shouldPickElement) {
+                           setGameStatus('picking-element');
+                        } else {
+                           setCurrentWave(nextWaveIndex);
+                           setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                        }
 
-                        // Update local state
-                        setCurrentWave(newGameState.currentWave);
-                        setIsIntermission(newGameState.isIntermission);
-                        setGameStatus(newGameState.gameStatus as GameStatus);
-                        setWaveStartCountdown(newGameState.waveStartCountdown);
-                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                        
-                        // Send delta to client
-                        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { ...newGameState, lives: gameStateRef.current.lives }]);
+                        // This is now the single point of truth for ending a wave
+                        setIsIntermission(true);
+                        setWaveStartCountdown(shouldPickElement ? 999 : INTERMISSION_TIME);
                     }
                 }
               }
@@ -1143,7 +1138,6 @@ export default function CoopGameLoader() {
   };
   
   const LayoutComponent = useMemo(() => (isMobile ? MobileLayout : DesktopLayout), [isMobile]);
-  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
   
   const interactionPrompt = useMemo(() => {
     if (portalPhase !== 'idle') {
@@ -1244,6 +1238,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
