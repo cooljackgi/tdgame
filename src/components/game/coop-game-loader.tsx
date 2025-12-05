@@ -20,8 +20,8 @@ import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
 import { MobileLayout } from '@/components/layouts/mobile-layout';
-import { ElementPickDialog } from '@/components/game/element-pick-dialog';
-import Header from '@/components/game/header';
+import { ElementPickDialog } from './element-pick-dialog';
+import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/lib/commands';
@@ -82,36 +82,6 @@ export default function CoopGameLoader() {
   // VFX State
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
-  // --- Refs for stable access in game loop ---
-  const playersRef = useRef(players);
-  const towersByCellRef = useRef(towersByCell);
-  const enemiesRef = useRef(enemies);
-  const gameStateRef = useRef(gameState);
-  const currentWaveRef = useRef(currentWave);
-  const gameStatusRef = useRef(gameStatus);
-  const isIntermissionRef = useRef(isIntermission);
-  const waveStartCountdownRef = useRef(waveStartCountdown);
-  const workersRef = useRef(workers);
-  const ghostsRef = useRef(ghosts);
-  const portalsRef = useRef(portals);
-  const totalKilledRef = useRef(totalKilled);
-  const totalLeakedRef = useRef(totalLeaked);
-
-  useEffect(() => { playersRef.current = players; }, [players]);
-  useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
-  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
-  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
-  useEffect(() => { currentWaveRef.current = currentWave; }, [currentWave]);
-  useEffect(() => { gameStatusRef.current = gameStatus; }, [gameStatus]);
-  useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
-  useEffect(() => { waveStartCountdownRef.current = waveStartCountdown; }, [waveStartCountdown]);
-  useEffect(() => { workersRef.current = workers; }, [workers]);
-  useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
-  useEffect(() => { portalsRef.current = portals; }, [portals]);
-  useEffect(() => { totalKilledRef.current = totalKilled; }, [totalKilled]);
-  useEffect(() => { totalLeakedRef.current = totalLeaked; }, [totalLeaked]);
-
-
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   
   const localPlayer = useMemo(() => {
@@ -133,7 +103,7 @@ export default function CoopGameLoader() {
   // Refs for stable access in game loop
   const currentPathRef = useRef(currentPath);
   useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
-
+  
   const onFocusTower = (tower: PlacedTower) => {
     cancelInteractions();
     setFocusedTower(tower);
@@ -210,10 +180,10 @@ export default function CoopGameLoader() {
         // This is a state update batch
         deltaQueueRef.current.push([
             DeltaType.GAME_STATE_UPDATE,
-            { lives: gameStateRef.current.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
+            { lives: gameState.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
         ]);
 
-    }, [isGameHost, difficulty, gameConfig]);
+    }, [isGameHost, difficulty, gameConfig, gameState]);
 
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
@@ -223,7 +193,7 @@ export default function CoopGameLoader() {
         const performUpdate = () => {
             setPlayers(prevPlayers => {
                 let currentPlayers = [...prevPlayers];
-                const tempState: GameSessionState = { players: currentPlayers, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: waveStartCountdownRef.current, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+                const tempState: GameSessionState = { players: currentPlayers, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
 
                 switch(action){
                     case 'place_portal': {
@@ -269,7 +239,7 @@ export default function CoopGameLoader() {
                     case 'upgrade': {
                         const { row, col, upgradeId, playerId } = payload;
                         const key = `${row}_${col}`;
-                        const existingTower = towersByCellRef.current[key];
+                        const existingTower = towersByCell[key];
                         if (!existingTower || existingTower.ownerId !== playerId) break;
 
                         const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
@@ -288,7 +258,7 @@ export default function CoopGameLoader() {
 
                         const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
 
-                        const nextTowersByCell = { ...towersByCellRef.current, [key]: upgradedTower };
+                        const nextTowersByCell = { ...towersByCell, [key]: upgradedTower };
                         setTowersByCell(nextTowersByCell);
 
                         deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id }]);
@@ -318,7 +288,7 @@ export default function CoopGameLoader() {
                     case 'sell': {
                          const { row, col, playerId } = payload;
                          const key = `${row}_${col}`;
-                         const towerToSell = towersByCellRef.current[key];
+                         const towerToSell = towersByCell[key];
                          if (!towerToSell || towerToSell.ownerId !== playerId) break;
 
                          const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
@@ -340,44 +310,51 @@ export default function CoopGameLoader() {
                          break;
                     }
                     case 'pick_element': {
+                        if (gameStatus !== 'picking-element') break;
                         const { element, playerId } = payload;
-                        if (gameStatusRef.current !== 'picking-element') break;
-
-                        const expectedElements = 1 + Math.floor((currentWaveRef.current) / 5);
                         
-                        let allPlayersDone = true;
-                        let aPlayerPicked = false;
+                        const expectedElements = 1 + Math.floor((currentWave) / 5);
 
-                        const updatedPlayers = currentPlayers.map(p => {
-                            // Check other players first to see if we'll be done after this pick
+                        let allPlayersPicked = true;
+                        let pickedSomething = false;
+
+                        currentPlayers = currentPlayers.map(p => {
                             if (p.id !== playerId) {
                                 if (p.id !== 'spectator' && p.unlockedElements.length < expectedElements) {
-                                    allPlayersDone = false;
+                                    allPlayersPicked = false;
                                 }
                                 return p;
                             }
                             
-                            // Process the picking player
+                            // If player already has enough elements, do nothing for them
                             if (p.unlockedElements.length >= expectedElements) {
-                                allPlayersDone = false; // Already picked, so not everyone is done yet
-                                return p; // No change
+                                allPlayersPicked = false;
+                                return p;
                             }
-
-                            aPlayerPicked = true;
+                            
                             audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
                             deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
+                            pickedSomething = true;
                             
-                            return { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) };
+                            const newPlayer = { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) };
+                            
+                            // Check if THIS player now has enough, but also check others
+                            if (newPlayer.unlockedElements.length < expectedElements) {
+                                allPlayersPicked = false;
+                            }
+                            
+                            return newPlayer;
                         });
                         
-                        if (allPlayersDone && aPlayerPicked) {
-                            setGameStatus('playing');
+                        if (allPlayersPicked && pickedSomething) {
+                            // All players have now picked. Transition to the next intermission.
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
+                            setCurrentWave(prev => prev + 1);
+                            setGameStatus('playing');
                         }
                         
                         stateChanged = true;
-                        currentPlayers = updatedPlayers;
                         break;
                     }
                 }
@@ -386,22 +363,22 @@ export default function CoopGameLoader() {
         };
         
         if (action === 'start_wave_now') {
-            if (gameStatusRef.current === 'waiting') {
-                if (playersRef.current.length < 2) {
+            if (gameStatus === 'waiting') {
+                if (players.length < 2) {
                     toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
                     return;
                 }
                 // Correctly transition from waiting to playing countdown
                 setGameStatus('playing');
                 setWaveStartCountdown(INTERMISSION_TIME);
-            } else if (gameStatusRef.current === 'playing' && isIntermissionRef.current) {
-                 startWave(currentWaveRef.current);
+            } else if (gameStatus === 'playing' && isIntermission) {
+                 startWave(currentWave);
             }
         } else {
             performUpdate();
         }
 
-    }, [isGameHost, startWave, difficulty, gameConfig, localPlayerId, cancelInteractions, toast]);
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions]);
     
   // --- WebRTC Logic ---
   
@@ -489,7 +466,7 @@ export default function CoopGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown: waveStartCountdownRef.current, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current }]);
+                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, difficulty, currentPath, workers, ghosts, portals }]);
                 return;
             }
             case 'PLACE_PORTAL_REQUEST':   onHostAction('place_portal', payload); return;
@@ -512,7 +489,7 @@ export default function CoopGameLoader() {
                 deltaQueueRef.current.push([DeltaType.REQUEST_RESOLVE, payload]);
                 return;
         }
-    }, [isGameHost, onHostAction, difficulty]);
+    }, [isGameHost, onHostAction, players, enemies, towersByCell, gameState, currentWave, isIntermission, waveStartCountdown, gameStatus, difficulty, currentPath, workers, ghosts, portals]);
     
     const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
         localPlayerId ? gameId : null, 
@@ -668,13 +645,26 @@ export default function CoopGameLoader() {
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
-                    
+
                     setDifficulty(data.difficulty || 'Normal');
                     
                     if (role === 'player1' && !gameDataLoaded) {
-                        setPlayers(normalizePlayers(data.players));
-                        setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                        setTowersByCell(data.towersByCell || {});
+                        // Host loads state from DB, if it exists
+                        const loadedState = data.detailedState;
+                        if (loadedState) {
+                            setGameState(loadedState.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                            setTowersByCell(loadedState.towersByCell || {});
+                            setCurrentWave(loadedState.currentWave || 0);
+                            setTotalKilled(loadedState.totalKilled || 0);
+                            setTotalLeaked(loadedState.totalLeaked || 0);
+                            setPlayers(normalizePlayers(loadedState.players || data.players));
+                        } else {
+                            // Fresh start
+                            setPlayers(normalizePlayers(data.players));
+                            setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                            setTowersByCell(data.towersByCell || {});
+                        }
+                        
                         setGameStatus(data.gameStatus);
                         setIsIntermission(data.isIntermission ?? true);
                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
@@ -684,20 +674,18 @@ export default function CoopGameLoader() {
                         ]);
                         setGhosts(data.ghosts || []);
                         setPortals(data.portals || []);
-                        setGameDataLoaded(true); // LOCK IN THE DATA
-                    } else if (role !== 'player1') { 
-                        // Clients and spectators always update their player list,
-                        // but not the core game state which comes from WebRTC.
-                        setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded) { // Only set status on first load for clients
-                          setGameStatus(data.gameStatus);
-                          setGameDataLoaded(true);
-                        }
+                    } else if (role !== 'player1') { // Client or Spectator
+                         setPlayers(normalizePlayers(data.players));
+                         if (!gameDataLoaded) {
+                           setGameStatus(data.gameStatus);
+                         }
                     }
                     
-                    if (loading) {
+                    if (!gameDataLoaded) {
+                      setGameDataLoaded(true);
                       setLoading(false);
                     }
+
                 }, (err) => {
                     console.error("Error listening to game document:", err);
                     toast({ title: "Verbindung zum Spiel verloren", variant: 'destructive'});
@@ -715,7 +703,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading, gameDataLoaded, loading]);
+    }, [user, gameId, router, toast, configLoading]);
     
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
@@ -728,7 +716,10 @@ export default function CoopGameLoader() {
             return;
         }
 
-        if (!isIntermission || gameStatus !== 'playing') {
+        const hasTwoPlayers = players.length >= 2;
+        const gameIsActive = (gameStatus === 'playing' && isIntermission);
+
+        if (!gameIsActive) {
             if (countdownRef.current) clearInterval(countdownRef.current);
             return;
         }
@@ -739,6 +730,10 @@ export default function CoopGameLoader() {
                 if (newTime === 0) {
                     if (countdownRef.current) clearInterval(countdownRef.current);
                     countdownRef.current = undefined;
+                    
+                    if (gameStatus === 'waiting') {
+                        setGameStatus('playing');
+                    }
                     startWave(currentWave);
                 }
                 return newTime;
@@ -749,26 +744,28 @@ export default function CoopGameLoader() {
             if (countdownRef.current) clearInterval(countdownRef.current);
             countdownRef.current = undefined;
         };
-    }, [isGameHost, isIntermission, gameStatus, startWave, currentWave]);
+    }, [isGameHost, isIntermission, gameStatus, startWave, currentWave, players]);
   
   const lastFpsUpdateRef = useRef(Date.now());
   const frameCountRef = useRef(0);
   const lastTickRef = useRef(performance.now());
   
+  const lastSaveTimeRef = useRef(0);
 
   useEffect(() => {
       if (!gameConfig || !isGameHost) return;
       
       let stopped = false;
-      
+      const lastTick = { current: performance.now() };
+
       const gameLoop = () => {
           if (stopped) return;
           requestAnimationFrame(gameLoop);
           
           const now = performance.now();
-          const delta = now - lastTickRef.current;
+          const delta = now - lastTick.current;
           if (delta === 0) return;
-          lastTickRef.current = now;
+          lastTick.current = now;
 
           frameCountRef.current++;
           if (Date.now() - lastFpsUpdateRef.current >= 1000) {
@@ -778,19 +775,19 @@ export default function CoopGameLoader() {
           }
 
           const epochNow = Date.now();
-          const currentStatus = gameStatusRef.current;
-          const hasTwoPlayers = playersRef.current.length >= 2;
+          const currentStatus = gameStatus;
+          const hasTwoPlayers = players.length >= 2;
           
           const lobbyIsWaiting = currentStatus === 'waiting' && !hasTwoPlayers;
-          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element' || currentStatus === 'tutorial';
+          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element';
 
           // --- IMMER den aktuellen Zustand in die Queue legen ---
           deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
-                lives: gameStateRef.current.lives,
-                currentWave: currentWaveRef.current,
+                lives: gameState.lives,
+                currentWave: currentWave,
                 gameStatus: currentStatus,
-                isIntermission: isIntermissionRef.current,
-                waveStartCountdown: waveStartCountdownRef.current,
+                isIntermission: isIntermission,
+                waveStartCountdown: waveStartCountdown,
           }]);
           
           if (gameIsPaused || lobbyIsWaiting) {
@@ -802,42 +799,37 @@ export default function CoopGameLoader() {
               return;
           }
           
-          const stateToUpdate: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown: waveStartCountdownRef.current, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+          const stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
           
-          const workerState = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
+          const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
+          
+          const towersChanged = Object.keys(towersAfterBuild).length !== Object.keys(towersByCell).length;
+          const ghostsChanged = nextGhosts.length !== ghosts.length;
+          const portalsChanged = nextPortals?.length !== (portals?.length || 0);
 
-          setWorkers(workerState.workers);
-          setPlayers(workerState.players);
-          if (Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length) {
-            setTowersByCell(workerState.towersByCell);
-            deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, workerState.towersByCell]);
-          }
-          if (workerState.ghosts.length !== ghostsRef.current.length) {
-            setGhosts(workerState.ghosts);
-            deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, workerState.ghosts]);
-          }
-           if (workerState.portals?.length !== (portalsRef.current?.length || 0)) {
-            setPortals(workerState.portals);
-            deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, workerState.portals]);
-          }
+          setWorkers(nextWorkers);
+          setPlayers(playersAfterBuild);
+          if (ghostsChanged) { setGhosts(nextGhosts); deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, nextGhosts]); }
+          if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
+          if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
           
-          if(workerState.ghosts.length !== ghostsRef.current.length || Object.keys(workerState.towersByCell).length !== Object.keys(towersByCellRef.current).length || workerState.portals?.length !== (portalsRef.current?.length || 0)) {
-            deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, workerState.workers]);
-            deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, workerState.players]);
+          if(ghostsChanged || towersChanged || portalsChanged) {
+            deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]);
+            deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]);
           }
 
           if (currentStatus === 'playing') {
             
-              const updatedPlayersWithIncome = playersRef.current.map(p => ({
+              const updatedPlayersWithIncome = players.map(p => ({
                   ...p,
                   resources: p.resources + (p.incomePerSecond * (delta / 1000)),
               }));
               setPlayers(updatedPlayersWithIncome);
               deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, updatedPlayersWithIncome]);
               
-              if (isIntermissionRef.current) {
+              if (isIntermission) {
                   setWaveStartCountdown(prev => Math.max(0, prev - (delta/1000)));
-                  if (waveStartCountdownRef.current <= 0) startWave(currentWaveRef.current);
+                  if (waveStartCountdown <= 0) startWave(currentWave);
               } else { // Welle ist aktiv
               
               let livesLostThisTick = 0;
@@ -852,8 +844,8 @@ export default function CoopGameLoader() {
               let newGravityWells: GravityWell[] = [];
               let newPersistentClouds: PersistentCloud[] = [];
               
-              let currentEnemies = [...enemiesRef.current];
-              let updatedTowers = {...towersByCellRef.current};
+              let currentEnemies = [...enemies];
+              let updatedTowers = {...towersByCell};
 
                 const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
                 if (spawnQueueRef.current.length > 0) {
@@ -861,7 +853,7 @@ export default function CoopGameLoader() {
                     if(enemiesToSpawnNow.length > 0) {
                         spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
                         const nowEpoch = Date.now();
-                        const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPathRef.current}));
+                        const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPath}));
                         currentEnemies.push(...newEnemiesThisFrame);
                     }
                 }
@@ -883,7 +875,7 @@ export default function CoopGameLoader() {
                           let target: Enemy | null = null;
                           let minDistanceSq = tower.range * tower.range;
                           currentEnemies.forEach(enemy => {
-                              if (enemy.deathTimestamp) return; // Ignore dying enemies
+                              if (enemy.deathTimestamp) return;
                               const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
                               if (distSq <= minDistanceSq) {
                                   minDistanceSq = distSq;
@@ -910,7 +902,7 @@ export default function CoopGameLoader() {
                             if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
                             if (result.resourcesGained > 0) {
-                                playersRef.current.forEach(p => {
+                                players.forEach(p => {
                                     const key = p.id as 'player1' | 'player2';
                                     if(resourcesGained[key] !== undefined) {
                                       resourcesGained[key] += result.resourcesGained;
@@ -942,7 +934,7 @@ export default function CoopGameLoader() {
               const stillAlive: Enemy[] = [];
               const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > epochNow);
               const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > epochNow);
-              const activePortals = (portalsRef.current ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
+              const activePortals = (portals ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
 
               for (let enemy of currentEnemies) {
                   if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
@@ -965,7 +957,7 @@ export default function CoopGameLoader() {
                           updatedEnemy.position = { ...portal.exit };
                           updatedEnemy.lastTeleportAt = epochNow;
                           updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
-                          updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+                          updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
                           updatedEnemy.pathIndex = 0;
                           updatedEnemy.lastMove = epochNow;
                           teleported = true;
@@ -1001,20 +993,20 @@ export default function CoopGameLoader() {
               setGravityWells(activeGravityWells);
               setPersistentClouds(activePersistentClouds);
               if (killedThisTick > 0) {
-                 const newTotalKilled = totalKilledRef.current + killedThisTick;
+                 const newTotalKilled = totalKilled + killedThisTick;
                  setTotalKilled(newTotalKilled);
-                 deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled: newTotalKilled, totalLeaked: totalLeakedRef.current }])
+                 deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled: newTotalKilled, totalLeaked }])
               }
               
               if (livesLostThisTick > 0) {
-                  const newTotalLeaked = totalLeakedRef.current + livesLostThisTick;
+                  const newTotalLeaked = totalLeaked + livesLostThisTick;
                   setTotalLeaked(newTotalLeaked);
-                  deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled: totalKilledRef.current, totalLeaked: newTotalLeaked }])
+                  deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled, totalLeaked: newTotalLeaked }])
 
                   setGameState(gs => {
                       const newLives = Math.max(0, gs.lives - livesLostThisTick);
-                      if (newLives <= 0 && gameStatusRef.current !== 'gameover') {
-                          onGameEnd(gameId, user, difficulty, currentWaveRef.current + 1, false, towersByCellRef.current);
+                      if (newLives <= 0 && gameStatus !== 'gameover') {
+                          onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
                           setGameStatus('gameover');
                       }
                       return { ...gs, lives: newLives };
@@ -1032,23 +1024,41 @@ export default function CoopGameLoader() {
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
               const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
-                if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
-                    setIsIntermission(true);
-                    const nextWaveIndex = currentWaveRef.current + 1;
+               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                    const nextWaveIndex = currentWave + 1;
+                    
+                    const expectedElementsAfterThisWave = 1 + Math.floor(nextWaveIndex / 5);
+                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElementsAfterThisWave);
+                    const gameDocRef = doc(db, 'games', gameId);
+
                     if (gameConfig.waves.length <= nextWaveIndex) {
-                        onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCellRef.current);
+                        onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
                         setGameStatus('gameover');
+                        updateDoc(gameDocRef, { gameStatus: 'gameover' });
+                    } else if (shouldPickElement) {
+                        setGameStatus('picking-element');
+                        setIsIntermission(true); // Pause the game for picking
+                        setWaveStartCountdown(999);
+                        updateDoc(gameDocRef, {
+                            gameStatus: 'picking-element',
+                            isIntermission: true,
+                            waveStartCountdown: 999,
+                        });
                     } else {
-                        const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && playersRef.current.some(p => p.unlockedElements.length < (1 + Math.floor(nextWaveIndex / 5)));
-                        
-                        if (shouldPickElement) {
-                           setGameStatus('picking-element');
-                           setWaveStartCountdown(999);
-                        } else {
-                           setCurrentWave(nextWaveIndex);
-                           setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                           setWaveStartCountdown(INTERMISSION_TIME);
-                        }
+                        setCurrentWave(nextWaveIndex);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                         updateDoc(gameDocRef, {
+                            currentWave: nextWaveIndex,
+                            isIntermission: true,
+                            waveStartCountdown: INTERMISSION_TIME,
+                            'detailedState.players': players,
+                            'detailedState.gameState': gameState,
+                            'detailedState.towersByCell': towersByCell,
+                            'detailedState.currentWave': nextWaveIndex,
+                        }).catch(err => console.error("Error saving game state:", err));
+                        lastSaveTimeRef.current = Date.now();
                     }
                 }
               }
@@ -1071,7 +1081,7 @@ export default function CoopGameLoader() {
       return () => {
           stopped = true;
       }
-  }, [gameConfig, isGameHost, startWave, difficulty, user, gameId, onGameEnd]);
+  }, [isGameHost, gameStatus, isIntermission, enemies, user, gameId, difficulty, towersByCell, currentWave, currentPath, players, gravityWells, persistentClouds, portals, startWave, gameState, workers, ghosts, gameConfig, onGameEnd, waveStartCountdown, onHostAction, totalKilled, totalLeaked]);
 
 
   useEffect(() => {
@@ -1088,7 +1098,7 @@ export default function CoopGameLoader() {
   };
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: waveStartCountdownRef.current, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+    const state: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
     
     if (portalPhase !== 'idle') {
         if (portalPhase === 'entrance') {
@@ -1105,10 +1115,10 @@ export default function CoopGameLoader() {
     } else {
         dispatchAction('move_worker', { row, col });
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, difficulty]);
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals]);
 
   if (configLoading || !gameConfig || !localPlayer) {
-    return <div className="w-full h-full flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /> {loadingMessage}</div>;
+    return <div className="w-full h-full flex items-center justify-center bg-background"><Loader2 className="h-16 w-16 animate-spin text-primary" /> <p className="ml-4 text-lg">Lade Spieldaten...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
@@ -1131,21 +1141,17 @@ export default function CoopGameLoader() {
       }
   };
   
-  const LayoutComponent = useMemo(() => (isMobile ? MobileLayout : DesktopLayout), [isMobile]);
-  
-  const interactionPrompt = useMemo(() => {
-    if (portalPhase !== 'idle') {
-      return portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals';
-    }
-    if (selectedTowerToBuild) {
-      return `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`;
-    }
-    if (focusedTower) {
-      return `Fokus: ${focusedTower?.name}`;
-    }
-    return 'Wähle einen Turm zum Bauen oder einen Arbeiter';
-  }, [portalPhase, selectedTowerToBuild, focusedTower]);
-  
+  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
+
+  const interactionPrompt = portalPhase !== 'idle'
+  ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
+  : selectedTowerToBuild
+  ? `Wähle Bauplatz für: ${selectedTowerToBuild?.name}`
+  : focusedTower
+  ? `Fokus: ${focusedTower?.name}`
+  : 'Wähle einen Turm zum Bauen oder einen Arbeiter';
+
   return (
     <div className="w-full h-full flex flex-col" onClick={() => { if (!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
        <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={isGameHost ? fps : stats.fps} />
@@ -1154,11 +1160,11 @@ export default function CoopGameLoader() {
                 players={players} 
                 setPlayers={setPlayers} 
                 gameState={gameState} 
-                localPlayer={localPlayer}
+                localPlayer={localPlayer!}
                 currentWave={currentWave} 
                 totalWaves={gameConfig.waves.length} 
                 difficulty={difficulty} 
-                handleGameControl={() => handleGameControlAction(gameStatus === 'playing' ? 'pause' : 'resume')}
+                handleGameControl={() => {}}
                 gameStatus={gameStatus} 
                 resetGame={onExit}
                 towers={gameConfig.towers} 
@@ -1206,7 +1212,7 @@ export default function CoopGameLoader() {
                 isWsConnected={isConnected} 
                 onPing={sendPing}
                 hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                hostBytesSentPerSecond={stats.sentBytesPerSecond}
+                hostBytesSentPerSecond={stats.sentBytesSentPerSecond}
                 clientPacketsPerSecond={stats.packetsPerSecond}
                 clientBytesReceivedPerSecond={stats.bytesPerSecond}
                 averagePacketSize={stats.averagePacketSize}
@@ -1232,10 +1238,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-
-
-
-
-
-
-
