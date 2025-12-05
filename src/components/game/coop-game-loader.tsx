@@ -15,7 +15,7 @@ import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
-import { useWebRTC } from '@/hooks/use-webrtc';
+import { NetMsg, useWebRTC } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';

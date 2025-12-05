@@ -293,18 +293,91 @@ export function tickDots(target: Enemy, delta: number): { totalDamage: number, k
 
 // --- Worker Logic ---
 
-export function startNextOrder(state: GameSessionState, w: Worker): GameSessionState {
+function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tower[]): GameSessionState {
+  if (!w.current || w.current.order.type !== 'build_tower') return state;
+  const { order } = w.current;
+  
+  // Filter out the ghost that corresponds to this build order
+  const newGhosts = state.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
+
+  const towerSpec = allTowers.find(t => t.id === order.towerId)!;
+  
+  const owner = state.players.find(p => p.id === (w.id.includes('1') ? 'player1' : 'player2'));
+
+  const newTower: PlacedTower = {
+    ...towerSpec,
+    id: `tower-${order.row}-${order.col}-${Date.now()}`,
+    specId: towerSpec.id,
+    position: { row: order.row, col: order.col },
+    lastAttack: 0,
+    health: towerSpec.maxHealth,
+    ownerId: owner ? owner.id : 'player1',
+  };
+
+  const cellKey = `${order.row}_${order.col}`;
+  const newTowersByCell = { ...state.towersByCell, [cellKey]: newTower };
+
+  audioManager.play({kind: 'sfx', name: 'build_tower'});
+
+  w.current = undefined;
+  
+  return {
+      ...state,
+      ghosts: newGhosts,
+      towersByCell: newTowersByCell,
+  };
+}
+
+function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
+    if (!w.current || w.current.order.type !== 'place_portal') return state;
+    const order = w.current.order as PlacePortalOrder;
+    const now = Date.now();
+    const ownerId = w.id.includes('1') ? 'player1' : 'player2';
+
+    if (order.phase === 'entrance') {
+        const newGhosts = [...state.ghosts, { id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, }];
+        order.phase = 'exit';
+        const { x, y } = centerOf(order.exit.row, order.exit.col);
+        w.current.targetX = x;
+        w.current.targetY = y;
+        w.state = 'moving';
+        w.current.startedAt = now; // Reset timer for next phase
+        w.current.eta = now + order.buildTimeMsExit;
+        return { ...state, ghosts: newGhosts };
+    } else { // Phase is 'exit'
+        const newGhosts = [...state.ghosts, { id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, }];
+        
+        const newPortals = state.portals ? [...state.portals] : [];
+        newPortals.push({
+            id: `portal-${order.createdAt}`,
+            ownerId: ownerId,
+            entrance: order.entrance,
+            exit: order.exit,
+            active: true,
+            usesLeft: Infinity,
+            perEnemyCooldownMs: 5000,
+            expiresAt: 0, // Will be set at end of wave
+        });
+        
+        w.current = undefined;
+        // The worker will move to idle state via startNextOrder
+        return { ...state, ghosts: newGhosts, portals: newPortals };
+    }
+}
+
+
+function startNextOrder(w: Worker): Worker {
   if (w.moveTarget && w.state !== 'building') {
     w.state = "moving";
     w.current = undefined;
-    return state;
+    return w;
   }
 
   const next = w.queue.shift();
   if (!next) { 
     w.state = "idle";
     w.current = undefined;
-    return state;
+    return w;
   }
 
   let targetRow: number, targetCol: number;
@@ -318,171 +391,76 @@ export function startNextOrder(state: GameSessionState, w: Worker): GameSessionS
   const { x, y } = centerOf(targetRow, targetCol);
   w.current = { order: next, targetX: x, targetY: y };
   w.state = "moving";
-  return state;
+  return w;
 }
 
+export function tickWorkers(
+    state: GameSessionState,
+    dtMs: number,
+    now: number,
+    allTowers: Tower[]
+): GameSessionState {
+    let nextState: GameSessionState = { ...state };
 
-export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-  const updatedWorkers = state.workers.map(w => stepWorker(w, dtMs, now));
-  
-  let newState = {
-      ...state,
-      workers: updatedWorkers,
-      // Pass through other state parts that might be modified
-      ghosts: [...state.ghosts],
-      towersByCell: {...state.towersByCell},
-      portals: [...(state.portals || [])],
-      players: [...state.players]
-  };
+    nextState.workers = state.workers.map(w => {
+        let newWorker = { ...w };
 
-  // Check for completed builds and update state
-  for (const worker of updatedWorkers) {
-      if (worker.state === 'idle' && worker.queue.length === 0 && !worker.current) {
-          continue; // Worker is truly idle
-      }
-      
-      const justFinishedOrder = worker.current && now >= (worker.current.eta ?? Infinity);
-      
-      if (justFinishedOrder) {
-          const order = worker.current!.order;
-          if (order.type === 'build_tower') {
-              newState = completeConstruction(newState, worker, allTowers);
-          } else if (order.type === 'place_portal') {
-              newState = completePlacePortalPhase(newState, worker);
-          }
-          
-          // After completing, immediately try to start the next order
-          const workerInNewState = newState.workers.find(w_ => w_.id === worker.id)!;
-          newState = startNextOrder(newState, workerInNewState);
-      }
-  }
+        if (newWorker.state === "idle" && newWorker.queue.length > 0 && !newWorker.current) {
+            newWorker = startNextOrder(newWorker);
+        }
 
-  return newState;
-}
+        if (newWorker.state === "moving") {
+            const targetX = newWorker.moveTarget ? newWorker.moveTarget.x : newWorker.current!.targetX;
+            const targetY = newWorker.moveTarget ? newWorker.moveTarget.y : newWorker.current!.targetY;
+            
+            const dx = targetX - newWorker.x, dy = targetY - newWorker.y;
+            const dist = Math.hypot(dx, dy);
+            const step = (newWorker.speed * dtMs) / 1000;
+            newWorker.z = 4 * Math.sin(now / 180);
 
-function stepWorker(w: Worker, dtMs: number, now: number): Worker {
-    const newWorker = { ...w };
+            if (dist <= step) {
+                newWorker.x = targetX;
+                newWorker.y = targetY;
 
-    if (newWorker.state === "idle") {
-        return newWorker;
-    }
-
-    if (newWorker.state === "moving") {
-        const targetX = newWorker.moveTarget ? newWorker.moveTarget.x : newWorker.current!.targetX;
-        const targetY = newWorker.moveTarget ? newWorker.moveTarget.y : newWorker.current!.targetY;
-        
-        const dx = targetX - newWorker.x, dy = targetY - newWorker.y;
-        const dist = Math.hypot(dx, dy);
-        const step = (newWorker.speed * dtMs) / 1000;
-
-        newWorker.z = 4 * Math.sin(now / 180);
-
-        if (dist <= step) {
-            newWorker.x = targetX;
-            newWorker.y = targetY;
-
-            if (newWorker.moveTarget) {
-                newWorker.moveTarget = null;
-                newWorker.state = "idle";
+                if (newWorker.moveTarget) {
+                    newWorker.moveTarget = null;
+                    newWorker.state = "idle";
+                } else if (newWorker.current) {
+                    newWorker.state = "building";
+                    newWorker.current.startedAt = now;
+                    const o = newWorker.current.order;
+                    const buildTime = o.type === "build_tower" ? o.buildTimeMs : (o.phase === "entrance" ? o.buildTimeMsEntrance : o.buildTimeMsExit);
+                    newWorker.current.eta = now + buildTime;
+                }
             } else {
-                newWorker.state = "building";
-                newWorker.current!.startedAt = now;
-                const o = newWorker.current!.order;
-                newWorker.current!.eta = now + (o.type === "build_tower" ? o.buildTimeMs : (o.phase === "entrance" ? o.buildTimeMsEntrance : o.buildTimeMsExit));
+                newWorker.x += (dx / dist) * step;
+                newWorker.y += (dy / dist) * step;
             }
-        } else {
-            newWorker.x += (dx / dist) * step;
-            newWorker.y += (dy / dist) * step;
+        }
+
+        if (newWorker.state === "building" && newWorker.current) {
+            const { order, startedAt, eta } = newWorker.current;
+            const buildTime = (eta ?? 0) - (startedAt ?? 0);
+            const progress = buildTime > 0 ? Math.min(1, (now - (startedAt ?? now)) / buildTime) : 1;
+            
+            if(order.type === 'build_tower') {
+                 const ghostIndex = nextState.ghosts.findIndex(g => g.row === order.row && g.col === order.col);
+                 if (ghostIndex !== -1) {
+                     nextState.ghosts[ghostIndex] = {...nextState.ghosts[ghostIndex], progress: progress };
+                 }
+            }
+
+            if (now >= (eta ?? Infinity)) {
+                if (order.type === 'build_tower') {
+                    nextState = completeConstruction(nextState, newWorker, allTowers);
+                } else if (order.type === 'place_portal') {
+                    nextState = completePlacePortalPhase(nextState, newWorker);
+                }
+                newWorker = startNextOrder(newWorker); // Try to start the next order immediately
+            }
         }
         return newWorker;
-    }
+    });
 
-    if (newWorker.state === "building") {
-        if (!newWorker.current) {
-            newWorker.state = "idle";
-            return newWorker;
-        }
-        const { order, startedAt, eta } = newWorker.current;
-        const p = Math.min(1, (now - (startedAt ?? now)) / ((eta ?? now) - (startedAt ?? now) || 1));
-        
-        if (order.type === 'build_tower') {
-            // Ghost progress is handled separately now to avoid direct mutation
-        }
-
-        // Completion logic is now outside this function
-    }
-    
-    return newWorker;
-}
-
-function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tower[]): GameSessionState {
-  if (!w.current || w.current.order.type !== 'build_tower') return state;
-  const { order } = w.current;
-  
-  const newState = { ...state };
-  
-  newState.ghosts = newState.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
-
-  const towerSpec = allTowers.find(t => t.id === order.towerId)!;
-  
-  const owner = newState.players.find(p => p.id === (w.id.includes('1') ? 'player1' : 'player2'));
-
-  const newTower: PlacedTower = {
-    ...towerSpec,
-    id: `tower-${order.row}-${order.col}-${Date.now()}`,
-    specId: towerSpec.id,
-    position: { row: order.row, col: order.col },
-    lastAttack: 0,
-    health: towerSpec.maxHealth,
-    ownerId: owner ? owner.id : 'player1',
-  };
-
-  const cellKey = `${order.row}_${order.col}`;
-  newState.towersByCell = { ...newState.towersByCell, [cellKey]: newTower };
-
-  audioManager.play({kind: 'sfx', name: 'build_tower'});
-
-  w.current = undefined;
-  
-  return newState;
-}
-
-function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
-    if (!w.current || w.current.order.type !== 'place_portal') return state;
-    const order = w.current.order as PlacePortalOrder;
-    const now = Date.now();
-    const ownerId = w.id.includes('1') ? 'player1' : 'player2';
-
-    if (order.phase === 'entrance') {
-        state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
-        order.phase = 'exit';
-        const { x, y } = centerOf(order.exit.row, order.exit.col);
-        w.current.targetX = x;
-        w.current.targetY = y;
-        w.state = 'moving';
-        w.current.startedAt = now; // Reset timer for next phase
-        w.current.eta = now + order.buildTimeMsExit;
-        return state;
-    } else { // Phase is 'exit'
-        state.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
-        
-        const newPortals = state.portals ? [...state.portals] : [];
-        newPortals.push({
-            id: `portal-${order.createdAt}`,
-            ownerId: ownerId,
-            entrance: order.entrance,
-            exit: order.exit,
-            active: true,
-            usesLeft: Infinity,
-            perEnemyCooldownMs: 5000,
-            expiresAt: 0, // Will be set at end of wave
-        });
-        state.portals = newPortals;
-
-        w.current = undefined;
-        w.state = "idle";
-        
-        const workerInNewState = state.workers.find(w_ => w_.id === w.id)!;
-        return startNextOrder(state, workerInNewState);
-    }
+    return nextState;
 }
