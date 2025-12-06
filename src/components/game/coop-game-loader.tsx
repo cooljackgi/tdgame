@@ -325,13 +325,17 @@ export default function CoopGameLoader() {
                         deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
                         stateChanged = true;
 
-                        const expectedElements = 1 + Math.floor((currentWave) / 5);
-                        const allPlayersPicked = nextPlayers.filter(p => p.id !== 'spectator').every(p => p.unlockedElements.length >= expectedElements);
+                        const expectedElements = 1 + Math.floor(currentWave / 5);
+                        const allPlayersPicked = nextPlayers.filter(p => p.id !== 'spectator').every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
 
                         if (allPlayersPicked) {
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
+                             deltaQueueRef.current.push([
+                                DeltaType.GAME_STATE_UPDATE,
+                                { lives: gameState.lives, currentWave, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
+                            ]);
                         }
                         
                         currentPlayers = nextPlayers;
@@ -1201,5 +1205,6 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
