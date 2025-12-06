@@ -65,6 +65,8 @@ export default function CoopGameLoader() {
   const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
   const [portals, setPortals] = useState<Portal[]>([]);
   const [currentPath, setCurrentPath] = useState<Node[]>([]);
+  
+  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
   
   // UI State
