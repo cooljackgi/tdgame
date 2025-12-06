@@ -25,7 +25,7 @@ import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/lib/commands';
-import { onGameEnd } from '@/lib/game-end';
+import { onGameEnd as performGameEndActions } from '@/lib/game-end';
 import type { GameBoardHandle } from './game-board';
 import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
 
@@ -748,6 +748,13 @@ export default function CoopGameLoader() {
   
   const lastSaveTimeRef = useRef(0);
 
+  const onGameEnd = useCallback(async (won: boolean) => {
+    if(gameStatus === 'gameover') return;
+    performGameEndActions(gameId, user, difficulty, currentWave + 1, won, towersByCell);
+    setGameStatus('gameover');
+  }, [gameId, user, difficulty, currentWave, towersByCell, gameStatus]);
+
+
   useEffect(() => {
       if (!gameConfig || !isGameHost) return;
       
@@ -1002,7 +1009,7 @@ export default function CoopGameLoader() {
                   setGameState(gs => {
                       const newLives = Math.max(0, gs.lives - livesLostThisTick);
                       if (newLives <= 0 && gameStatus !== 'gameover') {
-                          onGameEnd(gameId, user, difficulty, currentWave + 1, false, towersByCell);
+                          onGameEnd(false);
                           setGameStatus('gameover');
                       }
                       return { ...gs, lives: newLives };
@@ -1024,23 +1031,18 @@ export default function CoopGameLoader() {
                     const nextWaveIndex = currentWave + 1;
                     const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
                     const allPlayers = players; // Use the latest state
-                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && allPlayers.some(p => (p.unlockedElements || []).length < expectedElements);
+                    const shouldPickElement = (nextWaveIndex > 0) && ((nextWaveIndex) % 5 === 0) && allPlayers.some(p => (p.unlockedElements || []).length < expectedElements);
 
-                    // ATOMIC STATE UPDATE
-                    const handleEndOfWave = () => {
-                        if (gameConfig.waves.length <= nextWaveIndex) {
-                            onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
-                            setGameStatus('gameover');
-                        } else if (shouldPickElement) {
-                            setGameStatus('picking-element');
-                        } else {
-                            setCurrentWave(nextWaveIndex);
-                            setIsIntermission(true);
-                            setWaveStartCountdown(INTERMISSION_TIME);
-                            setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                        }
-                    };
-                    handleEndOfWave();
+                    if (gameConfig.waves.length <= nextWaveIndex) {
+                        onGameEnd(true);
+                    } else if (shouldPickElement) {
+                        setGameStatus('picking-element');
+                    } else {
+                        setCurrentWave(nextWaveIndex);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                    }
                 }
               }
           }
@@ -1218,3 +1220,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
