@@ -1017,25 +1017,30 @@ export default function CoopGameLoader() {
                   return p;
               }));
               
-              const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
+                const spawnQueueEmpty = spawnQueueRef.current.length === 0;
+                const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
                 if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
                     const nextWaveIndex = currentWave + 1;
                     const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElements);
+                    const allPlayers = players; // Use the latest state
+                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && allPlayers.some(p => (p.unlockedElements || []).length < expectedElements);
 
-                    if (gameConfig.waves.length <= nextWaveIndex) {
-                        onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
-                        setGameStatus('gameover');
-                    } else if (shouldPickElement) {
-                        setGameStatus('picking-element');
-                    } else {
-                        setCurrentWave(nextWaveIndex);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                    }
+                    // ATOMIC STATE UPDATE
+                    const handleEndOfWave = () => {
+                        if (gameConfig.waves.length <= nextWaveIndex) {
+                            onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
+                            setGameStatus('gameover');
+                        } else if (shouldPickElement) {
+                            setGameStatus('picking-element');
+                        } else {
+                            setCurrentWave(nextWaveIndex);
+                            setIsIntermission(true);
+                            setWaveStartCountdown(INTERMISSION_TIME);
+                            setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                        }
+                    };
+                    handleEndOfWave();
                 }
               }
           }
