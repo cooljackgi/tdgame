@@ -315,47 +315,26 @@ export default function CoopGameLoader() {
                         if (gameStatus !== 'picking-element') break;
                         const { element, playerId } = payload;
                         
-                        const expectedElements = 1 + Math.floor((currentWave) / 5);
-
-                        let allPlayersPicked = true;
-                        let pickedSomething = false;
-
-                        currentPlayers = currentPlayers.map(p => {
-                            if (p.id !== playerId) {
-                                if (p.id !== 'spectator' && p.unlockedElements.length < expectedElements) {
-                                    allPlayersPicked = false;
-                                }
-                                return p;
-                            }
-                            
-                            // If player already has enough elements, do nothing for them
-                            if (p.unlockedElements.length >= expectedElements) {
-                                allPlayersPicked = false;
-                                return p;
-                            }
-                            
-                            audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
-                            deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
-                            pickedSomething = true;
-                            
-                            const newPlayer = { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) };
-                            
-                            // Check if THIS player now has enough, but also check others
-                            if (newPlayer.unlockedElements.length < expectedElements) {
-                                allPlayersPicked = false;
-                            }
-                            
-                            return newPlayer;
-                        });
+                        let nextPlayers = currentPlayers.map(p => 
+                            p.id === playerId 
+                                ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
+                                : p
+                        );
                         
-                        if (allPlayersPicked && pickedSomething) {
-                            // All players have now picked. Transition to the next intermission.
+                        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
+                        deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
+                        stateChanged = true;
+
+                        const expectedElements = 1 + Math.floor((currentWave) / 5);
+                        const allPlayersPicked = nextPlayers.filter(p => p.id !== 'spectator').every(p => p.unlockedElements.length >= expectedElements);
+
+                        if (allPlayersPicked) {
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
                         }
                         
-                        stateChanged = true;
+                        currentPlayers = nextPlayers;
                         break;
                     }
                 }
@@ -1029,19 +1008,21 @@ export default function CoopGameLoader() {
 
                 if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
                     const nextWaveIndex = currentWave + 1;
-                    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-                    const allPlayers = players; // Use the latest state
-                    const shouldPickElement = (nextWaveIndex > 0) && ((nextWaveIndex) % 5 === 0) && allPlayers.some(p => (p.unlockedElements || []).length < expectedElements);
-
+                    
                     if (gameConfig.waves.length <= nextWaveIndex) {
                         onGameEnd(true);
-                    } else if (shouldPickElement) {
-                        setGameStatus('picking-element');
                     } else {
-                        setCurrentWave(nextWaveIndex);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                       const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+                       const playersThatNeedToPick = players.filter(p => p.id !== 'spectator' && p.unlockedElements.length < expectedElements);
+                       
+                       if (playersThatNeedToPick.length > 0) {
+                           setGameStatus('picking-element');
+                       } else {
+                           setCurrentWave(nextWaveIndex);
+                           setIsIntermission(true);
+                           setWaveStartCountdown(INTERMISSION_TIME);
+                           setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                       }
                     }
                 }
               }
@@ -1204,7 +1185,7 @@ export default function CoopGameLoader() {
             {players.map(p => {
               if (!p || p.id !== localPlayerId) return null;
               
-              const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+              const expectedElements = 1 + Math.floor((currentWave) / 5);
 
               return (
                   <ElementPickDialog
@@ -1220,4 +1201,5 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
