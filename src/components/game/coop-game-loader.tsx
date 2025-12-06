@@ -15,7 +15,7 @@ import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
-import { NetMsg, useWebRTC } from '@/hooks/use-webrtc';
+import { useWebRTC } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { DesktopLayout } from '@/components/layouts/desktop-layout';
@@ -646,44 +646,39 @@ export default function CoopGameLoader() {
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
 
-                    setDifficulty(data.difficulty || 'Normal');
-                    
+                    // HOST ONLY: Load initial state ONCE
                     if (role === 'player1' && !gameDataLoaded) {
-                        // Host loads state from DB, if it exists
-                        const loadedState = data.detailedState;
-                        if (loadedState) {
-                            setGameState(loadedState.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                            setTowersByCell(loadedState.towersByCell || {});
-                            setCurrentWave(loadedState.currentWave || 0);
-                            setTotalKilled(loadedState.totalKilled || 0);
-                            setTotalLeaked(loadedState.totalLeaked || 0);
-                            setPlayers(normalizePlayers(loadedState.players || data.players));
-                        } else {
-                            // Fresh start
-                            setPlayers(normalizePlayers(data.players));
-                            setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                            setTowersByCell(data.towersByCell || {});
-                        }
-                        
-                        setGameStatus(data.gameStatus);
-                        setIsIntermission(data.isIntermission ?? true);
-                        setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                        setWorkers(data.workers || [
+                         setDifficulty(data.difficulty || 'Normal');
+                         setPlayers(normalizePlayers(data.players));
+                         setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
+                         setTowersByCell(data.towersByCell || {});
+                         setGameStatus(data.gameStatus);
+                         setIsIntermission(data.isIntermission ?? true);
+                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
+                         setWorkers(data.workers || [
                           { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
                           { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
                         ]);
-                        setGhosts(data.ghosts || []);
-                        setPortals(data.portals || []);
-                    } else if (role !== 'player1') { // Client or Spectator
-                         setPlayers(normalizePlayers(data.players));
-                         if (!gameDataLoaded) {
-                           setGameStatus(data.gameStatus);
-                         }
-                    }
-                    
-                    if (!gameDataLoaded) {
-                      setGameDataLoaded(true);
-                      setLoading(false);
+                         setGhosts(data.ghosts || []);
+                         setPortals(data.portals || []);
+                         setGameDataLoaded(true); // Lock it
+                         setLoading(false);
+                    } else if (role !== 'player1') {
+                        // CLIENT: Only update players from DB, rest comes via WebRTC
+                        setPlayers(normalizePlayers(data.players));
+                        if (!gameDataLoaded) {
+                            setGameDataLoaded(true); // Still set to true to prevent re-loading
+                            setLoading(false);
+                        }
+                    } else if (role === 'player1' && gameDataLoaded) {
+                        // HOST AFTER INITIAL LOAD: Only update other player's data
+                        setPlayers(currentPlayers => {
+                           const newPlayers = normalizePlayers(data.players);
+                           const self = currentPlayers.find(p => p.id === 'player1');
+                           const other = newPlayers.find(p => p.id === 'player2');
+                           const finalPlayers = [self, other].filter(Boolean) as Player[];
+                           return finalPlayers;
+                        });
                     }
 
                 }, (err) => {
@@ -703,7 +698,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading]);
+    }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
     
     useEffect(() => {
       const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
@@ -1029,36 +1024,19 @@ export default function CoopGameLoader() {
                     
                     const expectedElementsAfterThisWave = 1 + Math.floor(nextWaveIndex / 5);
                     const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElementsAfterThisWave);
-                    const gameDocRef = doc(db, 'games', gameId);
-
+                    
                     if (gameConfig.waves.length <= nextWaveIndex) {
                         onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
                         setGameStatus('gameover');
-                        updateDoc(gameDocRef, { gameStatus: 'gameover' });
                     } else if (shouldPickElement) {
                         setGameStatus('picking-element');
-                        setIsIntermission(true); // Pause the game for picking
+                        setIsIntermission(true);
                         setWaveStartCountdown(999);
-                        updateDoc(gameDocRef, {
-                            gameStatus: 'picking-element',
-                            isIntermission: true,
-                            waveStartCountdown: 999,
-                        });
                     } else {
                         setCurrentWave(nextWaveIndex);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                         setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
-                         updateDoc(gameDocRef, {
-                            currentWave: nextWaveIndex,
-                            isIntermission: true,
-                            waveStartCountdown: INTERMISSION_TIME,
-                            'detailedState.players': players,
-                            'detailedState.gameState': gameState,
-                            'detailedState.towersByCell': towersByCell,
-                            'detailedState.currentWave': nextWaveIndex,
-                        }).catch(err => console.error("Error saving game state:", err));
-                        lastSaveTimeRef.current = Date.now();
                     }
                 }
               }
@@ -1142,7 +1120,6 @@ export default function CoopGameLoader() {
   };
   
   const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
-  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
 
   const interactionPrompt = portalPhase !== 'idle'
   ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
