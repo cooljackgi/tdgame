@@ -1027,7 +1027,7 @@ export default function CoopGameLoader() {
                         onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
                         setGameStatus('gameover');
                     } else {
-                        const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+                        const expectedElements = 1 + Math.floor((nextWaveIndex) / 5);
                         const shouldPickElement = (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElements);
 
                         if (shouldPickElement) {
@@ -1216,4 +1216,3 @@ export default function CoopGameLoader() {
       </div>
   );
 }
-

@@ -830,12 +830,12 @@ export default function SinglePlayerGame({
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
             if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
-                const nextWaveIndex = currentWaveRef.current + 1;
-                if (gameConfig.waves.length <= nextWaveIndex) {
+                const nextWave = currentWaveRef.current + 1;
+                if (gameConfig.waves.length <= nextWave) {
                     handleGameEnd(true);
                 } else {
-                    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-                    const shouldPickElement = (nextWaveIndex % 5 === 0) && (localPlayerRef.current?.unlockedElements.length ?? 0) < expectedElements;
+                    const expectedElements = 1 + Math.floor((nextWave) / 5);
+                    const shouldPickElement = (nextWave % 5 === 0) && (localPlayerRef.current?.unlockedElements.length ?? 0) < expectedElements;
 
                     if (shouldPickElement) {
                         setGameStatus('picking-element');
@@ -977,5 +977,3 @@ export default function SinglePlayerGame({
 
 
     
-
-
