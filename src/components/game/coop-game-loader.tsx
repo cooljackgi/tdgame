@@ -1021,24 +1021,23 @@ export default function CoopGameLoader() {
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
               const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
-               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
                     const nextWaveIndex = currentWave + 1;
-                    
-                    const expectedElementsAfterThisWave = 1 + Math.floor(nextWaveIndex / 5);
-                    const shouldPickElement = (nextWaveIndex > 0) && (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElementsAfterThisWave);
-                    
                     if (gameConfig.waves.length <= nextWaveIndex) {
-                        onGameEnd(gameId, user, difficulty, currentWave + 1, true, towersByCell);
+                        onGameEnd(gameId, user, difficulty, nextWaveIndex, true, towersByCell);
                         setGameStatus('gameover');
-                    } else if (shouldPickElement) {
-                        setGameStatus('picking-element');
-                        setIsIntermission(true);
-                        setWaveStartCountdown(999);
                     } else {
-                        setCurrentWave(nextWaveIndex);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                        setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                        const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+                        const shouldPickElement = (nextWaveIndex % 5 === 0) && players.some(p => p.unlockedElements.length < expectedElements);
+
+                        if (shouldPickElement) {
+                            setGameStatus('picking-element');
+                        } else {
+                            setIsIntermission(true);
+                            setWaveStartCountdown(INTERMISSION_TIME);
+                            setCurrentWave(nextWaveIndex);
+                            setPortals(prev => prev.map(p => ({ ...p, expiresAt: epochNow + 500 })));
+                        }
                     }
                 }
               }
@@ -1217,3 +1216,4 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+

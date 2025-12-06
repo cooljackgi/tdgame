@@ -830,18 +830,21 @@ export default function SinglePlayerGame({
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
             if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
-                if (gameConfig.waves[currentWaveRef.current + 1]) {
-                    setCurrentWave(prev => prev + 1);
-                    setPortals([]);
-                    
-                    if ((currentWaveRef.current + 1) % 5 === 0 && localPlayerRef.current && localPlayerRef.current.unlockedElements.length < 8) {
+                const nextWaveIndex = currentWaveRef.current + 1;
+                if (gameConfig.waves.length <= nextWaveIndex) {
+                    handleGameEnd(true);
+                } else {
+                    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+                    const shouldPickElement = (nextWaveIndex % 5 === 0) && (localPlayerRef.current?.unlockedElements.length ?? 0) < expectedElements;
+
+                    if (shouldPickElement) {
                         setGameStatus('picking-element');
                     } else {
+                        setCurrentWave(prev => prev + 1);
+                        setPortals([]);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                     }
-                } else {
-                    handleGameEnd(true);
                 }
             }
         };
@@ -974,4 +977,5 @@ export default function SinglePlayerGame({
 
 
     
+
 
