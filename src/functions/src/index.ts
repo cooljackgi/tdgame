@@ -68,15 +68,12 @@ export const joinGame = functions.https.onCall(async (data, context) => {
 
       // If we reach here, P2 slot is free.
       const resources = gameData?.players?.player1?.resources ?? 1250;
-      // CORRECTED: Ensure 'members' is treated as an array.
-      const membersArray = Array.isArray(gameData?.members) ? gameData.members : [];
-      const newMembers = [...new Set([...membersArray, uid])];
-
+      
       // The game status is NOT changed here anymore. It remains 'waiting'.
       // The host will trigger the start of the game from the game screen.
       transaction.update(gameRef, { 
         player2Id: uid, 
-        'members': newMembers, // Use the corrected array
+        'members': [...(gameData?.members || []), uid],
         'players.player2': {
             id: 'player2', 
             name: displayName, 
