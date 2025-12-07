@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -241,7 +240,7 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = updatedState.players;
                         
-                        // Only reset selection for mobile, keep it for desktop
+                        // Keep tower selected on desktop
                         if (playerId === localPlayerId && isMobile) {
                            setSelectedTowerToBuild(null);
                         }
@@ -335,8 +334,7 @@ export default function CoopGameLoader() {
                         audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
                         deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
                         
-                        // Immediately update and push player state
-                        setPlayers(nextPlayers);
+                        setPlayers(nextPlayers); // Update state directly
                         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, nextPlayers]);
                         
                         const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
@@ -355,9 +353,8 @@ export default function CoopGameLoader() {
                             ]);
                         }
                         
-                        // No `currentPlayers` assignment, `setPlayers` handles it
                         stateChanged = true;
-                        return nextPlayers; // Return updated players to avoid stale state
+                        return nextPlayers;
                     }
                 }
                 return currentPlayers;
@@ -758,7 +755,7 @@ export default function CoopGameLoader() {
   const handleEndOfWave = useCallback(() => {
     if (!isGameHost || !gameConfig) return;
 
-    setIsLogicPaused(true); // *** STEP 1: PAUSE THE LOGIC ***
+    setIsLogicPaused(true); 
 
     const nextWaveIndex = currentWave + 1;
     if (gameConfig.waves.length <= nextWaveIndex) {
@@ -770,20 +767,18 @@ export default function CoopGameLoader() {
     const playersWhoNeedToPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
     if (playersWhoNeedToPick.length > 0) {
-        // *** STEP 2, Fall A: Elementauswahl steht an ***
         setGameStatus('picking-element');
-        setIsIntermission(true); // Wichtig für UI
+        setIsIntermission(true);
         deltaQueueRef.current.push([
             DeltaType.GAME_STATE_UPDATE,
             { lives: gameState.lives, currentWave, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
         ]);
     } else {
-        // *** STEP 2, Fall B: Normale Bauphase ***
         setCurrentWave(nextWaveIndex);
         setIsIntermission(true);
         setWaveStartCountdown(INTERMISSION_TIME);
         setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-        setIsLogicPaused(false); // *** RESUME LOGIC ***
+        setIsLogicPaused(false);
         deltaQueueRef.current.push([
             DeltaType.GAME_STATE_UPDATE,
             { lives: gameState.lives, currentWave: nextWaveIndex, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
@@ -807,7 +802,7 @@ export default function CoopGameLoader() {
           if (delta === 0) return;
           lastTick.current = now;
 
-          if (isLogicPausedRef.current) return; // *** STEP 1: NOTBREMSE ***
+          if (isLogicPausedRef.current) return;
 
           frameCountRef.current++;
           if (Date.now() - lastFpsUpdateRef.current >= 1000) {
@@ -1228,8 +1223,10 @@ export default function CoopGameLoader() {
              
             {players.map(p => {
                 if (!p || p.id !== localPlayerId) return null;
+                
                 const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
                 const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
+
                 return (
                     <ElementPickDialog
                         key={p.id}
