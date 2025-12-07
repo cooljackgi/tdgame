@@ -66,7 +66,6 @@ export default function CoopGameLoader() {
   const [portals, setPortals] = useState<Portal[]>([]);
   const [currentPath, setCurrentPath] = useState<Node[]>([]);
   
-  // --- Plan-Step 1: Introduce isLogicPaused state ---
   const [isLogicPaused, setIsLogicPaused] = useState(false);
   
   const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
@@ -330,17 +329,18 @@ export default function CoopGameLoader() {
 
                         const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
                         const allPlayersPicked = nextPlayers
-                            .filter(p => p.id !== 'spectator')
+                            .filter(p => p.id !== 'spectator' && p.id !== null)
                             .every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
 
                         if (allPlayersPicked) {
+                            setCurrentWave(prev => prev + 1);
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
                             setIsLogicPaused(false); // Resume game logic for intermission
                              deltaQueueRef.current.push([
                                 DeltaType.GAME_STATE_UPDATE,
-                                { lives: gameState.lives, currentWave, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
+                                { lives: gameState.lives, currentWave: currentWave + 1, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
                             ]);
                         }
                         
@@ -742,33 +742,38 @@ export default function CoopGameLoader() {
     setGameStatus('gameover');
   }, [gameId, user, difficulty, currentWave, towersByCell, gameStatus]);
 
-  // --- Plan-Step 2: Create handleEndOfWave ---
   const handleEndOfWave = useCallback(() => {
       if (!isGameHost || !gameConfig) return;
-
+  
       const nextWaveIndex = currentWave + 1;
-
+  
       if (gameConfig.waves.length <= nextWaveIndex) {
           onGameEnd(true);
           return;
       }
       
-      const playersWhoNeedToPick = players.filter(p => {
-          if (p.id === 'spectator') return false;
-          const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-          return (p.unlockedElements?.length ?? 0) < expectedElements;
-      });
-
-      if (playersWhoNeedToPick.length > 0) {
-          setGameStatus('picking-element');
-          // Logic remains paused
-      } else {
-          setCurrentWave(nextWaveIndex);
-          setIsIntermission(true);
-          setWaveStartCountdown(INTERMISSION_TIME);
-          setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-          setIsLogicPaused(false); // Resume logic for intermission
+      const shouldPickElement = (nextWaveIndex > 0 && nextWaveIndex % 5 === 0);
+  
+      if (shouldPickElement) {
+          const playersWhoNeedToPick = players.filter(p => {
+              if (p.id === 'spectator') return false;
+              const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+              return (p.unlockedElements?.length ?? 0) < expectedElements;
+          });
+          if(playersWhoNeedToPick.length > 0) {
+            setGameStatus('picking-element');
+            // Logic remains paused
+            return;
+          }
       }
+      
+      // Default case: no one needs to pick, so start intermission.
+      setCurrentWave(nextWaveIndex);
+      setIsIntermission(true);
+      setWaveStartCountdown(INTERMISSION_TIME);
+      setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
+      setIsLogicPaused(false); // Resume logic for intermission
+
   }, [isGameHost, gameConfig, currentWave, players, onGameEnd]);
 
 
@@ -798,245 +803,244 @@ export default function CoopGameLoader() {
           const currentStatus = gameStatus;
           const hasTwoPlayers = players.length >= 2;
           
-          // --- Plan-Step 1: Wrap logic in isLogicPaused check ---
-          if (!isLogicPaused) {
-              const lobbyIsWaiting = currentStatus === 'waiting' && !hasTwoPlayers;
-              const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element';
+          if (isLogicPaused) {
+              return;
+          }
 
-              if (!gameIsPaused && !lobbyIsWaiting) {
-                  
-                  const stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
-                  
-                  const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
-                  
-                  const towersChanged = Object.keys(towersAfterBuild).length !== Object.keys(towersByCell).length;
-                  const ghostsChanged = nextGhosts.length !== ghosts.length;
-                  const portalsChanged = nextPortals?.length !== (portals?.length || 0);
+          const lobbyIsWaiting = currentStatus === 'waiting' && !hasTwoPlayers;
+          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element';
 
-                  setWorkers(nextWorkers);
-                  setPlayers(playersAfterBuild);
-                  if (ghostsChanged) { setGhosts(nextGhosts); deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, nextGhosts]); }
-                  if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
-                  if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
+          if (!gameIsPaused && !lobbyIsWaiting) {
+              
+              const stateToUpdate: GameSessionState = { players, gameState, towersByCell, enemies, currentWave, difficulty, gameStatus: currentStatus, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+              
+              const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
+              
+              const towersChanged = Object.keys(towersAfterBuild).length !== Object.keys(towersByCell).length;
+              const ghostsChanged = nextGhosts.length !== ghosts.length;
+              const portalsChanged = nextPortals?.length !== (portals?.length || 0);
+
+              setWorkers(nextWorkers);
+              setPlayers(playersAfterBuild);
+              if (ghostsChanged) { setGhosts(nextGhosts); deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, nextGhosts]); }
+              if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
+              if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
+              
+              if(ghostsChanged || towersChanged || portalsChanged) {
+                deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]);
+                deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]);
+              }
+
+              if (currentStatus === 'playing') {
+                
+                  const updatedPlayersWithIncome = players.map(p => ({
+                      ...p,
+                      resources: p.resources + (p.incomePerSecond * (delta / 1000)),
+                  }));
+                  setPlayers(updatedPlayersWithIncome);
+                  deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, updatedPlayersWithIncome]);
                   
-                  if(ghostsChanged || towersChanged || portalsChanged) {
-                    deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]);
-                    deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]);
-                  }
+                  if (isIntermission) {
+                      setWaveStartCountdown(prev => Math.max(0, prev - (delta/1000)));
+                      if (waveStartCountdown <= 0) startWave(currentWave);
+                  } else { // Welle ist aktiv
+                  
+                  let livesLostThisTick = 0;
+                  let killedThisTick = 0;
+                  let resourcesGained = { player1: 0, player2: 0 };
+                  
+                  let newAttacks: Attack[] = [];
+                  let newDamageNumbers: DamageNumber[] = [];
+                  let newSplashRings: SplashRing[] = [];
+                  let newLifeGainVfx: LifeGainVfx[] = [];
+                  let newSoundEvents: SoundEvent[] = [];
+                  let newGravityWells: GravityWell[] = [];
+                  let newPersistentClouds: PersistentCloud[] = [];
+                  
+                  let currentEnemies = [...enemies];
+                  let updatedTowers = {...towersByCell};
 
-                  if (currentStatus === 'playing') {
-                    
-                      const updatedPlayersWithIncome = players.map(p => ({
-                          ...p,
-                          resources: p.resources + (p.incomePerSecond * (delta / 1000)),
-                      }));
-                      setPlayers(updatedPlayersWithIncome);
-                      deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, updatedPlayersWithIncome]);
-                      
-                      if (isIntermission) {
-                          setWaveStartCountdown(prev => Math.max(0, prev - (delta/1000)));
-                          if (waveStartCountdown <= 0) startWave(currentWave);
-                      } else { // Welle ist aktiv
-                      
-                      let livesLostThisTick = 0;
-                      let killedThisTick = 0;
-                      let resourcesGained = { player1: 0, player2: 0 };
-                      
-                      let newAttacks: Attack[] = [];
-                      let newDamageNumbers: DamageNumber[] = [];
-                      let newSplashRings: SplashRing[] = [];
-                      let newLifeGainVfx: LifeGainVfx[] = [];
-                      let newSoundEvents: SoundEvent[] = [];
-                      let newGravityWells: GravityWell[] = [];
-                      let newPersistentClouds: PersistentCloud[] = [];
-                      
-                      let currentEnemies = [...enemies];
-                      let updatedTowers = {...towersByCell};
-
-                        const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
-                        if (spawnQueueRef.current.length > 0) {
-                            const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
-                            if(enemiesToSpawnNow.length > 0) {
-                                spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                                const nowEpoch = Date.now();
-                                const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPath}));
-                                currentEnemies.push(...newEnemiesThisFrame);
-                            }
+                    const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
+                    if (spawnQueueRef.current.length > 0) {
+                        const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
+                        if(enemiesToSpawnNow.length > 0) {
+                            spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
+                            const nowEpoch = Date.now();
+                            const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({...e, lastMove: nowEpoch, path: currentPath}));
+                            currentEnemies.push(...newEnemiesThisFrame);
                         }
-                      
-                      let firingIds = new Set<string>();
+                    }
+                  
+                  let firingIds = new Set<string>();
 
-                      Object.values(updatedTowers).forEach(tower => {
-                          if (epochNow - tower.lastAttack >= tower.attackSpeed) {
-                              const isBuffed = false;
-                              let targets: Enemy[] = [];
-                              if (tower.effects?.some(e => e.type === 'multishot')) {
-                                  const effect = tower.effects.find(e => e.type === 'multishot')!;
-                                  targets = currentEnemies.filter(enemy => {
-                                      if (enemy.deathTimestamp) return false;
-                                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                                      return distSq <= tower.range * tower.range;
-                                  }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
-                              } else {
-                                  let target: Enemy | null = null;
-                                  let minDistanceSq = tower.range * tower.range;
-                                  currentEnemies.forEach(enemy => {
-                                      if (enemy.deathTimestamp) return;
-                                      const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                                      if (distSq <= minDistanceSq) {
-                                          minDistanceSq = distSq;
-                                          target = enemy;
-                                      }
-                                  });
-                                  if(target) targets.push(target);
-                              }
+                  Object.values(updatedTowers).forEach(tower => {
+                      if (epochNow - tower.lastAttack >= tower.attackSpeed) {
+                          const isBuffed = false;
+                          let targets: Enemy[] = [];
+                          if (tower.effects?.some(e => e.type === 'multishot')) {
+                              const effect = tower.effects.find(e => e.type === 'multishot')!;
+                              targets = currentEnemies.filter(enemy => {
+                                  if (enemy.deathTimestamp) return false;
+                                  const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                                  return distSq <= tower.range * tower.range;
+                              }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
+                          } else {
+                              let target: Enemy | null = null;
+                              let minDistanceSq = tower.range * tower.range;
+                              currentEnemies.forEach(enemy => {
+                                  if (enemy.deathTimestamp) return;
+                                  const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
+                                  if (distSq <= minDistanceSq) {
+                                      minDistanceSq = distSq;
+                                      target = enemy;
+                                  }
+                              });
+                              if(target) targets.push(target);
+                          }
 
-                              if (targets.length > 0) {
-                                  tower.lastAttack = epochNow;
-                                  firingIds.add(tower.id);
-                                  
-                                  for (const target of targets) {
-                                    const result = processAttack(tower, target, currentEnemies, epochNow, isBuffed);
-                                    currentEnemies = result.updatedEnemies;
-                                    
-                                    newAttacks.push(...result.newAttacks);
-                                    newDamageNumbers.push(...result.damageNumbers);
-                                    newSplashRings.push(...result.splashRings);
-                                    newLifeGainVfx.push(...result.lifeGainVfx);
-                                    newSoundEvents.push(...result.soundEvents);
-                                    if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
-                                    if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
+                          if (targets.length > 0) {
+                              tower.lastAttack = epochNow;
+                              firingIds.add(tower.id);
+                              
+                              for (const target of targets) {
+                                const result = processAttack(tower, target, currentEnemies, epochNow, isBuffed);
+                                currentEnemies = result.updatedEnemies;
+                                
+                                newAttacks.push(...result.newAttacks);
+                                newDamageNumbers.push(...result.damageNumbers);
+                                newSplashRings.push(...result.splashRings);
+                                newLifeGainVfx.push(...result.lifeGainVfx);
+                                newSoundEvents.push(...result.soundEvents);
+                                if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
+                                if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
 
-                                    if (result.resourcesGained > 0) {
-                                        players.forEach(p => {
-                                            const key = p.id as 'player1' | 'player2';
-                                            if(resourcesGained[key] !== undefined) {
-                                              resourcesGained[key] += result.resourcesGained;
-                                            }
-                                        });
-                                    }
-                                    if (result.livesGained > 0) {
-                                        setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
-                                    }
-                                    if (result.killed > 0) killedThisTick += result.killed;
+                                if (result.resourcesGained > 0) {
+                                    players.forEach(p => {
+                                        const key = p.id as 'player1' | 'player2';
+                                        if(resourcesGained[key] !== undefined) {
+                                          resourcesGained[key] += result.resourcesGained;
+                                        }
+                                    });
                                 }
-                              }
+                                if (result.livesGained > 0) {
+                                    setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
+                                }
+                                if (result.killed > 0) killedThisTick += result.killed;
+                            }
                           }
+                      }
+                  });
+                  
+                  setTowersByCell(towersByCell => ({ ...towersByCell, ...updatedTowers }));
+
+                  if (firingIds.size > 0) {
+                     setFiringTowerIds(new Set(firingIds));
+                     setTimeout(() => setFiringTowerIds(new Set()), 150);
+                  }
+                  
+                  if (newAttacks.length > 0) { gameBoardRef.current?.queueAttacks(newAttacks); deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]); }
+                  if (newDamageNumbers.length > 0) { gameBoardRef.current?.queueDamageNumbers(newDamageNumbers); deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]); }
+                  if (newSplashRings.length > 0) { gameBoardRef.current?.queueSplashRings(newSplashRings); deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]); }
+                  newSoundEvents.forEach(ev => { audioManager.play(ev); deltaQueueRef.current.push([DeltaType.AUDIO, ev]); });
+
+
+                  const stillAlive: Enemy[] = [];
+                  const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > epochNow);
+                  const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > epochNow);
+                  const activePortals = (portals ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
+
+                  for (let enemy of currentEnemies) {
+                      if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
+                      if (enemy.deathTimestamp) { stillAlive.push(enemy); continue; }
+                      
+                      let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > epochNow) };
+                      const dotResult = tickDots(updatedEnemy, delta);
+                      if (dotResult.totalDamage > 0) gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'}]);
+                      if (dotResult.killed && !updatedEnemy.deathTimestamp) updatedEnemy.deathTimestamp = epochNow;
+                      if (updatedEnemy.deathTimestamp) { stillAlive.push(updatedEnemy); continue; }
+                      
+                      const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
+                      if (stunEffect) { stillAlive.push(updatedEnemy); continue; }
+
+                      let teleported = false;
+                      for (const portal of activePortals) {
+                          if (!portal.active) continue;
+                          const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
+                          if (entranceDistSq < 0.5 && epochNow - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
+                              updatedEnemy.position = { ...portal.exit };
+                              updatedEnemy.lastTeleportAt = epochNow;
+                              updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
+                              updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+                              updatedEnemy.pathIndex = 0;
+                              updatedEnemy.lastMove = epochNow;
+                              teleported = true;
+                              break; 
+                          }
+                      }
+                      if (teleported) { stillAlive.push(updatedEnemy); continue; }
+                      
+                      const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
+                      const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
+                      const stepMs = 1000 / Math.max(0.01, speed);
+                      let timeToMove = epochNow - updatedEnemy.lastMove;
+                      
+                      while (timeToMove >= stepMs) {
+                          if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
+                              updatedEnemy.pathIndex += 1;
+                              updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
+                              timeToMove -= stepMs;
+                              updatedEnemy.lastMove += stepMs;
+                          } else {
+                              livesLostThisTick++;
+                              audioManager.play({ kind: 'sfx', name: 'enemy_leak' });
+                              updatedEnemy = null;
+                              break;
+                          }
+                      }
+                      if(updatedEnemy) stillAlive.push(updatedEnemy);
+                  }
+                  
+                  setEnemies(stillAlive);
+                  deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, stillAlive]);
+                  
+                  setGravityWells(activeGravityWells);
+                  setPersistentClouds(activePersistentClouds);
+                  if (killedThisTick > 0) {
+                     const newTotalKilled = totalKilled + killedThisTick;
+                     setTotalKilled(newTotalKilled);
+                     deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled: newTotalKilled, totalLeaked }])
+                  }
+                  
+                  if (livesLostThisTick > 0) {
+                      const newTotalLeaked = totalLeaked + livesLostThisTick;
+                      setTotalLeaked(newTotalLeaked);
+                      deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled, totalLeaked: newTotalLeaked }])
+
+                      setGameState(gs => {
+                          const newLives = Math.max(0, gs.lives - livesLostThisTick);
+                          if (newLives <= 0 && gameStatus !== 'gameover') {
+                              onGameEnd(false);
+                              setGameStatus('gameover');
+                          }
+                          return { ...gs, lives: newLives };
                       });
-                      
-                      setTowersByCell(towersByCell => ({ ...towersByCell, ...updatedTowers }));
+                  }
+                  
+                  setPlayers(prev => prev.map(p => {
+                      const gainP1 = resourcesGained.player1 || 0;
+                      const gainP2 = resourcesGained.player2 || 0;
+                      if (p.id === 'player1') return { ...p, resources: p.resources + gainP1 };
+                      if (p.id === 'player2') return { ...p, resources: p.resources + gainP2 };
+                      return p;
+                  }));
+                  
+                    const spawnQueueEmpty = spawnQueueRef.current.length === 0;
+                    const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
-                      if (firingIds.size > 0) {
-                         setFiringTowerIds(new Set(firingIds));
-                         setTimeout(() => setFiringTowerIds(new Set()), 150);
-                      }
-                      
-                      if (newAttacks.length > 0) { gameBoardRef.current?.queueAttacks(newAttacks); deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]); }
-                      if (newDamageNumbers.length > 0) { gameBoardRef.current?.queueDamageNumbers(newDamageNumbers); deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]); }
-                      if (newSplashRings.length > 0) { gameBoardRef.current?.queueSplashRings(newSplashRings); deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]); }
-                      newSoundEvents.forEach(ev => { audioManager.play(ev); deltaQueueRef.current.push([DeltaType.AUDIO, ev]); });
-
-
-                      const stillAlive: Enemy[] = [];
-                      const activeGravityWells = [...(gravityWells || []), ...newGravityWells].filter(w => w.expires > epochNow);
-                      const activePersistentClouds = [...(persistentClouds || []), ...newPersistentClouds].filter(c => c.expires > epochNow);
-                      const activePortals = (portals ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
-
-                      for (let enemy of currentEnemies) {
-                          if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
-                          if (enemy.deathTimestamp) { stillAlive.push(enemy); continue; }
-                          
-                          let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > epochNow) };
-                          const dotResult = tickDots(updatedEnemy, delta);
-                          if (dotResult.totalDamage > 0) gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316'}]);
-                          if (dotResult.killed && !updatedEnemy.deathTimestamp) updatedEnemy.deathTimestamp = epochNow;
-                          if (updatedEnemy.deathTimestamp) { stillAlive.push(updatedEnemy); continue; }
-                          
-                          const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                          if (stunEffect) { stillAlive.push(updatedEnemy); continue; }
-
-                          let teleported = false;
-                          for (const portal of activePortals) {
-                              if (!portal.active) continue;
-                              const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
-                              if (entranceDistSq < 0.5 && epochNow - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
-                                  updatedEnemy.position = { ...portal.exit };
-                                  updatedEnemy.lastTeleportAt = epochNow;
-                                  updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
-                                  updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
-                                  updatedEnemy.pathIndex = 0;
-                                  updatedEnemy.lastMove = epochNow;
-                                  teleported = true;
-                                  break; 
-                              }
-                          }
-                          if (teleported) { stillAlive.push(updatedEnemy); continue; }
-                          
-                          const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
-                          const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
-                          const stepMs = 1000 / Math.max(0.01, speed);
-                          let timeToMove = epochNow - updatedEnemy.lastMove;
-                          
-                          while (timeToMove >= stepMs) {
-                              if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
-                                  updatedEnemy.pathIndex += 1;
-                                  updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                                  timeToMove -= stepMs;
-                                  updatedEnemy.lastMove += stepMs;
-                              } else {
-                                  livesLostThisTick++;
-                                  audioManager.play({ kind: 'sfx', name: 'enemy_leak' });
-                                  updatedEnemy = null;
-                                  break;
-                              }
-                          }
-                          if(updatedEnemy) stillAlive.push(updatedEnemy);
-                      }
-                      
-                      setEnemies(stillAlive);
-                      deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, stillAlive]);
-                      
-                      setGravityWells(activeGravityWells);
-                      setPersistentClouds(activePersistentClouds);
-                      if (killedThisTick > 0) {
-                         const newTotalKilled = totalKilled + killedThisTick;
-                         setTotalKilled(newTotalKilled);
-                         deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled: newTotalKilled, totalLeaked }])
-                      }
-                      
-                      if (livesLostThisTick > 0) {
-                          const newTotalLeaked = totalLeaked + livesLostThisTick;
-                          setTotalLeaked(newTotalLeaked);
-                          deltaQueueRef.current.push([DeltaType.STATS_UPDATE, { totalKilled, totalLeaked: newTotalLeaked }])
-
-                          setGameState(gs => {
-                              const newLives = Math.max(0, gs.lives - livesLostThisTick);
-                              if (newLives <= 0 && gameStatus !== 'gameover') {
-                                  onGameEnd(false);
-                                  setGameStatus('gameover');
-                              }
-                              return { ...gs, lives: newLives };
-                          });
-                      }
-                      
-                      setPlayers(prev => prev.map(p => {
-                          const gainP1 = resourcesGained.player1 || 0;
-                          const gainP2 = resourcesGained.player2 || 0;
-                          if (p.id === 'player1') return { ...p, resources: p.resources + gainP1 };
-                          if (p.id === 'player2') return { ...p, resources: p.resources + gainP2 };
-                          return p;
-                      }));
-                      
-                        const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-                        const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
-
-                        if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
-                            // --- Plan-Step 1: Pause logic ---
-                            setIsLogicPaused(true);
-                            // --- Plan-Step 2: Handle end of wave in a separate function ---
-                            handleEndOfWave();
-                        }
-                      }
+                    if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
+                        setIsLogicPaused(true);
+                        handleEndOfWave();
+                    }
                   }
               }
           }
@@ -1207,11 +1211,12 @@ export default function CoopGameLoader() {
               if (!p || p.id !== localPlayerId) return null;
               
               const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+              const shouldPick = isPicking && (p.unlockedElements?.length ?? 0) < expectedElements;
 
               return (
                   <ElementPickDialog
                       key={p.id}
-                      isOpen={isPicking && p.unlockedElements.length < expectedElements}
+                      isOpen={shouldPick}
                       onElementPick={onElementPick}
                       playerName={p.name}
                       currentWave={currentWave}
@@ -1222,6 +1227,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 

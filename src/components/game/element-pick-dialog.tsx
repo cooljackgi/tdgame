@@ -1,4 +1,5 @@
 
+
 import {
   Dialog,
   DialogContent,
@@ -27,8 +28,8 @@ const elementStrengths: Record<Element, string> = {
     fire: "Gut gegen viele schwache Gegner (Flächenschaden/Brand).",
     water: "Sehr effektiv gegen schnelle Gegner (Verlangsamung).",
     earth: "Stark gegen gepanzerte Gegner und Bosse (Betäubung).",
-    air: "Gut für Massenkontrolle (Zurückstoßen).",
-    light: "Exzellent gegen gepanzerte Gegner (ignoriert Rüstung).",
+    air: "Fokussiert auf schnelle Angriffe und Kettenblitze.",
+    light: "Exzellent gegen einzelne, starke Ziele (hoher Schaden, Rüstungs-Ignoranz).",
     dark: "Sehr stark gegen Ziele mit viel Leben (prozentualer Schaden).",
     nature: "Effektiv gegen Horden von Gegnern (Mehrfachschuss).",
     neutral: "Allrounder ohne Spezialisierung."
@@ -64,12 +65,12 @@ export function ElementPickDialog({
   playerName,
   currentWave
 }: ElementPickDialogProps) {
-  // GUARD: pro Runde nur EIN Pick auslösen
   const [picked, setPicked] = useState<Element | null>(null);
 
-  // Sobald der Dialog neu aufgeht (nächste Runde), Reset
   React.useEffect(() => {
-    if (isOpen) setPicked(null);
+    if (isOpen) {
+        setPicked(null);
+    }
   }, [isOpen]);
 
   const choices = ALL_PICKABLE_ELEMENTS.filter((e) => !unlockedElements.has(e));
@@ -80,10 +81,9 @@ export function ElementPickDialog({
   }, [currentWave]);
 
   const handlePick = useCallback((element: Element) => {
-    // nur erster Klick zählt
     if (picked) return;
     setPicked(element);
-    onElementPick(element); // Parent schließt den Dialog / synced Coop
+    onElementPick(element);
   }, [picked, onElementPick]);
 
   if (choices.length === 0) return null;
@@ -100,7 +100,7 @@ export function ElementPickDialog({
           <DialogDescription>
             {picked
               ? "Deine Buttons sind jetzt gesperrt. Gleich geht’s weiter."
-              : "Deine Wahl schaltet neue Türme und Upgrade-Pfade frei. Wähle weise!"}
+              : `Du bist bei Welle ${currentWave + 1}. Deine Wahl schaltet neue Türme frei. Wähle weise!`}
           </DialogDescription>
         </DialogHeader>
 
@@ -117,14 +117,14 @@ export function ElementPickDialog({
                       <Button
                         onClick={() => handlePick(element)}
                         variant="outline"
-                        disabled={!!picked}              // << Single-pick Guard
+                        disabled={!!picked}
                         aria-disabled={!!picked}
                         className={cn(
                           "flex flex-col items-center justify-center h-24 w-24 rounded-lg border-2 transition-all",
                           "hover:border-primary",
                           elementBackgroundColors[element],
                           isRecommended && "border-primary shadow-lg shadow-primary/30 animate-pulse",
-                          picked && "opacity-60 cursor-not-allowed" // visuelles Feedback nach Wahl
+                          picked && "opacity-60 cursor-not-allowed"
                         )}
                       >
                         <Icon className={cn("h-8 w-8 mb-2", elementColors[element])} />
