@@ -76,9 +76,12 @@ export function ElementPickDialog({
   const choices = ALL_PICKABLE_ELEMENTS.filter((e) => !unlockedElements.has(e));
 
   const recommendedElement = useMemo(() => {
-    const nextFiveWaves = waves.slice(currentWave, currentWave + 5);
+    const nextFiveWaves = waves.slice(currentWave + 1, currentWave + 6);
     return getRecommendation(nextFiveWaves);
   }, [currentWave]);
+  
+  const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+  const shouldBePicking = (unlockedElements?.size ?? 0) < expectedElements;
 
   const handlePick = useCallback((element: Element) => {
     if (picked) return;
@@ -86,7 +89,7 @@ export function ElementPickDialog({
     onElementPick(element);
   }, [picked, onElementPick]);
 
-  if (choices.length === 0) return null;
+  if (choices.length === 0 || !shouldBePicking) return null;
 
   return (
     <Dialog open={isOpen}>

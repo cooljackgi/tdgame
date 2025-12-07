@@ -332,27 +332,28 @@ export default function CoopGameLoader() {
                 }
                 case 'pick_element': {
                     const { element } = payload;
-                    player.unlockedElements = Array.from(new Set([...player.unlockedElements, element]));
-                    
+                    const currentPlayerRef = playersRef.current.find(p => p.id === player.id);
+                    if (!currentPlayerRef) break;
+
+                    const newUnlocked = Array.from(new Set([...currentPlayerRef.unlockedElements, element]));
+                    const updatedPlayer = { ...currentPlayerRef, unlockedElements: newUnlocked };
+
+                    const updatedPlayers = playersRef.current.map(p => (p.id === player.id ? updatedPlayer : p));
+                    setPlayers(updatedPlayers);
+                    deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, updatedPlayers]);
                     audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
-                    deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
-                    
-                    const expectedElements = 1 + Math.floor((currentWaveRef.current) / 5);
-                    const allPlayersPicked = tempPlayers.filter(p => p && p.id !== 'spectator').every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
+
+                    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
+                    const allPlayersPicked = updatedPlayers.filter(p => p.id !== 'spectator').every(p => (p.unlockedElements.length >= expectedElements));
 
                     if (allPlayersPicked) {
-                        const nextWave = currentWaveRef.current + 1;
-                        setCurrentWave(nextWave);
+                        setCurrentWave(prev => prev + 1);
                         setIsIntermission(true);
                         setWaveStartCountdown(INTERMISSION_TIME);
                         setGameStatus('playing');
                         setIsLogicPaused(false);
-                         deltaQueueRef.current.push([
-                            DeltaType.GAME_STATE_UPDATE,
-                            { lives: gameStateRef.current.lives, currentWave: nextWave, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
-                        ]);
                     }
-                    break;
+                    return updatedPlayers;
                 }
             }
             
@@ -750,27 +751,22 @@ export default function CoopGameLoader() {
 
         if (playersWhoNeedToPick.length > 0) {
             setGameStatus('picking-element');
-            setIsIntermission(true);
-            deltaQueueRef.current.push([
-                DeltaType.GAME_STATE_UPDATE,
-                { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
-            ]);
+            setIsIntermission(true); // Bleibt in der Pause
         } else {
             setCurrentWave(nextWaveIndex);
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
             setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
             setIsLogicPaused(false);
-            deltaQueueRef.current.push([
-                DeltaType.GAME_STATE_UPDATE,
-                { lives: gameStateRef.current.lives, currentWave: nextWaveIndex, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
-            ]);
         }
     }, [isGameHost, gameConfig, onGameEnd]);
 
 
   useEffect(() => {
-      if (!gameConfig || !isGameHost) return;
+      if (!gameConfig || !isGameHost) {
+          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+          return;
+      }
       
       let stopped = false;
       lastTickRef.current = performance.now();
@@ -779,12 +775,12 @@ export default function CoopGameLoader() {
           if (stopped) return;
           gameLoopRef.current = requestAnimationFrame(gameLoop);
           
+          if (isLogicPausedRef.current) return;
+
           const now = performance.now();
           const delta = now - lastTickRef.current;
           if (delta === 0) return;
           lastTickRef.current = now;
-
-          if (isLogicPausedRef.current) return;
 
           frameCountRef.current++;
           if (Date.now() - lastFpsUpdateRef.current >= 1000) {
@@ -1041,6 +1037,10 @@ export default function CoopGameLoader() {
                     isIntermission: isIntermission,
                     waveStartCountdown: waveStartCountdown,
               }]);
+              deltaQueueRef.current.push([DeltaType.STATS_UPDATE, {
+                    totalKilled: totalKilled,
+                    totalLeaked: totalLeaked,
+              }]);
               const deltasToSend = [...deltaQueueRef.current];
               if (deltasToSend.length > 0) {
                  sendGameDataRef.current('deltas', deltasToSend);
@@ -1058,7 +1058,7 @@ export default function CoopGameLoader() {
           stopped = true;
           if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       }
-  }, [isGameHost, enemies, user, gameId, difficulty, towersByCell, currentPath, players, gravityWells, persistentClouds, portals, startWave, waveStartCountdown, gameConfig, onGameEnd, handleEndOfWave, workers, ghosts, isIntermission]);
+  }, [isGameHost, enemies, user, gameId, difficulty, towersByCell, currentPath, players, gravityWells, persistentClouds, portals, startWave, waveStartCountdown, gameConfig, onGameEnd, handleEndOfWave, workers, ghosts, isIntermission, totalKilled, totalLeaked]);
 
 
   useEffect(() => {
@@ -1207,7 +1207,7 @@ export default function CoopGameLoader() {
             {players.map(p => {
                 if (!p || p.id !== localPlayerId) return null;
                 
-                const expectedElements = 1 + Math.floor((currentWave) / 5);
+                const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
                 const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
 
                 return (

@@ -834,7 +834,7 @@ export default function SinglePlayerGame({
                 if (gameConfig.waves.length <= nextWave) {
                     handleGameEnd(true);
                 } else {
-                    const expectedElements = 1 + Math.floor((nextWave) / 5);
+                    const expectedElements = 1 + Math.floor(nextWave / 5);
                     const shouldPickElement = (nextWave % 5 === 0) && (localPlayerRef.current?.unlockedElements.length ?? 0) < expectedElements;
 
                     if (shouldPickElement) {
