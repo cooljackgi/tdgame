@@ -235,7 +235,8 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = updatedState.players;
                         
-                        if (playerId === localPlayerId) {
+                        // FIX: Do not reset selected tower for the host.
+                        if (playerId === localPlayerId && playerId !== 'player1') {
                            setSelectedTowerToBuild(null);
                         }
                         break;
@@ -327,13 +328,12 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = nextPlayers;
 
-                        const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                        const expectedElements = 1 + Math.floor(currentWave / 5);
                         const allPlayersPicked = nextPlayers
                             .filter(p => p.id !== 'spectator' && p.id !== null)
                             .every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
 
                         if (allPlayersPicked) {
-                            setCurrentWave(prev => prev + 1);
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
@@ -1210,8 +1210,8 @@ export default function CoopGameLoader() {
             {players.map(p => {
               if (!p || p.id !== localPlayerId) return null;
               
-              const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-              const shouldPick = isPicking && (p.unlockedElements?.length ?? 0) < expectedElements;
+              const expectedElements = 1 + Math.floor(currentWave / 5);
+              const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
 
               return (
                   <ElementPickDialog
@@ -1227,6 +1227,7 @@ export default function CoopGameLoader() {
       </div>
   );
 }
+
 
 
 
