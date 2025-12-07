@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -236,7 +235,7 @@ export default function CoopGameLoader() {
                         currentPlayers = updatedState.players;
                         
                         if (playerId === localPlayerId) {
-                           // No longer resetting selected tower for host
+                           // Keep tower selected for host
                         }
                         break;
                     }
@@ -954,7 +953,7 @@ export default function CoopGameLoader() {
                       
                       let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > epochNow) };
                       const dotResult = tickDots(updatedEnemy, delta);
-                      if (dotResult.totalDamage > 0) gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy.id, color: '#f97316'}]);
+                      if (dotResult.totalDamage > 0) gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, color: '#f97316'}]);
                       if (dotResult.killed && !updatedEnemy.deathTimestamp) updatedEnemy.deathTimestamp = epochNow;
                       if (updatedEnemy.deathTimestamp) { stillAlive.push(updatedEnemy); continue; }
                       
@@ -1187,6 +1186,8 @@ export default function CoopGameLoader() {
                     justPlacedTowerId={justPlacedTowerId}
                     isCoop={true} 
                     playerRole={localPlayerId}
+                    handleLoadTestLayout={() => {}}
+                    handleLoadAllTowersLayout={() => {}}
                     isCheating={false}
                     cheat_unlockAll={() => {}}
                     firingTowerIds={firingTowerIds} 
@@ -1223,3 +1224,4 @@ export default function CoopGameLoader() {
   );
 }
 
+    
