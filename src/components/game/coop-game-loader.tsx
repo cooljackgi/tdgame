@@ -80,7 +80,6 @@ export default function CoopGameLoader() {
   const gameBoardRef = useRef<GameBoardHandle>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
-  const [isPicking, setIsPicking] = useState(false);
 
   // VFX State
   const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
@@ -234,8 +233,10 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = updatedState.players;
                         
-                        if (playerId === localPlayerId) {
-                           // Keep tower selected for host
+                        if (playerId === localPlayerId && !isMobile) {
+                           // Keep tower selected for host on desktop
+                        } else {
+                           if (playerId === localPlayerId) setSelectedTowerToBuild(null);
                         }
                         break;
                     }
@@ -314,9 +315,12 @@ export default function CoopGameLoader() {
                     }
                     case 'pick_element': {
                         const { element, playerId } = payload;
+
+                        const playerExists = currentPlayers.some(p => p && p.id === playerId);
+                        if (!playerExists) break;
                         
-                        let nextPlayers = currentPlayers.map(p => 
-                            p.id === playerId 
+                        const nextPlayers = currentPlayers.map(p => 
+                            (p && p.id === playerId)
                                 ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
                                 : p
                         );
@@ -327,9 +331,8 @@ export default function CoopGameLoader() {
                         currentPlayers = nextPlayers;
 
                         const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-                        const allPlayersPicked = nextPlayers
-                            .filter(p => p && p.id !== 'spectator')
-                            .every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
+                        const activePlayers = nextPlayers.filter(p => p && p.id !== 'spectator');
+                        const allPlayersPicked = activePlayers.every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
 
                         if (allPlayersPicked) {
                             setCurrentWave(prev => prev + 1);
@@ -366,7 +369,7 @@ export default function CoopGameLoader() {
             performUpdate();
         }
 
-    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions]);
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, currentWave, gameStatus, toast, workers, ghosts, portals, gameState, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions, isMobile]);
     
   // --- WebRTC Logic ---
   
@@ -1069,8 +1072,13 @@ export default function CoopGameLoader() {
 
 
   useEffect(() => {
-    setIsPicking(gameStatus === 'picking-element');
-  }, [gameStatus]);
+    // This effect handles the UI change for the dialog.
+    if(gameStatus === 'picking-element' && localPlayer?.id === 'player2') {
+       // Client-side UI is driven by gameStatus
+    } else if (gameStatus === 'picking-element' && isGameHost) {
+       // Host-side UI is driven by gameStatus
+    }
+  }, [gameStatus, localPlayer?.id, isGameHost]);
 
   const toggleMute = () => {
     setIsMuted(current => {
@@ -1189,6 +1197,9 @@ export default function CoopGameLoader() {
                     handleLoadTestLayout={() => {}}
                     handleLoadAllTowersLayout={() => {}}
                     isCheating={false}
+                    cheat_addResources={() => {}}
+                    cheat_skipWaves={() => {}}
+                    cheat_heal={() => {}}
                     cheat_unlockAll={() => {}}
                     firingTowerIds={firingTowerIds} 
                     allTowers={gameConfig.towers}
@@ -1203,25 +1214,25 @@ export default function CoopGameLoader() {
                     />
              </div>
              
-             {players.map(p => {
-                  if (!p || p.id !== localPlayerId) return null;
-                  
-                  const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-                  const shouldPick = gameStatus === 'picking-element' && ((p.unlockedElements?.length ?? 0) < expectedElements);
-                  
-                  return (
-                      <ElementPickDialog
-                          key={p.id}
-                          isOpen={shouldPick}
-                          onElementPick={onElementPick}
-                          playerName={p.name}
-                          currentWave={currentWave}
-                          unlockedElements={new Set(p.unlockedElements)}
-                      />
-                  );
-                })}
+            {players.map(p => {
+                if (!p || p.id !== localPlayerId) return null;
+                const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
+                return (
+                    <ElementPickDialog
+                        key={p.id}
+                        isOpen={shouldPick}
+                        onElementPick={onElementPick}
+                        playerName={p.name}
+                        currentWave={currentWave}
+                        unlockedElements={new Set(p.unlockedElements)}
+                    />
+                );
+            })}
         </div>
   );
 }
+
+    
 
     
