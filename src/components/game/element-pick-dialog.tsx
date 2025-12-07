@@ -81,7 +81,7 @@ export function ElementPickDialog({
   }, [currentWave]);
   
   const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
-  const shouldBePicking = (unlockedElements?.size ?? 0) < expectedElements;
+  const shouldBePicking = isOpen && ((unlockedElements?.size ?? 0) < expectedElements);
 
   const handlePick = useCallback((element: Element) => {
     if (picked) return;
@@ -89,7 +89,7 @@ export function ElementPickDialog({
     onElementPick(element);
   }, [picked, onElementPick]);
 
-  if (choices.length === 0 || !shouldBePicking) return null;
+  if (!shouldBePicking) return null;
 
   return (
     <Dialog open={isOpen}>
@@ -153,3 +153,4 @@ export function ElementPickDialog({
     </Dialog>
   );
 }
+

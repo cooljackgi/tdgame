@@ -357,6 +357,32 @@ export default function SinglePlayerGame({
         setWaveStartCountdown(0);
     }, [gameConfig]);
 
+    const handleEndOfWave = useCallback(() => {
+        if (!gameConfig) return;
+
+        const nextWaveIndex = currentWaveRef.current + 1;
+        if (nextWaveIndex >= gameConfig.waves.length) {
+            handleGameEnd(true);
+            return;
+        }
+
+        const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+        const player = localPlayerRef.current;
+        const shouldPickElement = (player?.unlockedElements?.length ?? 0) < expectedElements;
+
+        if (shouldPickElement && (nextWaveIndex % 5 === 0)) {
+            setGameStatus('picking-element');
+            setIsIntermission(true);
+            return; // Halt further execution
+        }
+        
+        // Default case: no element pick needed
+        setCurrentWave(nextWaveIndex);
+        setIsIntermission(true);
+        setWaveStartCountdown(INTERMISSION_TIME);
+        setPortals([]); // Clear portals at the end of a wave
+    }, [gameConfig, handleGameEnd]);
+
     const handleStartNextWaveNow = useCallback(() => {
         if(gameStatusRef.current === 'waiting' || gameStatusRef.current === 'tutorial') {
             setGameStatus('playing');
@@ -830,22 +856,7 @@ export default function SinglePlayerGame({
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
 
             if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
-                const nextWave = currentWaveRef.current + 1;
-                if (gameConfig.waves.length <= nextWave) {
-                    handleGameEnd(true);
-                } else {
-                    const expectedElements = 1 + Math.floor(nextWave / 5);
-                    const shouldPickElement = (nextWave % 5 === 0) && (localPlayerRef.current?.unlockedElements.length ?? 0) < expectedElements;
-
-                    if (shouldPickElement) {
-                        setGameStatus('picking-element');
-                    } else {
-                        setCurrentWave(prev => prev + 1);
-                        setPortals([]);
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                    }
-                }
+                handleEndOfWave();
             }
         };
 
@@ -853,7 +864,7 @@ export default function SinglePlayerGame({
         return () => {
             if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
         }
-    }, [startWaveLogic, handleGameEnd, user, isCheating, gameConfig]);
+    }, [startWaveLogic, handleGameEnd, user, isCheating, gameConfig, handleEndOfWave]);
 
     const toggleMute = () => {
       setIsMuted(current => {
@@ -977,3 +988,4 @@ export default function SinglePlayerGame({
 
 
     
+
