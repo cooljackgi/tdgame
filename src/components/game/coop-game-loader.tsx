@@ -235,10 +235,8 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = updatedState.players;
                         
-                        if (playerId === 'player1') {
-                            // Don't reset for host
-                        } else if (playerId === localPlayerId) {
-                           setSelectedTowerToBuild(null);
+                        if (playerId === localPlayerId) {
+                           // No longer resetting selected tower for host
                         }
                         break;
                     }
@@ -329,16 +327,17 @@ export default function CoopGameLoader() {
                         stateChanged = true;
                         currentPlayers = nextPlayers;
 
-                        const expectedElements = 1 + Math.floor(currentWave / 5);
+                        const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
                         const allPlayersPicked = nextPlayers
-                            .filter(p => p.id !== 'spectator' && p.id !== null)
+                            .filter(p => p && p.id !== 'spectator')
                             .every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
 
                         if (allPlayersPicked) {
+                            setCurrentWave(prev => prev + 1);
                             setIsIntermission(true);
                             setWaveStartCountdown(INTERMISSION_TIME);
                             setGameStatus('playing');
-                            setIsLogicPaused(false); // Resume game logic for intermission
+                            setIsLogicPaused(false); 
                              deltaQueueRef.current.push([
                                 DeltaType.GAME_STATE_UPDATE,
                                 { lives: gameState.lives, currentWave: currentWave + 1, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
@@ -744,33 +743,37 @@ export default function CoopGameLoader() {
   }, [gameId, user, difficulty, currentWave, towersByCell, gameStatus]);
 
   const handleEndOfWave = useCallback(() => {
-      if (!isGameHost || !gameConfig) return;
-  
-      const nextWaveIndex = currentWave + 1;
-  
-      if (gameConfig.waves.length <= nextWaveIndex) {
-          onGameEnd(true); // Player won
-          return;
-      }
-      
-      const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-      const playersWhoNeedToPick = players.filter(p => {
-          if (!p || p.id === 'spectator') return false;
-          return (p.unlockedElements?.length ?? 0) < expectedElements;
-      });
+    if (!isGameHost || !gameConfig) return;
 
-      if (playersWhoNeedToPick.length > 0) {
-          setGameStatus('picking-element');
-          // Logic remains paused until all players pick
-      } else {
-          // No one needs to pick, start intermission for the next wave
-          setCurrentWave(nextWaveIndex);
-          setIsIntermission(true);
-          setWaveStartCountdown(INTERMISSION_TIME);
-          setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-          setIsLogicPaused(false); // Resume logic for intermission
-      }
-  }, [isGameHost, gameConfig, currentWave, players, onGameEnd]);
+    setIsLogicPaused(true);
+
+    const nextWaveIndex = currentWave + 1;
+    if (gameConfig.waves.length <= nextWaveIndex) {
+        onGameEnd(true);
+        return;
+    }
+
+    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+    const playersWhoNeedToPick = players.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
+
+    if (playersWhoNeedToPick.length > 0) {
+        setGameStatus('picking-element');
+        deltaQueueRef.current.push([
+            DeltaType.GAME_STATE_UPDATE,
+            { lives: gameState.lives, currentWave, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
+        ]);
+    } else {
+        setCurrentWave(nextWaveIndex);
+        setIsIntermission(true);
+        setWaveStartCountdown(INTERMISSION_TIME);
+        setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
+        setIsLogicPaused(false);
+        deltaQueueRef.current.push([
+            DeltaType.GAME_STATE_UPDATE,
+            { lives: gameState.lives, currentWave: nextWaveIndex, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
+        ]);
+    }
+  }, [isGameHost, gameConfig, currentWave, players, onGameEnd, gameState.lives]);
 
 
   useEffect(() => {
@@ -1032,7 +1035,6 @@ export default function CoopGameLoader() {
                     const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
 
                     if (spawnQueueEmpty && allEnemiesDefeated && !isIntermission) {
-                        setIsLogicPaused(true);
                         handleEndOfWave();
                     }
                   }
@@ -1185,10 +1187,8 @@ export default function CoopGameLoader() {
                     justPlacedTowerId={justPlacedTowerId}
                     isCoop={true} 
                     playerRole={localPlayerId}
-                    handleLoadTestLayout={handleLoadTestLayout} 
-                    handleLoadAllTowersLayout={handleLoadAllTowersLayout}
                     isCheating={false}
-                    cheat_unlockAll={cheat_unlockAll}
+                    cheat_unlockAll={() => {}}
                     firingTowerIds={firingTowerIds} 
                     allTowers={gameConfig.towers}
                     isWsConnected={isConnected} 
@@ -1205,7 +1205,7 @@ export default function CoopGameLoader() {
              {players.map(p => {
                   if (!p || p.id !== localPlayerId) return null;
                   
-                  const expectedElements = 1 + Math.floor(currentWave / 5);
+                  const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
                   const shouldPick = gameStatus === 'picking-element' && ((p.unlockedElements?.length ?? 0) < expectedElements);
                   
                   return (
@@ -1222,3 +1222,4 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
