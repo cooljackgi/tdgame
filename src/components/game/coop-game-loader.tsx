@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -94,6 +95,7 @@ export default function CoopGameLoader() {
 
 
   // Host-side Game Loop & State Refs
+  const gameLoopRef = useRef<number>();
   const deltaQueueRef = useRef<GameDelta[]>([]);
   const lastDeltaSentRef = useRef(0);
   const countdownRef = useRef<number>();
@@ -201,189 +203,164 @@ export default function CoopGameLoader() {
     const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
         if (!isGameHost || !gameConfig) return;
         
-        let stateChanged = false;
-        
-        const performUpdate = () => {
-            setPlayers(prevPlayers => {
-                let currentPlayers = [...prevPlayers];
-                const tempState: GameSessionState = { players: currentPlayers, gameState: gameStateRef.current, towersByCell, enemies, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
-
-                switch(action){
-                    case 'place_portal': {
-                        const { entrance, exit, playerId } = payload;
-                        const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                        const updatedState = enqueuePlacePortalOrder(tempState, workerId, entrance, exit, Date.now());
-                        
-                        setWorkers(updatedState.workers);
-                        if (updatedState.portals) setPortals(updatedState.portals);
-                        stateChanged = true;
-                        currentPlayers = updatedState.players;
-
-                        if (playerId === localPlayerId) {
-                            cancelInteractions();
-                        }
-                        break;
-                    }
-                    case 'move_worker': {
-                        const { row, col, playerId } = payload;
-                        const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                        const updatedState = enqueueMoveOrder(tempState, workerId, row, col);
-                        
-                        setWorkers(updatedState.workers);
-                        stateChanged = true;
-                        // Player state doesn't change on move
-                        break;
-                    }
-                    case 'build': {
-                        const { playerId, row, col, towerId } = payload;
-                        const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                        const updatedState = enqueueBuildOrder(tempState, workerId, row, col, towerId, Date.now());
-                        
-                        setGhosts(updatedState.ghosts);
-                        setWorkers(updatedState.workers);
-                        stateChanged = true;
-                        currentPlayers = updatedState.players;
-                        
-                        // Keep tower selected on desktop
-                        if (playerId === localPlayerId && isMobile) {
-                           setSelectedTowerToBuild(null);
-                        } else if (playerId === localPlayerId && !isMobile) {
-                            // This logic was causing the issue, removing it.
-                            // The selected tower should remain selected.
-                        }
-                        break;
-                    }
-                    case 'upgrade': {
-                        const { row, col, upgradeId, playerId } = payload;
-                        const key = `${row}_${col}`;
-                        const existingTower = towersByCell[key];
-                        if (!existingTower || existingTower.ownerId !== playerId) break;
-
-                        const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
-                        const upgrader = currentPlayers.find(p => p.id === playerId);
-                        if (!upgradeSpec || !upgrader) break;
-                        
-                        const hasRequiredElements = upgradeSpec.elements.every(el => upgrader.unlockedElements.includes(el));
-                        if (!hasRequiredElements) break;
-                        
-                        const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
-                        if (upgrader.resources < cost) break;
-
-                        const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
-                        audioManager.play(sound);
-                        deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
-
-                        const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
-
-                        const nextTowersByCell = { ...towersByCell, [key]: upgradedTower };
-                        setTowersByCell(nextTowersByCell);
-
-                        deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id }]);
-                        deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, nextTowersByCell]);
-
-                        const hasFurtherUpgrades = upgradeSpec.upgradesTo?.some(upgId => {
-                            const nextSpec = gameConfig.towers.find(t => t.id === upgId);
-                            return nextSpec && (upgrader.unlockedElements || []).some(el => nextSpec.elements.includes(el));
-                        });
-                        
-                        // --- UI Logic only for the action initiator ---
-                        if (playerId === localPlayerId) {
-                            setLastUpgradedTowerId(upgradedTower.id);
-                            setTimeout(() => setLastUpgradedTowerId(null), 500);
-
-                            if (!hasFurtherUpgrades) {
-                                setFocusedTower(null); 
-                            } else {
-                                setFocusedTower(upgradedTower);
-                            }
-                        }
-
-                        stateChanged = true;
-                        currentPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources - cost } : p);
-                        break;
-                    }
-                    case 'sell': {
-                         const { row, col, playerId } = payload;
-                         const key = `${row}_${col}`;
-                         const towerToSell = towersByCell[key];
-                         if (!towerToSell || towerToSell.ownerId !== playerId) break;
-
-                         const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
-                         audioManager.play(sound);
-                         deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
-
-                         const refund = Math.round(towerToSell.cost * 0.75);
-                         setTowersByCell(prev => { 
-                             const { [key]:_, ...rest } = prev;
-                             deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, rest]);
-                             return rest; 
-                         });
-                         stateChanged = true;
-                         currentPlayers = currentPlayers.map(p => p.id === playerId ? { ...p, resources: p.resources + refund } : p);
-                         
-                         if (playerId === localPlayerId) {
-                             setFocusedTower(null);
-                         }
-                         break;
-                    }
-                    case 'pick_element': {
-                        const { element, playerId } = payload;
-                        
-                        const playerExists = currentPlayers.some(p => p && p.id === playerId);
-                        if (!playerExists) break;
-                        
-                        let nextPlayers = currentPlayers.map(p => 
-                            (p && p.id === playerId)
-                                ? { ...p, unlockedElements: Array.from(new Set([...p.unlockedElements, element])) }
-                                : p
-                        );
-                        
-                        audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
-                        deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
-                        
-                        // Check if all players have made their choice FOR THIS ROUND
-                        const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
-                        const activePlayers = nextPlayers.filter(p => p && p.id !== 'spectator');
-                        const allPlayersPicked = activePlayers.every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
-
-                        if (allPlayersPicked) {
-                            setCurrentWave(prev => prev + 1);
-                            setIsIntermission(true);
-                            setWaveStartCountdown(INTERMISSION_TIME);
-                            setGameStatus('playing');
-                            setIsLogicPaused(false);
-                             deltaQueueRef.current.push([
-                                DeltaType.GAME_STATE_UPDATE,
-                                { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current + 1, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
-                            ]);
-                        }
-                        
-                        stateChanged = true;
-                        // Return nextPlayers directly so setPlayers gets the new state
-                        return nextPlayers;
-                    }
-                }
-                return currentPlayers;
-            });
+        const performUpdate = (updater: (prev: Player[]) => Player[]) => {
+            setPlayers(updater);
         };
         
         if (action === 'start_wave_now') {
             if (gameStatusRef.current === 'waiting') {
-                if (players.length < 2) {
+                if (playersRef.current.length < 2) {
                     toast({ title: "Warte auf Spieler 2", description: "Ein zweiter Spieler muss beitreten, bevor das Spiel gestartet werden kann.", variant: 'destructive'});
                     return;
                 }
-                // Correctly transition from waiting to playing countdown
                 setGameStatus('playing');
+                setIsIntermission(true);
                 setWaveStartCountdown(INTERMISSION_TIME);
-            } else if (gameStatusRef.current === 'playing' && isIntermission) {
+            } else if (isIntermissionRef.current) {
                  startWave(currentWaveRef.current);
             }
-        } else {
-            performUpdate();
+            return;
         }
 
-    }, [players, towersByCell, isGameHost, startWave, isIntermission, toast, workers, ghosts, portals, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions, isMobile]);
+        performUpdate(currentPlayers => {
+            const tempPlayers = [...currentPlayers];
+            const playerIndex = tempPlayers.findIndex(p => p.id === payload.playerId);
+            if (playerIndex === -1) return currentPlayers;
+
+            const player = { ...tempPlayers[playerIndex] };
+            const tempTowersByCell = { ...towersByCell };
+            
+            const tempState: GameSessionState = { players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath, waveStartCountdown, isIntermission, workers, ghosts, portals };
+
+            switch(action){
+                case 'place_portal': {
+                    const { entrance, exit, playerId } = payload;
+                    const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueuePlacePortalOrder(tempState, workerId, entrance, exit, Date.now());
+                    setWorkers(updatedState.workers);
+                    setPortals(updatedState.portals || []);
+                    tempPlayers[playerIndex] = updatedState.players.find(p => p.id === playerId)!;
+                    if (playerId === localPlayerId) cancelInteractions();
+                    break;
+                }
+                case 'move_worker': {
+                    const { row, col, playerId } = payload;
+                    const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueueMoveOrder(tempState, workerId, row, col);
+                    setWorkers(updatedState.workers);
+                    break;
+                }
+                case 'build': {
+                    const { playerId, row, col, towerId } = payload;
+                    const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
+                    const updatedState = enqueueBuildOrder(tempState, workerId, row, col, towerId, Date.now());
+                    
+                    setGhosts(updatedState.ghosts);
+                    setWorkers(updatedState.workers);
+                    tempPlayers[playerIndex] = updatedState.players.find(p => p.id === playerId)!;
+                    
+                    if (playerId === localPlayerId && isMobile) {
+                       setSelectedTowerToBuild(null);
+                    }
+                    break;
+                }
+                case 'upgrade': {
+                    const { row, col, upgradeId } = payload;
+                    const key = `${row}_${col}`;
+                    const existingTower = tempTowersByCell[key];
+                    if (!existingTower || existingTower.ownerId !== player.id) break;
+
+                    const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
+                    if (!upgradeSpec) break;
+                    
+                    const hasRequiredElements = upgradeSpec.elements.every(el => player.unlockedElements.includes(el));
+                    if (!hasRequiredElements) break;
+                    
+                    const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
+                    if (player.resources < cost) break;
+                    
+                    player.resources -= cost;
+
+                    const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
+                    audioManager.play(sound);
+                    deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
+
+                    const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
+                    tempTowersByCell[key] = upgradedTower;
+                    setTowersByCell(tempTowersByCell);
+
+                    deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id }]);
+                    deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, tempTowersByCell]);
+
+                    const hasFurtherUpgrades = upgradeSpec.upgradesTo?.some(upgId => {
+                        const nextSpec = gameConfig.towers.find(t => t.id === upgId);
+                        return nextSpec && (player.unlockedElements || []).some(el => nextSpec.elements.includes(el));
+                    });
+                    
+                    if (player.id === localPlayerId) {
+                        setLastUpgradedTowerId(upgradedTower.id);
+                        setTimeout(() => setLastUpgradedTowerId(null), 500);
+
+                        if (!hasFurtherUpgrades) {
+                            setFocusedTower(null); 
+                        } else {
+                            setFocusedTower(upgradedTower);
+                        }
+                    }
+                    break;
+                }
+                case 'sell': {
+                     const { row, col } = payload;
+                     const key = `${row}_${col}`;
+                     const towerToSell = tempTowersByCell[key];
+                     if (!towerToSell || towerToSell.ownerId !== player.id) break;
+
+                     const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
+                     audioManager.play(sound);
+                     deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
+
+                     const refund = Math.round(towerToSell.cost * 0.75);
+                     player.resources += refund;
+                     delete tempTowersByCell[key];
+                     setTowersByCell(tempTowersByCell);
+                     deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, tempTowersByCell]);
+                     
+                     if (player.id === localPlayerId) {
+                         setFocusedTower(null);
+                     }
+                     break;
+                }
+                case 'pick_element': {
+                    const { element } = payload;
+                    player.unlockedElements = Array.from(new Set([...player.unlockedElements, element]));
+                    
+                    audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
+                    deltaQueueRef.current.push([DeltaType.AUDIO, { kind: 'sfx', name: 'upgrade_tower' }]);
+                    
+                    const expectedElements = 1 + Math.floor((currentWaveRef.current) / 5);
+                    const allPlayersPicked = tempPlayers.filter(p => p && p.id !== 'spectator').every(p => (p.unlockedElements?.length ?? 0) >= expectedElements);
+
+                    if (allPlayersPicked) {
+                        const nextWave = currentWaveRef.current + 1;
+                        setCurrentWave(nextWave);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setGameStatus('playing');
+                        setIsLogicPaused(false);
+                         deltaQueueRef.current.push([
+                            DeltaType.GAME_STATE_UPDATE,
+                            { lives: gameStateRef.current.lives, currentWave: nextWave, gameStatus: 'playing', isIntermission: true, waveStartCountdown: INTERMISSION_TIME }
+                        ]);
+                    }
+                    break;
+                }
+            }
+            
+            tempPlayers[playerIndex] = player;
+            return tempPlayers;
+        });
+
+    }, [players, towersByCell, isGameHost, startWave, isIntermission, toast, workers, ghosts, portals, difficulty, currentPath, waveStartCountdown, gameConfig, localPlayerId, cancelInteractions, isMobile, enemies]);
     
   // --- WebRTC Logic ---
   
@@ -717,7 +694,7 @@ export default function CoopGameLoader() {
         }
 
         const hasTwoPlayers = players.length >= 2;
-        const gameIsActive = (gameStatusRef.current === 'playing' && isIntermission);
+        const gameIsActive = (gameStatusRef.current === 'playing' && isIntermissionRef.current);
 
         if (!gameIsActive) {
             if (countdownRef.current) clearInterval(countdownRef.current);
@@ -760,7 +737,6 @@ export default function CoopGameLoader() {
 
     const handleEndOfWave = useCallback(() => {
         if (!isGameHost || !gameConfig) return;
-
         setIsLogicPaused(true);
 
         const nextWaveIndex = currentWaveRef.current + 1;
@@ -1231,7 +1207,7 @@ export default function CoopGameLoader() {
             {players.map(p => {
                 if (!p || p.id !== localPlayerId) return null;
                 
-                const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+                const expectedElements = 1 + Math.floor((currentWave) / 5);
                 const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
 
                 return (
@@ -1248,10 +1224,3 @@ export default function CoopGameLoader() {
         </div>
   );
 }
-
-    
-
-    
-
-    
-
