@@ -73,7 +73,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
       // The host will trigger the start of the game from the game screen.
       transaction.update(gameRef, { 
         player2Id: uid, 
-        'members': { ...gameData?.members, [uid]: true },
+        'members': { ...gameData?.members, [uid]: true }, // Correctly merge into the members object
         'players.player2': {
             id: 'player2', 
             name: displayName, 

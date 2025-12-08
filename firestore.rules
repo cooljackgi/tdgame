@@ -10,17 +10,17 @@ service cloud.firestore {
     
     match /games/{gameId} {
       allow read: if request.auth != null; // Allow any authenticated user to read game data
-      allow write: if isMember(gameId); // Allow only game members to write
+      allow write: if request.auth.uid in resource.data.members; // Corrected: Check against the data being written
       
       // Log sub-collections
       match /webrtc_logs/{logId} {
-          allow create: if isMember(gameId); // Only members can write logs for their own game
-          allow read: if isMember(gameId); // Only members can read logs
+          allow create: if request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.members; // Only members can write logs for their own game
+          allow read: if request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.members; // Only members can read logs
       }
       
       match /game_logs/{logId} {
-          allow create: if isMember(gameId);
-          allow read: if isMember(gameId);
+          allow create: if request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.members;
+          allow read: if request.auth.uid in get(/databases/$(database)/documents/games/$(gameId)).data.members;
       }
     }
     

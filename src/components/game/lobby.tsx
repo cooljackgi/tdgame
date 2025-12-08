@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -78,10 +79,11 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
 
   useEffect(() => {
       if (!currentUser?.uid) return;
-
+      
+      // Query to find games where the user is a member
       const userGamesQuery = query(
         collection(db, 'games'),
-        where('members', 'array-contains', currentUser.uid),
+        where(`members.${currentUser.uid}`, '==', true),
         where('gameStatus', 'in', ['waiting', 'playing']),
         orderBy('createdAt', 'desc'),
         limit(1)
@@ -116,7 +118,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       if (!snap.exists()) return;
       const data = snap.data();
       
-      const isMyGame = Array.isArray(data.members) && data.members.includes(currentUser.uid);
+      const isMyGame = data.members && data.members[currentUser.uid] === true;
       if (!isMyGame) return;
 
       if (data.gameStatus === 'playing' && !didRedirectRef.current) {
