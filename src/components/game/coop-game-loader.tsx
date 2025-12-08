@@ -294,7 +294,7 @@ export default function CoopGameLoader() {
 
   }, [isGameHost, difficulty, gameConfig]);
 
-    const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
+  const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
     if (!isGameHost || !gameConfig) return;
     
     setPlayers(currentPlayers => {
@@ -403,12 +403,16 @@ export default function CoopGameLoader() {
             }
             case 'pick_element': {
                 const { element } = payload;
+                if (!player) break;
+
                 const newUnlocked = Array.from(new Set([...player.unlockedElements, element]));
                 player.unlockedElements = newUnlocked;
                 
                 audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
 
+                // Check if ALL players have made their choice for this round
                 const allPlayersPicked = tempPlayers.every((p: Player) => {
+                    if (!p) return true; // Ignore empty player slots
                     const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
                     return (p.unlockedElements?.length ?? 0) >= expectedElements;
                 });
@@ -470,7 +474,7 @@ export default function CoopGameLoader() {
                 deltaQueueRef.current.push([DeltaType.REQUEST_RESOLVE, payload]);
                 return;
         }
-    }, [isGameHost, onHostAction, waveStartCountdown, difficulty]);
+    }, [isGameHost, onHostAction, waveStartCountdown, difficulty, startWave]);
     
     const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
         localPlayerId ? gameId : null, 
@@ -698,20 +702,27 @@ export default function CoopGameLoader() {
         return;
     }
 
-    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+    const expectedElements = 1 + Math.floor((nextWaveIndex) / 5);
     const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
     if (playersNeedingPick.length > 0) {
         setGameStatus('picking-element');
-        setIsIntermission(true);
-    } else {
-        setCurrentWave(nextWaveIndex);
-        setIsIntermission(true);
-        setWaveStartCountdown(INTERMISSION_TIME);
-        setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-        setIsLogicPaused(false);
+        setIsIntermission(true); // Bleibt in der Pause zwischen den Wellen
+        // Sende den neuen Status an die Clients
+        deltaQueueRef.current.push([
+            DeltaType.GAME_STATE_UPDATE,
+            { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: waveStartCountdown, }
+        ]);
+        return; // Stoppe die Ausführung hier, warte auf Spieler-Input
     }
-  }, [isGameHost, gameConfig, onGameEnd]);
+    
+    // Normaler Übergang zur nächsten Welle
+    setCurrentWave(nextWaveIndex);
+    setIsIntermission(true);
+    setWaveStartCountdown(INTERMISSION_TIME);
+    setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
+    setIsLogicPaused(false); // Logik für die nächste Bauphase fortsetzen
+  }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown]);
 
 
   useEffect(() => {
@@ -1173,6 +1184,7 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
 
 
