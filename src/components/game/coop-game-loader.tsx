@@ -96,6 +96,7 @@ export default function CoopGameLoader() {
 
 
   // Host-side Game Loop & State Refs
+  const gameLoopRef = useRef<number>();
   const lastTickRef = useRef(performance.now());
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
@@ -693,6 +694,9 @@ export default function CoopGameLoader() {
 
   const handleEndOfWave = useCallback(() => {
     if (!isGameHost || !gameConfig) return;
+
+    const allEnemiesDefeated = enemiesRef.current.every(e => e.deathTimestamp);
+    if (!allEnemiesDefeated) return;
     
     setIsLogicPaused(true);
 
@@ -730,9 +734,7 @@ export default function CoopGameLoader() {
       }
       
       let stopped = false;
-      if (lastTickRef.current === undefined) {
-        lastTickRef.current = performance.now();
-      }
+      lastTickRef.current = performance.now();
 
       const gameLoop = () => {
           if (stopped) return;
@@ -1000,7 +1002,7 @@ export default function CoopGameLoader() {
               }));
               
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-              const allEnemiesDefeated = stillAlive.every(e => e.deathTimestamp);
+              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => !!e.deathTimestamp);
 
               if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
                 handleEndOfWave();
@@ -1183,6 +1185,7 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
 
 
