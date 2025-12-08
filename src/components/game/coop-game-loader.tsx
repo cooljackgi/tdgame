@@ -96,10 +96,10 @@ export default function CoopGameLoader() {
 
 
   // Host-side Game Loop & State Refs
-  const gameLoopRef = useRef<number>();
   const lastTickRef = useRef(performance.now());
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
+
   const deltaQueueRef = useRef<GameDelta[]>([]);
   const lastDeltaSentRef = useRef(0);
   const countdownRef = useRef<number>();
@@ -428,7 +428,7 @@ export default function CoopGameLoader() {
             }
             case 'start_wave_now': {
                 if (gameStatusRef.current === 'waiting') {
-                    if (playersRef.current.length < 2) break; // Don't start if P2 is not there
+                    if (playersRef.current.length < 2 && isCoop) break; // In coop, don't start if P2 is not there
                     setGameStatus('playing');
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
@@ -442,7 +442,7 @@ export default function CoopGameLoader() {
         return tempPlayers;
     });
 
-  }, [difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave]);
+  }, [isCoop, difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave]);
 
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -474,7 +474,7 @@ export default function CoopGameLoader() {
                 deltaQueueRef.current.push([DeltaType.REQUEST_RESOLVE, payload]);
                 return;
         }
-    }, [isGameHost, onHostAction, waveStartCountdown, difficulty, startWave]);
+    }, [isGameHost, onHostAction, waveStartCountdown, difficulty]);
     
     const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
         localPlayerId ? gameId : null, 
@@ -698,17 +698,18 @@ export default function CoopGameLoader() {
 
     const nextWaveIndex = currentWaveRef.current + 1;
     
-    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
+    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
     const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
-    if (playersNeedingPick.length > 0 && (currentWaveRef.current + 1) % 5 === 0) {
+    if (playersNeedingPick.length > 0 && nextWaveIndex % 5 === 0) {
         setGameStatus('picking-element');
         setIsIntermission(true);
+        // This delta will now be sent out by the main loop even if logic is paused
         deltaQueueRef.current.push([
             DeltaType.GAME_STATE_UPDATE,
-            { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: waveStartCountdown, }
+            { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: waveStartCountdown }
         ]);
-        return; // Stoppe die Ausführung hier, warte auf Spieler-Input
+        return; 
     }
     
     // Normaler Übergang zur nächsten Welle
@@ -723,7 +724,7 @@ export default function CoopGameLoader() {
     setIsLogicPaused(false); // Logik für die nächste Bauphase fortsetzen
   }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown]);
 
-
+  const gameLoopRef = useRef<number>();
   useEffect(() => {
       if (!gameConfig || !isGameHost) {
           if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
@@ -999,9 +1000,9 @@ export default function CoopGameLoader() {
               }));
               
                 const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-                const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => e.deathTimestamp);
+                const activeEnemies = stillAlive.filter(e => !e.deathTimestamp);
 
-                if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
+                if (spawnQueueEmpty && activeEnemies.length === 0 && !isIntermissionRef.current) {
                     handleEndOfWave();
                 }
               }
@@ -1016,7 +1017,7 @@ export default function CoopGameLoader() {
           stopped = true;
           if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
       }
-  }, [isGameHost, user, gameId, difficulty, onGameEnd, handleEndOfWave, totalKilled, totalLeaked, sendGameData, gameConfig]);
+  }, [isGameHost, user, gameId, difficulty, onGameEnd, handleEndOfWave, totalKilled, totalLeaked, sendGameData, gameConfig, waveStartCountdown]);
 
 
   useEffect(() => {
@@ -1182,6 +1183,7 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
 
 
