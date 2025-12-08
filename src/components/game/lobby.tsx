@@ -43,7 +43,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   const [joiningGameId, setJoiningGameId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
-  const didRedirectRef = useRef(false);
   
   useEffect(() => {
     // Corrected query: Only show games that are waiting AND have no player 2
@@ -80,7 +79,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
   useEffect(() => {
       if (!currentUser?.uid) return;
       
-      // Query to find games where the user is a member
+      // Query to find games where the user is a member but not archived
       const userGamesQuery = query(
         collection(db, 'games'),
         where(`members.${currentUser.uid}`, '==', true),
@@ -108,28 +107,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
       });
       
       return () => unsubscribe();
-  }, [currentUser.uid, router, toast]);
-  
-  useEffect(() => {
-    if (!activeGame || !currentUser.uid) return;
-    
-    // This listener handles the automatic redirection for the HOST when P2 joins.
-    const unsub = onSnapshot(doc(db, 'games', activeGame.id), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      
-      const isMyGame = data.members && data.members[currentUser.uid] === true;
-      if (!isMyGame) return;
-
-      if (data.gameStatus === 'playing' && !didRedirectRef.current) {
-        didRedirectRef.current = true;
-        toast({ title: "Spiel startet!", description: "Du wirst zum Spiel weitergeleitet..."});
-        router.push(`/game/${activeGame.id}`);
-      }
-    });
-
-    return () => unsub();
-  }, [activeGame, currentUser.uid, router, toast]);
+  }, [currentUser.uid]);
 
 
   const handleJoinGame = async (gameId: string) => {
@@ -149,21 +127,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
        setJoiningGameId(null);
     }
   };
-
-  const handleStartGame = async (gameId: string) => {
-    try {
-        const gameRef = doc(db, 'games', gameId);
-        await updateDoc(gameRef, { 
-            gameStatus: 'playing',
-            isIntermission: true,
-            waveStartCountdown: INTERMISSION_TIME 
-        });
-        // The host will be redirected by the useEffect listener that watches for 'playing' status.
-    } catch (error: any) {
-        toast({ title: "Starten fehlgeschlagen", description: error.message, variant: "destructive" });
-    }
-  };
-
+  
   const handleRejoinGame = (gameId: string) => {
     router.push(`/game/${gameId}`);
   };
@@ -188,8 +152,6 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
     );
   }
 
-  const isCreatorOfActiveGame = activeGame?.player1Id === currentUser.uid;
-
   return (
     <div className="mt-8 text-left max-w-2xl mx-auto space-y-6">
         {activeGame && (
@@ -205,15 +167,10 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
                       {activeGame.player2 ? <>{activeGame.player2.avatarUrl && <img src={activeGame.player2.avatarUrl} alt="P2" className="h-5 w-5 rounded-full ml-1 mr-1"/>} {activeGame.player2.name}</> : ' Wartet...'}
                     </p>
                     <div className="flex gap-2">
-                        {isCreatorOfActiveGame && activeGame.gameStatus === 'waiting' ? (
-                             <Button onClick={() => handleStartGame(activeGame.id)} disabled={!activeGame.player2} className="flex-1">
-                                <Play className="mr-2" /> {!activeGame.player2 ? 'Warte auf P2...' : 'Jetzt Starten'}
-                            </Button>
-                        ) : (
-                             <Button onClick={() => handleRejoinGame(activeGame.id)} className="flex-1">
-                                <RefreshCw className="mr-2" /> Wieder beitreten
-                            </Button>
-                        )}
+                        <Button onClick={() => handleRejoinGame(activeGame.id)} className="flex-1">
+                            <RefreshCw className="mr-2" /> 
+                            {activeGame.gameStatus === 'playing' ? 'Zurück zum Spiel' : 'Spiel betreten'}
+                        </Button>
                        <AlertDialog>
                         <AlertDialogTrigger asChild>
                            <Button variant="destructive" size="icon">
