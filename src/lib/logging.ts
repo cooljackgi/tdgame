@@ -83,3 +83,36 @@ export async function logWebRTCEvent(
         console.error(`[WebRTC Logging] Failed to save log to Firestore for game ${gameId}:`, error);
     }
 }
+
+
+type GameStats = {
+    fps: number;
+    enemyCount: number;
+    towerCount: number;
+    wave: number;
+};
+
+/**
+ * Logs a snapshot of game statistics (FPS, object counts) to Firestore.
+ * @param gameId The ID of the game session.
+ * @param role The role of the client (should typically be 'host').
+ * @param stats The statistics object to log.
+ */
+export async function logGameStats(gameId: string, role: 'host' | 'client' | 'monitor', stats: GameStats) {
+    if (!gameId) return;
+
+    try {
+        const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
+        const logEntry = {
+            gameId,
+            timestamp: serverTimestamp(),
+            clientTs: Date.now(),
+            type: 'GAME_STATS_TICK', // A unique type for these logs
+            role,
+            details: stats,
+        };
+        await addDoc(logCollectionRef, logEntry);
+    } catch (error) {
+        console.error(`[Game Stats Logging] Failed to save stats to Firestore for game ${gameId}:`, error);
+    }
+}

@@ -28,6 +28,7 @@ import { enqueueBuildOrder, enqueueMoveOrder, enqueuePlacePortalOrder } from '@/
 import { onGameEnd as performGameEndActions } from '@/lib/game-end';
 import type { GameBoardHandle } from './game-board';
 import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
+import { logGameStats } from '@/lib/logging';
 
 
 export default function CoopGameLoader() {
@@ -100,6 +101,7 @@ export default function CoopGameLoader() {
   const lastTickRef = useRef(performance.now());
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
+  const fpsRef = useRef(0);
 
   const deltaQueueRef = useRef<GameDelta[]>([]);
   const lastDeltaSentRef = useRef(0);
@@ -443,7 +445,7 @@ export default function CoopGameLoader() {
         return tempPlayers;
     });
 
-  }, [isGameHost, difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave]);
+  }, [difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave]);
     
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -700,6 +702,13 @@ export default function CoopGameLoader() {
         onGameEnd(false);
         return;
     }
+    
+    logGameStats(gameId, 'host', { 
+        fps: fpsRef.current, 
+        enemyCount: enemiesRef.current.filter(e => !e.deathTimestamp).length, 
+        towerCount: Object.keys(towersByCellRef.current).length,
+        wave: currentWaveRef.current
+    });
 
     setIsLogicPaused(true);
     const nextWaveIndex = currentWaveRef.current + 1;
@@ -730,7 +739,7 @@ export default function CoopGameLoader() {
     setWaveStartCountdown(INTERMISSION_TIME);
     setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
     setIsLogicPaused(false);
-  }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown]);
+  }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown, gameId]);
 
   useEffect(() => {
       if (!gameConfig || !isGameHost) {
@@ -755,7 +764,9 @@ export default function CoopGameLoader() {
           frameCountRef.current++;
           const epochNow = Date.now();
           if (epochNow - lastFpsUpdateRef.current >= 1000) {
-            setFps(frameCountRef.current);
+            const currentFps = frameCountRef.current;
+            setFps(currentFps);
+            fpsRef.current = currentFps;
             frameCountRef.current = 0;
             lastFpsUpdateRef.current = epochNow;
           }
@@ -1191,3 +1202,4 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+

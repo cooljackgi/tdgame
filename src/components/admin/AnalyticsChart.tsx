@@ -1,4 +1,3 @@
-
 // src/components/admin/AnalyticsChart.tsx
 'use client';
 
@@ -62,35 +61,31 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
         if (!aggregatedData[key]) {
             aggregatedData[key] = {
                 time: timeInSeconds,
-                fps: 0,
-                enemyCount: 0,
-                towerCount: 0,
-                hostPacketsPerSecond: 0,
-                clientPacketsPerSecond: 0,
-                hostBytesSentPerSecond: 0,
-                clientBytesReceivedPerSecond: 0,
-                averagePacketSize: 0,
+                fps: null,
+                enemyCount: null,
+                towerCount: null,
+                hostPacketsPerSecond: null,
+                clientPacketsPerSecond: null,
+                hostBytesSentPerSecond: null,
+                clientBytesReceivedPerSecond: null,
             };
         }
         
         const currentEntry = aggregatedData[key];
         
-        // Host-seitige Game-Stats (sollte nur einmal pro Sekunde kommen)
-        if (entry.fps) currentEntry.fps = Math.max(currentEntry.fps, entry.fps);
-        if (entry.enemyCount) currentEntry.enemyCount = Math.max(currentEntry.enemyCount, entry.enemyCount);
-        if (entry.towerCount) currentEntry.towerCount = Math.max(currentEntry.towerCount, entry.towerCount);
-        if (entry.hostPacketsPerSecond) currentEntry.hostPacketsPerSecond = Math.max(currentEntry.hostPacketsPerSecond, entry.hostPacketsPerSecond);
-        if (entry.hostBytesSentPerSecond) currentEntry.hostBytesSentPerSecond = Math.max(currentEntry.hostBytesSentPerSecond, entry.hostBytesSentPerSecond);
+        if (entry.type === 'GAME_STATS_TICK' && entry.details) {
+            currentEntry.fps = entry.details.fps;
+            currentEntry.enemyCount = entry.details.enemyCount;
+            currentEntry.towerCount = entry.details.towerCount;
+        }
 
-        // WebRTC NET_TICK events (können von host und client kommen)
         if (entry.type === 'NET_TICK' && entry.details) {
             if (entry.role === 'host') {
-                currentEntry.hostPacketsPerSecond = Math.max(currentEntry.hostPacketsPerSecond, entry.details.pps || 0);
-                currentEntry.hostBytesSentPerSecond = Math.max(currentEntry.hostBytesSentPerSecond, entry.details.bps || 0);
-                currentEntry.averagePacketSize = Math.max(currentEntry.averagePacketSize, entry.details.avg || 0);
+                currentEntry.hostPacketsPerSecond = entry.details.pps || 0;
+                currentEntry.hostBytesSentPerSecond = entry.details.bps || 0;
             } else if (entry.role === 'client') {
-                currentEntry.clientPacketsPerSecond = Math.max(currentEntry.clientPacketsPerSecond, entry.details.pps || 0);
-                currentEntry.clientBytesReceivedPerSecond = Math.max(currentEntry.clientBytesReceivedPerSecond, entry.details.bps || 0);
+                currentEntry.clientPacketsPerSecond = entry.details.pps || 0;
+                currentEntry.clientBytesReceivedPerSecond = entry.details.bps || 0;
             }
         }
     });
@@ -115,7 +110,7 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                         <XAxis dataKey="time" type="number" tick={{ fontSize: 12 }} domain={['dataMin', 'dataMax']} />
                         <YAxis domain={[0, 70]} tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
-                        <Area type="monotone" dataKey="fps" name="Host FPS" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
+                        <Area type="monotone" dataKey="fps" name="Host FPS" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" connectNulls />
                     </AreaChart>
                 </ResponsiveContainer>
             </CardContent>
@@ -154,8 +149,8 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                         <YAxis tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend />
-                        <Line type="monotone" dataKey="hostPacketsPerSecond" name="Host Pakete/s (tx)" stroke="#8884d8" dot={false} />
-                        <Line type="monotone" dataKey="clientPacketsPerSecond" name="Client Pakete/s (rx)" stroke="#82ca9d" dot={false} />
+                        <Line type="monotone" dataKey="hostPacketsPerSecond" name="Host Pakete/s (tx)" stroke="#8884d8" dot={false} connectNulls />
+                        <Line type="monotone" dataKey="clientPacketsPerSecond" name="Client Pakete/s (rx)" stroke="#82ca9d" dot={false} connectNulls />
                     </LineChart>
                 </ResponsiveContainer>
             </CardContent>
@@ -174,8 +169,8 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
                         <YAxis tickFormatter={(val) => formatBytes(val)} tick={{ fontSize: 12 }} />
                         <Tooltip content={<CustomTooltip />} />
                         <Legend />
-                        <Area type="monotone" dataKey="hostBytesSentPerSecond" name="Host Daten (tx)" stroke="#8884d8" fill="#8884d8" fillOpacity={0.2} />
-                        <Area type="monotone" dataKey="clientBytesReceivedPerSecond" name="Client Daten (rx)" stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.2} />
+                        <Area type="monotone" dataKey="hostBytesSentPerSecond" name="Host Daten (tx)" stroke="#8884d8" fill="#8884d8" fillOpacity={0.2} connectNulls/>
+                        <Area type="monotone" dataKey="clientBytesReceivedPerSecond" name="Client Daten (rx)" stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.2} connectNulls/>
                     </AreaChart>
                 </ResponsiveContainer>
             </CardContent>
