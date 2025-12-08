@@ -694,13 +694,21 @@ export default function CoopGameLoader() {
 
   const handleEndOfWave = useCallback(() => {
     if (!isGameHost || !gameConfig) return;
-
-    const allEnemiesDefeated = enemiesRef.current.every(e => e.deathTimestamp);
-    if (!allEnemiesDefeated) return;
     
-    setIsLogicPaused(true);
+    // Check if the game is already over
+    if (gameStateRef.current.lives <= 0) {
+        onGameEnd(false);
+        return;
+    }
 
+    setIsLogicPaused(true);
     const nextWaveIndex = currentWaveRef.current + 1;
+
+    // Check for win condition
+    if (nextWaveIndex >= gameConfig.waves.length) {
+        onGameEnd(true);
+        return;
+    }
     
     const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
     const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
@@ -708,6 +716,7 @@ export default function CoopGameLoader() {
     if (playersNeedingPick.length > 0 && nextWaveIndex % 5 === 0) {
         setGameStatus('picking-element');
         setIsIntermission(true);
+        // This is now sent reliably due to the loop change
         deltaQueueRef.current.push([
             DeltaType.GAME_STATE_UPDATE,
             { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: waveStartCountdown }
@@ -716,15 +725,11 @@ export default function CoopGameLoader() {
     }
     
     // Normaler Übergang zur nächsten Welle
-    if (nextWaveIndex >= gameConfig.waves.length) {
-        onGameEnd(true);
-        return;
-    }
     setCurrentWave(nextWaveIndex);
     setIsIntermission(true);
     setWaveStartCountdown(INTERMISSION_TIME);
     setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-    setIsLogicPaused(false); // Logik für die nächste Bauphase fortsetzen
+    setIsLogicPaused(false);
   }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown]);
 
   useEffect(() => {
@@ -745,24 +750,21 @@ export default function CoopGameLoader() {
           if (delta === 0) return;
           lastTickRef.current = now;
 
+          // --- SECTION 1: ALWAYS RUN ---
+          // FPS Calculation & Network Sending
           frameCountRef.current++;
-          if (Date.now() - lastFpsUpdateRef.current >= 1000) {
+          const epochNow = Date.now();
+          if (epochNow - lastFpsUpdateRef.current >= 1000) {
             setFps(frameCountRef.current);
             frameCountRef.current = 0;
-            lastFpsUpdateRef.current = Date.now();
+            lastFpsUpdateRef.current = epochNow;
           }
 
-          const epochNow = Date.now();
-          const currentStatus = gameStatusRef.current;
-          
-          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element' || isLogicPausedRef.current;
-
-          // Always send data, even if paused, to ensure UI updates like 'picking-element' get through.
           if (epochNow > lastDeltaSentRef.current + 100) {
               deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
                     lives: gameStateRef.current.lives,
                     currentWave: currentWaveRef.current,
-                    gameStatus: currentStatus,
+                    gameStatus: gameStatusRef.current,
                     isIntermission: isIntermissionRef.current,
                     waveStartCountdown: waveStartCountdown,
               }]);
@@ -777,6 +779,10 @@ export default function CoopGameLoader() {
               deltaQueueRef.current = [];
               lastDeltaSentRef.current = epochNow;
           }
+
+          // --- SECTION 2: PAUSABLE GAME LOGIC ---
+          const currentStatus = gameStatusRef.current;
+          const gameIsPaused = currentStatus === 'paused' || currentStatus === 'gameover' || currentStatus === 'picking-element' || isLogicPausedRef.current;
 
           if (gameIsPaused) {
             return;
@@ -1002,10 +1008,10 @@ export default function CoopGameLoader() {
               }));
               
               const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-              const allEnemiesDefeated = stillAlive.length > 0 && stillAlive.every(e => !!e.deathTimestamp);
+              const activeEnemies = stillAlive.filter(e => !e.deathTimestamp);
 
-              if (spawnQueueEmpty && allEnemiesDefeated && !isIntermissionRef.current) {
-                handleEndOfWave();
+              if (spawnQueueEmpty && activeEnemies.length === 0 && !isIntermissionRef.current) {
+                  handleEndOfWave();
               }
             }
           }
@@ -1185,12 +1191,3 @@ export default function CoopGameLoader() {
         </div>
   );
 }
-
-
-
-
-
-
-
-
-

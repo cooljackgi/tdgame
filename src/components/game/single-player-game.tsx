@@ -360,6 +360,11 @@ export default function SinglePlayerGame({
     const handleEndOfWave = useCallback(() => {
         if (!gameConfig) return;
 
+        if (gameStateRef.current.lives <= 0) {
+            handleGameEnd(false);
+            return;
+        }
+
         const nextWaveIndex = currentWaveRef.current + 1;
         if (nextWaveIndex >= gameConfig.waves.length) {
             handleGameEnd(true);
@@ -988,5 +993,6 @@ export default function SinglePlayerGame({
 
 
     
+
 
 
