@@ -97,6 +97,9 @@ export default function CoopGameLoader() {
 
   // Host-side Game Loop & State Refs
   const gameLoopRef = useRef<number>();
+  const lastTickRef = useRef(performance.now());
+  const frameCountRef = useRef(0);
+  const lastFpsUpdateRef = useRef(Date.now());
   const deltaQueueRef = useRef<GameDelta[]>([]);
   const lastDeltaSentRef = useRef(0);
   const countdownRef = useRef<number>();
@@ -695,7 +698,7 @@ export default function CoopGameLoader() {
         return;
     }
 
-    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
+    const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
     const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
     if (playersNeedingPick.length > 0) {
@@ -1170,6 +1173,7 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
 
 
