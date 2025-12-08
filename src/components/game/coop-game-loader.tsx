@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -118,6 +119,20 @@ export default function CoopGameLoader() {
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
   const currentWaveRef = useRef(currentWave);
   useEffect(() => { currentWaveRef.current = currentWave }, [currentWave]);
+  const towersByCellRef = useRef(towersByCell);
+  useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
+  const enemiesRef = useRef(enemies);
+  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
+  const workersRef = useRef(workers);
+  useEffect(() => { workersRef.current = workers }, [workers]);
+  const ghostsRef = useRef(ghosts);
+  useEffect(() => { ghostsRef.current = ghosts }, [ghosts]);
+  const portalsRef = useRef(portals);
+  useEffect(() => { portalsRef.current = portals }, [portals]);
+  const gravityWellsRef = useRef(gravityWells);
+  useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
+  const persistentCloudsRef = useRef(persistentClouds);
+  useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
   
   const onFocusTower = (tower: PlacedTower) => {
     cancelInteractions();
@@ -342,7 +357,7 @@ export default function CoopGameLoader() {
                 audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
 
                 const allPlayersPicked = tempPlayers.every((p: Player) => {
-                    const expectedElements = 1 + Math.floor(currentWaveRef.current / 5);
+                    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
                     return (p.unlockedElements?.length ?? 0) >= expectedElements;
                 });
 
@@ -361,6 +376,55 @@ export default function CoopGameLoader() {
     });
 
   }, [difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile]);
+
+    const startWave = useCallback((waveIndex: number) => {
+        if (!isGameHost || !gameConfig) return;
+
+        const spec = gameConfig.waves[waveIndex];
+        if (!spec) return;
+
+        const difficultyMod = difficultyModifiers[difficulty];
+        const enemiesToSpawn = Array.from({ length: spec.enemies.count }).map((_, i) => {
+            const health = Math.round(spec.enemies.health * difficultyMod.enemyHealth);
+            return {
+                id: `enemy-${waveIndex}-${enemyIdCounter.current++}`,
+                type: spec.enemies.type,
+                health: health,
+                maxHealth: health,
+                armor: spec.enemies.armor,
+                speed: spec.enemies.speed,
+                damage: spec.enemies.damage,
+                bounty: spec.enemies.bounty,
+                path: currentPathRef.current,
+                pathIndex: 0,
+                position: { row: 1, col: 1 },
+                effects: [],
+                lastMove: 0, // Set on actual spawn
+                wasHit: false,
+                targetNode: { row: GRID_ROWS, col: GRID_COLS },
+                movementPattern: spec.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
+                vx: 0,
+                vy: 0,
+                _spawnTime: i * spec.enemies.spawnDelay,
+            };
+        });
+
+        spawnQueueRef.current = enemiesToSpawn;
+        waveStartTimeRef.current = Date.now();
+        
+        setEnemies([]); // Clear old enemies before wave
+        setIsIntermission(false);
+        setCurrentWave(waveIndex);
+        setWaveStartCountdown(0);
+        audioManager.play({ kind: 'sfx', name: 'wave_start' });
+        
+        // This is a state update batch
+        deltaQueueRef.current.push([
+            DeltaType.GAME_STATE_UPDATE,
+            { lives: gameStateRef.current.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
+        ]);
+
+    }, [isGameHost, difficulty, gameConfig]);
 
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -610,55 +674,6 @@ export default function CoopGameLoader() {
       setCurrentPath(newPath);
     }, [towersByCell]);
     
-    const startWave = useCallback((waveIndex: number) => {
-        if (!isGameHost || !gameConfig) return;
-
-        const spec = gameConfig.waves[waveIndex];
-        if (!spec) return;
-
-        const difficultyMod = difficultyModifiers[difficulty];
-        const enemiesToSpawn = Array.from({ length: spec.enemies.count }).map((_, i) => {
-            const health = Math.round(spec.enemies.health * difficultyMod.enemyHealth);
-            return {
-                id: `enemy-${waveIndex}-${enemyIdCounter.current++}`,
-                type: spec.enemies.type,
-                health: health,
-                maxHealth: health,
-                armor: spec.enemies.armor,
-                speed: spec.enemies.speed,
-                damage: spec.enemies.damage,
-                bounty: spec.enemies.bounty,
-                path: currentPathRef.current,
-                pathIndex: 0,
-                position: { row: 1, col: 1 },
-                effects: [],
-                lastMove: 0, // Set on actual spawn
-                wasHit: false,
-                targetNode: { row: GRID_ROWS, col: GRID_COLS },
-                movementPattern: spec.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
-                vx: 0,
-                vy: 0,
-                _spawnTime: i * spec.enemies.spawnDelay,
-            };
-        });
-
-        spawnQueueRef.current = enemiesToSpawn;
-        waveStartTimeRef.current = Date.now();
-        
-        setEnemies([]); // Clear old enemies before wave
-        setIsIntermission(false);
-        setCurrentWave(waveIndex);
-        setWaveStartCountdown(0);
-        audioManager.play({ kind: 'sfx', name: 'wave_start' });
-        
-        // This is a state update batch
-        deltaQueueRef.current.push([
-            DeltaType.GAME_STATE_UPDATE,
-            { lives: gameStateRef.current.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
-        ]);
-
-    }, [isGameHost, difficulty, gameConfig]);
-
     useEffect(() => {
         if (!isGameHost) {
             if (countdownRef.current) clearInterval(countdownRef.current);
@@ -718,13 +733,12 @@ export default function CoopGameLoader() {
         return;
     }
 
-    const expectedElements = 1 + Math.floor(nextWave / 5);
+    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
     const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
     if (playersNeedingPick.length > 0) {
         setGameStatus('picking-element');
         setIsIntermission(true);
-        // Wave counter is NOT incremented here.
     } else {
         setCurrentWave(nextWave);
         setIsIntermission(true);
@@ -1197,4 +1211,5 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
