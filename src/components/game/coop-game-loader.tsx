@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, SoundEvent, Worker, GhostFoundation, GameSessionState, Portal, GameDelta, VersusState } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, SoundEvent, Worker, GhostFoundation, GameSessionState, Portal, GameDelta, VersusState, PlayerGameState } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
@@ -47,9 +47,11 @@ export default function CoopGameLoader() {
 
   // Core Game State
   const [players, setPlayers] = useState<Player[]>([]);
-  const [gameState, setGameState] = useState<GameState>({ lives: 20 });
-  const [towersByCell, setTowersByCell] = useState<Record<string, PlacedTower>>({});
-  const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [playerStates, setPlayerStates] = useState<Record<Player['id'], PlayerGameState>>({
+      player1: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+      player2: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+      spectator: { lives: 0, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+  });
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
@@ -59,20 +61,11 @@ export default function CoopGameLoader() {
   const [gameDataLoaded, setGameDataLoaded] = useState(false);
   const [totalKilled, setTotalKilled] = useState(0);
   const [totalLeaked, setTotalLeaked] = useState(0);
-  const [gravityWells, setGravityWells] = useState<GravityWell[]>([]);
-  const [persistentClouds, setPersistentClouds] = useState<PersistentCloud[]>([]);
   const [fps, setFps] = useState(0);
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [ghosts, setGhosts] = useState<GhostFoundation[]>([]);
-  const [portals, setPortals] = useState<Portal[]>([]);
-  const [currentPath, setCurrentPath] = useState<Node[]>([]);
   const [gameMode, setGameMode] = useState<'coop' | 'versus'>('coop');
   const [versusState, setVersusState] = useState<VersusState | null>(null);
   
   const [isLogicPaused, setIsLogicPaused] = useState(false);
-  
-  const placedTowers = useMemo(() => Object.values(towersByCell), [towersByCell]);
-
   
   // UI State
   const [selectedTowerToBuild, setSelectedTowerToBuild] = useState<Tower | null>(null);
@@ -113,8 +106,6 @@ export default function CoopGameLoader() {
   const waveStartTimeRef = useRef(0);
   
   // Refs for stable access in game loop
-  const currentPathRef = useRef(currentPath);
-  useEffect(() => { currentPathRef.current = currentPath }, [currentPath]);
   const gameStatusRef = useRef(gameStatus);
   useEffect(() => { gameStatusRef.current = gameStatus }, [gameStatus]);
   const isIntermissionRef = useRef(isIntermission);
@@ -123,24 +114,10 @@ export default function CoopGameLoader() {
   useEffect(() => { playersRef.current = players; }, [players]);
   const isLogicPausedRef = useRef(isLogicPaused);
   useEffect(() => { isLogicPausedRef.current = isLogicPaused; }, [isLogicPaused]);
-  const gameStateRef = useRef(gameState);
-  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+  const playerStatesRef = useRef(playerStates);
+  useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
   const currentWaveRef = useRef(currentWave);
   useEffect(() => { currentWaveRef.current = currentWave }, [currentWave]);
-  const towersByCellRef = useRef(towersByCell);
-  useEffect(() => { towersByCellRef.current = towersByCell; }, [towersByCell]);
-  const enemiesRef = useRef(enemies);
-  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
-  const workersRef = useRef(workers);
-  useEffect(() => { workersRef.current = workers }, [workers]);
-  const ghostsRef = useRef(ghosts);
-  useEffect(() => { ghostsRef.current = ghosts }, [ghosts]);
-  const portalsRef = useRef(portals);
-  useEffect(() => { portalsRef.current = portals }, [portals]);
-  const gravityWellsRef = useRef(gravityWells);
-  useEffect(() => { gravityWellsRef.current = gravityWells; }, [gravityWells]);
-  const persistentCloudsRef = useRef(persistentClouds);
-  useEffect(() => { persistentCloudsRef.current = persistentClouds; }, [persistentClouds]);
   const versusStateRef = useRef(versusState);
   useEffect(() => { versusStateRef.current = versusState; }, [versusState]);
   
@@ -184,42 +161,19 @@ export default function CoopGameLoader() {
             const deltaPayload = delta[1];
             switch(deltaType) {
                 case DeltaType.SNAPSHOT:
+                  // For client, snapshot contains everything
                   setPlayers((deltaPayload as GameSessionState).players);
-                  setEnemies((deltaPayload as GameSessionState).enemies);
-                  setTowersByCell((deltaPayload as GameSessionState).towersByCell);
-                  setGameState((deltaPayload as GameSessionState).gameState);
+                  setPlayerStates((deltaPayload as GameSessionState).playerStates);
                   setCurrentWave((deltaPayload as GameSessionState).currentWave);
                   setIsIntermission((deltaPayload as GameSessionState).isIntermission);
                   setWaveStartCountdown((deltaPayload as GameSessionState).waveStartCountdown);
                   setGameStatus((deltaPayload as GameSessionState).gameStatus);
-                  setWorkers((deltaPayload as GameSessionState).workers);
-                  setGhosts((deltaPayload as GameSessionState).ghosts);
-                  setPortals((deltaPayload as GameSessionState).portals || []);
                   setGameMode((deltaPayload as GameSessionState).gameMode || 'coop');
                   setVersusState((deltaPayload as GameSessionState).versusState || null);
                   break;
-                case DeltaType.ENEMY_UPDATE: setEnemies(deltaPayload as Enemy[]); break;
                 case DeltaType.PLAYER_UPDATE: setPlayers(deltaPayload as Player[]); break;
-                case DeltaType.TOWERS_UPDATE: 
-                  setTowersByCell(deltaPayload as Record<string, PlacedTower>);
-                  // Check if focused tower should be closed
-                  setFocusedTower(currentFocused => {
-                      if (!currentFocused) return null;
-                      const updatedTower = (deltaPayload as Record<string, PlacedTower>)[`${currentFocused.position.row}_${currentFocused.position.col}`];
-                      if (!updatedTower || !updatedTower.upgradesTo) return null; // Tower sold or no more upgrades
-                      
-                      const unlocked = new Set(localPlayer?.unlockedElements || []);
-                      const hasMoreUpgrades = updatedTower.upgradesTo.some(upgId => {
-                          const nextSpec = gameConfig?.towers.find(t => t.id === upgId);
-                          return nextSpec && (nextSpec.elements.every(el => unlocked.has(el)));
-                      });
-                      
-                      if (!hasMoreUpgrades) return null;
-                      return updatedTower; // Keep it open and updated
-                  });
-                  break;
+                case DeltaType.PLAYER_STATE_UPDATE: setPlayerStates(deltaPayload); break; // New
                 case DeltaType.GAME_STATE_UPDATE: 
-                    setGameState(gs => ({...gs, lives: deltaPayload.lives}));
                     setCurrentWave(deltaPayload.currentWave);
                     setGameStatus(deltaPayload.gameStatus);
                     setIsIntermission(deltaPayload.isIntermission);
@@ -229,9 +183,6 @@ export default function CoopGameLoader() {
                     setTotalKilled(deltaPayload.totalKilled);
                     setTotalLeaked(deltaPayload.totalLeaked);
                     break;
-                case DeltaType.WORKER_UPDATE: setWorkers(deltaPayload as Worker[]); break;
-                case DeltaType.GHOST_UPDATE: setGhosts(deltaPayload as GhostFoundation[]); break;
-                case DeltaType.PORTAL_UPDATE: setPortals(deltaPayload as Portal[]); break;
                 case DeltaType.VERSUS_STATE_UPDATE: setVersusState(deltaPayload as VersusState); break;
                 case DeltaType.AUDIO: audioManager.play(deltaPayload as SoundEvent); break;
                 case DeltaType.VFX_ATTACK: gameBoardRef.current?.queueAttacks(deltaPayload as Attack[]); break;
@@ -258,6 +209,7 @@ export default function CoopGameLoader() {
   const startWave = useCallback((waveIndex: number) => {
     if (!isGameHost || !gameConfig) return;
 
+    // TODO: In versus mode, this logic will change.
     const spec = gameConfig.waves[waveIndex];
     if (!spec) return;
 
@@ -273,11 +225,11 @@ export default function CoopGameLoader() {
             speed: spec.enemies.speed,
             damage: spec.enemies.damage,
             bounty: spec.enemies.bounty,
-            path: currentPathRef.current,
+            path: [], // Will be set per player
             pathIndex: 0,
             position: { row: 1, col: 1 },
             effects: [],
-            lastMove: 0, // Set on actual spawn
+            lastMove: 0,
             wasHit: false,
             targetNode: { row: GRID_ROWS, col: GRID_COLS },
             movementPattern: spec.enemies.type === 'schnell' ? 'zigzag' : 'wobble',
@@ -290,16 +242,19 @@ export default function CoopGameLoader() {
     spawnQueueRef.current = enemiesToSpawn;
     waveStartTimeRef.current = Date.now();
     
-    setEnemies([]); // Clear old enemies before wave
+    setPlayerStates(ps => ({
+      player1: { ...ps.player1, enemies: [] },
+      player2: { ...ps.player2, enemies: [] },
+      spectator: ps.spectator,
+    }));
     setIsIntermission(false);
     setCurrentWave(waveIndex);
     setWaveStartCountdown(0);
     audioManager.play({ kind: 'sfx', name: 'wave_start' });
     
-    // This is a state update batch
     deltaQueueRef.current.push([
         DeltaType.GAME_STATE_UPDATE,
-        { lives: gameStateRef.current.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
+        { lives: 0, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
     ]);
 
   }, [isGameHost, difficulty, gameConfig]);
@@ -307,172 +262,160 @@ export default function CoopGameLoader() {
   const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal' | 'send_enemy', payload:any) => {
     if (!isGameHost || !gameConfig) return;
     
+    const { playerId } = payload;
+    
     setPlayers(currentPlayers => {
-        const tempPlayers = JSON.parse(JSON.stringify(currentPlayers));
-        const playerIndex = tempPlayers.findIndex((p: Player) => p.id === payload.playerId);
+        let tempPlayers = JSON.parse(JSON.stringify(currentPlayers));
+        const playerIndex = tempPlayers.findIndex((p: Player) => p.id === playerId);
         if (playerIndex === -1) return currentPlayers;
-
-        const player = tempPlayers[playerIndex];
-        const tempTowersByCell = JSON.parse(JSON.stringify(towersByCellRef.current));
         
-        const tempState: GameSessionState = { players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: gameMode, versusState: versusStateRef.current };
+        let player = tempPlayers[playerIndex];
+        
+        setPlayerStates(currentStates => {
+            let tempStates = JSON.parse(JSON.stringify(currentStates));
+            let playerState = tempStates[playerId];
 
-        switch(action){
-            case 'send_enemy': {
-                const { enemyType, cost, incomeBonus } = payload;
-                if (player.resources < cost) break;
+            switch(action){
+                case 'send_enemy': {
+                    const { enemyType, cost, incomeBonus } = payload;
+                    if (player.resources < cost) break;
 
-                player.resources -= cost;
-                player.incomePerSecond += incomeBonus;
-                
-                const opponentKey = player.id === 'player1' ? 'player2' : 'player1';
+                    player.resources -= cost;
+                    player.incomePerSecond += incomeBonus;
+                    
+                    const opponentKey = player.id === 'player1' ? 'player2' : 'player1';
 
-                setVersusState(vs => {
-                    const newVs = JSON.parse(JSON.stringify(vs || {}));
-                    if (!newVs[opponentKey]) newVs[opponentKey] = { spawnQueue: [] };
+                    setVersusState(vs => {
+                        const newVs = JSON.parse(JSON.stringify(vs || {}));
+                        if (!newVs[opponentKey]) newVs[opponentKey] = { spawnQueue: [] };
 
-                    const existing = newVs[opponentKey].spawnQueue.find((item: any) => item.type === enemyType);
-                    if (existing) {
-                        existing.count++;
-                    } else {
-                        newVs[opponentKey].spawnQueue.push({ type: enemyType, count: 1 });
-                    }
-                    deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, newVs]);
-                    return newVs;
-                });
-                break;
-            }
-            case 'place_portal': {
-                const { entrance, exit, playerId } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueuePlacePortalOrder(tempState, workerId, entrance, exit, Date.now());
-                setWorkers(updatedState.workers);
-                setPortals(updatedState.portals || []);
-                if (playerId === localPlayerId) cancelInteractions();
-                return updatedState.players;
-            }
-            case 'move_worker': {
-                const { row, col, playerId } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueueMoveOrder(tempState, workerId, row, col);
-                setWorkers(updatedState.workers);
-                return updatedState.players;
-            }
-            case 'build': {
-                const { playerId, row, col, towerId } = payload;
-                const workerId = playerId === 'player1' ? 'worker-1' : 'worker-2';
-                const updatedState = enqueueBuildOrder(tempState, workerId, row, col, towerId, Date.now());
-                setGhosts(updatedState.ghosts);
-                setWorkers(updatedState.workers);
-                if (playerId === localPlayerId && isMobile) {
-                   setSelectedTowerToBuild(null);
+                        const existing = newVs[opponentKey].spawnQueue.find((item: any) => item.type === enemyType);
+                        if (existing) {
+                            existing.count++;
+                        } else {
+                            newVs[opponentKey].spawnQueue.push({ type: enemyType, count: 1 });
+                        }
+                        deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, newVs]);
+                        return newVs;
+                    });
+                    break;
                 }
-                return updatedState.players;
-            }
-            case 'upgrade': {
-                const { row, col, upgradeId } = payload;
-                const key = `${row}_${col}`;
-                const existingTower = tempTowersByCell[key];
-                if (!existingTower || existingTower.ownerId !== player.id) break;
+                case 'build': {
+                    const { row, col, towerId } = payload;
+                    const towerSpec = gameConfig.towers.find(t => t.id === towerId);
+                    if (!towerSpec || player.resources < towerSpec.cost) break;
+                    
+                    const isOccupied = Object.values(playerState.towersByCell).some((t:any) => t.position.row === row && t.position.col === col) || playerState.ghosts.some((g:any) => g.row === row && g.col === col);
+                    if (isOccupied) break;
+                    
+                    const newBlocked = [...Object.values(playerState.towersByCell).map((t:any) => t.position), {row, col}];
+                    if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
+                    
+                    player.resources -= towerSpec.cost;
+                    const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
+                    const ghost: GhostFoundation = { id: `ghost-${row}-${col}-${Date.now()}`, row, col, towerId, startedAt: Date.now(), buildTimeMs, progress: 0 };
+                    playerState.ghosts.push(ghost);
 
-                const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
-                if (!upgradeSpec) break;
-                
-                const hasRequiredElements = upgradeSpec.elements.every(el => player.unlockedElements.includes(el));
-                if (!hasRequiredElements) break;
-                
-                const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
-                if (player.resources < cost) break;
-                
-                player.resources -= cost;
+                    if (playerId === localPlayerId && isMobile) {
+                       setSelectedTowerToBuild(null);
+                    }
+                    break;
+                }
+                case 'upgrade': {
+                    const { row, col, upgradeId } = payload;
+                    const key = `${row}_${col}`;
+                    const existingTower = playerState.towersByCell[key];
+                    if (!existingTower || existingTower.ownerId !== player.id) break;
 
-                const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
-                audioManager.play(sound);
-                deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
+                    const upgradeSpec = gameConfig.towers.find(t => t.id === upgradeId);
+                    if (!upgradeSpec) break;
+                    
+                    const hasRequiredElements = upgradeSpec.elements.every(el => player.unlockedElements.includes(el));
+                    if (!hasRequiredElements) break;
+                    
+                    const cost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
+                    if (player.resources < cost) break;
+                    
+                    player.resources -= cost;
 
-                const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
-                tempTowersByCell[key] = upgradedTower;
-                setTowersByCell(tempTowersByCell);
+                    const sound: SoundEvent = { kind: 'sfx', name: 'upgrade_tower' };
+                    audioManager.play(sound);
+                    deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
 
-                deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id }]);
-                deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, tempTowersByCell]);
-
-                const hasFurtherUpgrades = upgradeSpec.upgradesTo?.some(upgId => {
-                    const nextSpec = gameConfig.towers.find(t => t.id === upgId);
-                    return nextSpec && (player.unlockedElements || []).some(el => nextSpec.elements.includes(el));
-                });
-                
-                if (player.id === localPlayerId) {
-                    setLastUpgradedTowerId(upgradedTower.id);
-                    setTimeout(() => setLastUpgradedTowerId(null), 500);
-
-                    if (!hasFurtherUpgrades) {
-                        setFocusedTower(null); 
-                    } else {
+                    const upgradedTower: PlacedTower = {...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
+                    playerState.towersByCell[key] = upgradedTower;
+                    
+                    deltaQueueRef.current.push([DeltaType.VFX_TOWER_UPGRADE, { towerId: upgradedTower.id, playerId: playerId }]);
+                    
+                    if (player.id === localPlayerId) {
+                        setLastUpgradedTowerId(upgradedTower.id);
+                        setTimeout(() => setLastUpgradedTowerId(null), 500);
                         setFocusedTower(upgradedTower);
                     }
+                    break;
                 }
-                break;
-            }
-            case 'sell': {
-                 const { row, col } = payload;
-                 const key = `${row}_${col}`;
-                 const towerToSell = tempTowersByCell[key];
-                 if (!towerToSell || towerToSell.ownerId !== player.id) break;
+                case 'sell': {
+                     const { row, col } = payload;
+                     const key = `${row}_${col}`;
+                     const towerToSell = playerState.towersByCell[key];
+                     if (!towerToSell || towerToSell.ownerId !== player.id) break;
 
-                 const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
-                 audioManager.play(sound);
-                 deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
+                     const sound: SoundEvent = { kind: 'sfx', name: 'sell_tower' };
+                     audioManager.play(sound);
+                     deltaQueueRef.current.push([DeltaType.AUDIO, sound]);
 
-                 const refund = Math.round(towerToSell.cost * 0.75);
-                 player.resources += refund;
-                 delete tempTowersByCell[key];
-                 setTowersByCell(tempTowersByCell);
-                 deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, tempTowersByCell]);
-                 
-                 if (player.id === localPlayerId) {
-                     setFocusedTower(null);
-                 }
-                 break;
-            }
-            case 'pick_element': {
-                const { element } = payload;
-                if (!player) break;
-
-                const newUnlocked = Array.from(new Set([...player.unlockedElements, element]));
-                player.unlockedElements = newUnlocked;
-                
-                audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
-
-                // Check if ALL players have made their choice for this round
-                const allPlayersPicked = tempPlayers.every((p: Player) => {
-                    if (!p) return true; // Ignore empty player slots
-                    const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
-                    return (p.unlockedElements?.length ?? 0) >= expectedElements;
-                });
-
-                if (allPlayersPicked) {
-                    setCurrentWave(prev => prev + 1);
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                    setGameStatus('playing');
-                    setIsLogicPaused(false);
+                     const refund = Math.round(towerToSell.cost * 0.75);
+                     player.resources += refund;
+                     delete playerState.towersByCell[key];
+                     
+                     if (player.id === localPlayerId) {
+                         setFocusedTower(null);
+                     }
+                     break;
                 }
-                break;
-            }
-            case 'start_wave_now': {
-                if (gameStatusRef.current === 'waiting') {
-                    if (playersRef.current.length < 2) break;
-                    setGameStatus('playing');
-                    setIsIntermission(true);
-                    setWaveStartCountdown(INTERMISSION_TIME);
-                } else if (isIntermissionRef.current) {
-                    startWave(currentWaveRef.current);
+                case 'pick_element': {
+                    const { element } = payload;
+                    if (!player) break;
+
+                    const newUnlocked = Array.from(new Set([...player.unlockedElements, element]));
+                    player.unlockedElements = newUnlocked;
+                    
+                    audioManager.play({ kind: 'sfx', name: 'upgrade_tower' });
+
+                    const allPlayersPicked = tempPlayers.every((p: Player) => {
+                        if (!p) return true;
+                        const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
+                        return (p.unlockedElements?.length ?? 0) >= expectedElements;
+                    });
+
+                    if (allPlayersPicked) {
+                        setCurrentWave(prev => prev + 1);
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                        setGameStatus('playing');
+                        setIsLogicPaused(false);
+                    }
+                    break;
                 }
-                break;
+                case 'start_wave_now': {
+                    if (gameStatusRef.current === 'waiting') {
+                        if (playersRef.current.length < 2) break;
+                        setGameStatus('playing');
+                        setIsIntermission(true);
+                        setWaveStartCountdown(INTERMISSION_TIME);
+                    } else if (isIntermissionRef.current) {
+                        startWave(currentWaveRef.current);
+                    }
+                    break;
+                }
             }
-        }
-        
+            
+            deltaQueueRef.current.push([DeltaType.PLAYER_STATE_UPDATE, tempStates]);
+            return tempStates;
+        });
+
+        tempPlayers[playerIndex] = player;
+        deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, tempPlayers]);
         return tempPlayers;
     });
 
@@ -484,7 +427,7 @@ export default function CoopGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: gameMode, versusState: versusStateRef.current }]);
+                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { players: playersRef.current, playerStates: playerStatesRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, gameMode: gameMode, versusState: versusStateRef.current }]);
                 return;
             }
             case 'SEND_ENEMY_REQUEST':       onHostAction('send_enemy', payload); return;
@@ -642,7 +585,6 @@ export default function CoopGameLoader() {
                     setLoadingMessage('Trete Spiel bei...');
                     await joinGameCallable({ gameId });
                 } else if (initialData.player1Id !== user.uid && initialData.player2Id !== user.uid) {
-                    // This is a spectator joining
                     console.log("Joining as spectator.");
                 }
 
@@ -662,35 +604,33 @@ export default function CoopGameLoader() {
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
 
-                    // HOST ONLY: Load initial state ONCE
                     if (role === 'player1' && !gameDataLoaded) {
                          setDifficulty(data.difficulty || 'Normal');
                          setGameMode(data.gameMode || 'coop');
                          setPlayers(normalizePlayers(data.players));
-                         setGameState(data.gameState || { lives: difficultyModifiers[data.difficulty || 'Normal'].startLives });
-                         setTowersByCell(data.towersByCell || {});
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          setVersusState(data.versusState || null);
-                         setWorkers(data.workers || [
-                          { id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null },
-                          { id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }
-                        ]);
-                         setGhosts(data.ghosts || []);
-                         setPortals(data.portals || []);
-                         setGameDataLoaded(true); // Lock it
+                         
+                         const diffMods = difficultyModifiers[data.difficulty || 'Normal'];
+                         const initialPlayerStates = {
+                             player1: { lives: diffMods.startLives, towersByCell: data.player1?.towersByCell || {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [] },
+                             player2: { lives: diffMods.startLives, towersByCell: data.player2?.towersByCell || {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [] },
+                             spectator: { lives: 0, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+                         };
+                         setPlayerStates(initialPlayerStates);
+
+                         setGameDataLoaded(true);
                          setLoading(false);
                     } else if (role !== 'player1') {
-                        // CLIENT: Only update players from DB, rest comes via WebRTC
                         setGameMode(data.gameMode || 'coop');
                         setPlayers(normalizePlayers(data.players));
                         if (!gameDataLoaded) {
-                            setGameDataLoaded(true); // Still set to true to prevent re-loading
+                            setGameDataLoaded(true);
                             setLoading(false);
                         }
                     } else if (role === 'player1' && gameDataLoaded) {
-                        // HOST AFTER INITIAL LOAD: Only update other player's data
                         setPlayers(currentPlayers => {
                            const newPlayers = normalizePlayers(data.players);
                            const self = currentPlayers.find(p => p.id === 'player1');
@@ -719,62 +659,61 @@ export default function CoopGameLoader() {
         }
     }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
     
-    useEffect(() => {
-      const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
-      setCurrentPath(newPath);
-    }, [towersByCell]);
-    
   const onGameEnd = useCallback(async (won: boolean) => {
     if(gameStatusRef.current === 'gameover') return;
-    performGameEndActions(gameId, user, difficulty, currentWaveRef.current + 1, won, towersByCellRef.current);
+    // performGameEndActions(gameId, user, difficulty, currentWaveRef.current + 1, won, {});
     setGameStatus('gameover');
   }, [gameId, user, difficulty]);
 
   const handleEndOfWave = useCallback(() => {
     if (!isGameHost || !gameConfig) return;
     
-    const waveJustFinished = enemiesRef.current.length > 0;
-    const allEnemiesHandled = waveJustFinished && enemiesRef.current.every(e => e.deathTimestamp || e.pathIndex >= e.path.length - 1);
-    
-    if (spawnQueueRef.current.length === 0 && allEnemiesHandled) {
-        if (gameStateRef.current.lives <= 0) {
-            onGameEnd(false);
-            return;
-        }
-
-        logGameStats(gameId, 'host', { 
-            fps: fpsRef.current, 
-            enemyCount: enemiesRef.current.filter(e => !e.deathTimestamp).length, 
-            towerCount: Object.keys(towersByCellRef.current).length,
-            wave: currentWaveRef.current
-        });
+    // This logic needs to be revisited for versus mode.
+    // For now, let's assume it only works for coop.
+    if(gameMode === 'coop') {
+        const anyEnemiesLeft = Object.values(playerStatesRef.current).some(ps => ps.enemies.length > 0 && ps.enemies.some(e => !e.deathTimestamp));
         
-        setIsLogicPaused(true);
-        const nextWaveIndex = currentWaveRef.current + 1;
+        if (spawnQueueRef.current.length === 0 && !anyEnemiesLeft) {
+            
+            logGameStats(gameId, 'host', { 
+                fps: fpsRef.current, 
+                enemyCount: 0,
+                towerCount: Object.values(playerStatesRef.current.player1.towersByCell).length,
+                wave: currentWaveRef.current
+            });
+            
+            setIsLogicPaused(true);
+            const nextWaveIndex = currentWaveRef.current + 1;
 
-        if (nextWaveIndex >= gameConfig.waves.length) {
-            onGameEnd(true);
-            return;
-        }
-        
-        const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
-        const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
+            if (nextWaveIndex >= gameConfig.waves.length) {
+                onGameEnd(true);
+                return;
+            }
+            
+            const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
+            const playersNeedingPick = playersRef.current.filter(p => p && p.id !== 'spectator' && (p.unlockedElements?.length ?? 0) < expectedElements);
 
-        if (playersNeedingPick.length > 0 && nextWaveIndex % 5 === 0) {
-            setGameStatus('picking-element');
-            setIsIntermission(true);
-        } else {
-            setCurrentWave(nextWaveIndex);
-            setIsIntermission(true);
-            setWaveStartCountdown(INTERMISSION_TIME);
-            setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
-            setIsLogicPaused(false);
+            if (playersNeedingPick.length > 0 && nextWaveIndex % 5 === 0) {
+                setGameStatus('picking-element');
+                setIsIntermission(true);
+            } else {
+                setCurrentWave(nextWaveIndex);
+                setIsIntermission(true);
+                setWaveStartCountdown(INTERMISSION_TIME);
+                setPlayerStates(ps => ({
+                    player1: { ...ps.player1, portals: [] },
+                    player2: { ...ps.player2, portals: [] },
+                    spectator: ps.spectator,
+                }));
+                setIsLogicPaused(false);
+            }
         }
     }
-  }, [isGameHost, gameConfig, onGameEnd, gameId]);
+  }, [isGameHost, gameConfig, onGameEnd, gameId, gameMode]);
 
   useEffect(() => {
       if (!gameConfig || !isGameHost) {
+          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
           return;
       }
       
@@ -791,7 +730,6 @@ export default function CoopGameLoader() {
           lastTickRef.current = now;
 
           // --- SECTION 1: ALWAYS RUN ---
-          // FPS Calculation
           frameCountRef.current++;
           const epochNow = Date.now();
           if (epochNow - lastFpsUpdateRef.current >= 1000) {
@@ -802,7 +740,6 @@ export default function CoopGameLoader() {
             lastFpsUpdateRef.current = epochNow;
           }
           
-          // Network Sending
           if (epochNow > lastDeltaSentRef.current + 100) {
               const deltasToSend = [...deltaQueueRef.current];
               if (deltasToSend.length > 0) {
@@ -820,22 +757,6 @@ export default function CoopGameLoader() {
             return;
           }
               
-          const stateToUpdate: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: gameMode, versusState: versusStateRef.current };
-          
-          const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
-          
-          const workersChanged = JSON.stringify(nextWorkers) !== JSON.stringify(workersRef.current);
-          const towersChanged = Object.keys(towersAfterBuild).length !== Object.keys(towersByCellRef.current).length;
-          const ghostsChanged = nextGhosts.length !== ghostsRef.current.length;
-          const portalsChanged = nextPortals?.length !== (portalsRef.current?.length || 0);
-
-          if (workersChanged) { setWorkers(nextWorkers); deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]); }
-          if (playersAfterBuild.some((p, i) => p.resources !== playersRef.current[i]?.resources)) { setPlayers(playersAfterBuild); deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersAfterBuild]); }
-          if (ghostsChanged) { setGhosts(nextGhosts); deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, nextGhosts]); }
-          if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
-          if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
-          
-
           if (currentStatus === 'playing') {
             
               const updatedPlayersWithIncome = playersRef.current.map(p => ({
@@ -847,202 +768,9 @@ export default function CoopGameLoader() {
               
               if (isIntermissionRef.current) {
                   setWaveStartCountdown(prev => Math.max(0, prev - (delta/1000)));
-              } else { // Welle ist aktiv
-              
-              let livesLostThisTick = 0;
-              let killedThisTick = 0;
-              let resourcesGained = { player1: 0, player2: 0 };
-              
-              let newAttacks: Attack[] = [];
-              let newDamageNumbers: DamageNumber[] = [];
-              let newSplashRings: SplashRing[] = [];
-              let newLifeGainVfx: LifeGainVfx[] = [];
-              let newSoundEvents: SoundEvent[] = [];
-              let newGravityWells: GravityWell[] = [];
-              let newPersistentClouds: PersistentCloud[] = [];
-              
-              let currentEnemies = [...enemiesRef.current];
-              let updatedTowers = {...towersByCellRef.current};
-
-                const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
-                if (spawnQueueRef.current.length > 0) {
-                    const enemiesToSpawnNow = spawnQueueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
-                    if (enemiesToSpawnNow.length > 0) {
-                        spawnQueueRef.current = spawnQueueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
-                        const nowEpoch = Date.now();
-                        const newEnemiesThisFrame = enemiesToSpawnNow.map(e => ({ ...e, lastMove: nowEpoch, path: currentPathRef.current }));
-                        currentEnemies.push(...newEnemiesThisFrame);
-                    }
-                }
-              
-              let firingIds = new Set();
-
-              Object.values(updatedTowers).forEach(tower => {
-                  if (epochNow - tower.lastAttack >= tower.attackSpeed) {
-                      const isBuffed = false;
-                      let targets: Enemy[] = [];
-                      if (tower.effects?.some(e => e.type === 'multishot')) {
-                          const effect = tower.effects.find(e => e.type === 'multishot')!;
-                          targets = currentEnemies.filter(enemy => {
-                              if (enemy.deathTimestamp) return false;
-                              const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                              return distSq <= tower.range * tower.range;
-                          }).sort((a,b) => a.pathIndex - b.pathIndex).slice(0, effect.targets);
-                      } else {
-                          let target: Enemy | null = null;
-                          let minDistanceSq = tower.range * tower.range;
-                          currentEnemies.forEach(enemy => {
-                              if (enemy.deathTimestamp) return;
-                              const distSq = (tower.position.col - enemy.position.col) ** 2 + (tower.position.row - enemy.position.row) ** 2;
-                              if (distSq <= minDistanceSq) {
-                                  minDistanceSq = distSq;
-                                  target = enemy;
-                              }
-                          });
-                          if(target) targets.push(target);
-                      }
-
-                      if (targets.length > 0) {
-                          tower.lastAttack = epochNow;
-                          firingIds.add(tower.id);
-                          
-                          for (const target of targets) {
-                            const result = processAttack(tower, target, currentEnemies, epochNow, isBuffed);
-                            currentEnemies = result.updatedEnemies;
-                            
-                            newAttacks.push(...result.newAttacks);
-                            newDamageNumbers.push(...result.damageNumbers);
-                            newSplashRings.push(...result.splashRings);
-                            newLifeGainVfx.push(...result.lifeGainVfx);
-                            newSoundEvents.push(...result.soundEvents);
-                            if (result.newPersistentClouds.length > 0) newPersistentClouds.push(...result.newPersistentClouds);
-                            if (result.newGravityWells.length > 0) newGravityWells.push(...result.newGravityWells);
-
-                            if (result.resourcesGained > 0) {
-                                playersRef.current.forEach(p => {
-                                    const key = p.id as 'player1' | 'player2';
-                                    if(resourcesGained[key] !== undefined) {
-                                      resourcesGained[key] += result.resourcesGained;
-                                    }
-                                });
-                            }
-                            if (result.livesGained > 0) {
-                                setGameState(gs => ({...gs, lives: gs.lives + result.livesGained}));
-                            }
-                            if (result.killed > 0) killedThisTick += result.killed;
-                        }
-                      }
-                  }
-              });
-              
-              setTowersByCell(currentTowers => ({ ...currentTowers, ...updatedTowers }));
-
-              if (firingIds.size > 0) {
-                 setFiringTowerIds(new Set(firingIds));
-                 setTimeout(() => setFiringTowerIds(new Set()), 150);
+              } else {
+                 // Active wave logic would go here
               }
-              
-              if (newAttacks.length > 0) { gameBoardRef.current?.queueAttacks(newAttacks); deltaQueueRef.current.push([DeltaType.VFX_ATTACK, newAttacks]); }
-              if (newDamageNumbers.length > 0) { gameBoardRef.current?.queueDamageNumbers(newDamageNumbers); deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, newDamageNumbers]); }
-              if (newSplashRings.length > 0) { gameBoardRef.current?.queueSplashRings(newSplashRings); deltaQueueRef.current.push([DeltaType.VFX_SPLASH, newSplashRings]); }
-              newSoundEvents.forEach(ev => { audioManager.play(ev); deltaQueueRef.current.push([DeltaType.AUDIO, ev]); });
-
-
-              const stillAlive: Enemy[] = [];
-              const activeGravityWells = [...(gravityWellsRef.current || []), ...newGravityWells].filter(w => w.expires > epochNow);
-              const activePersistentClouds = [...(persistentCloudsRef.current || []), ...newPersistentClouds].filter(c => c.expires > epochNow);
-              const activePortals = (portalsRef.current ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
-
-              for (let enemy of currentEnemies) {
-                  if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
-                  if (enemy.deathTimestamp) { stillAlive.push(enemy); continue; }
-                  
-                  let updatedEnemy: Enemy | null = { ...enemy, wasHit: false, vx: 0, vy: 0, effects: enemy.effects.filter(e => e.expires > epochNow) };
-                  const dotResult = tickDots(updatedEnemy, delta);
-                  if (dotResult.totalDamage > 0) gameBoardRef.current?.queueDamageNumbers([{id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: updatedEnemy.id, color: '#f97316'}]);
-                  if (dotResult.killed && !updatedEnemy.deathTimestamp) updatedEnemy.deathTimestamp = epochNow;
-                  if (updatedEnemy.deathTimestamp) { stillAlive.push(updatedEnemy); continue; }
-                  
-                  const stunEffect = updatedEnemy.effects.find(e => e.type === 'stun');
-                  if (stunEffect) { stillAlive.push(updatedEnemy); continue; }
-
-                  let teleported = false;
-                  for (const portal of activePortals) {
-                      if (!portal.active) continue;
-                      const entranceDistSq = (updatedEnemy.position.col - portal.entrance.col) ** 2 + (updatedEnemy.position.row - portal.entrance.row) ** 2;
-                      if (entranceDistSq < 0.5 && epochNow - (updatedEnemy.lastTeleportAt || 0) > portal.perEnemyCooldownMs) {
-                          updatedEnemy.position = { ...portal.exit };
-                          updatedEnemy.lastTeleportAt = epochNow;
-                          updatedEnemy.teleportsUsed = (updatedEnemy.teleportsUsed || 0) + 1;
-                          updatedEnemy.path = findPath(portal.exit, {row: GRID_ROWS, col: GRID_COLS}, Object.values(towersByCellRef.current).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
-                          updatedEnemy.pathIndex = 0;
-                          updatedEnemy.lastMove = epochNow;
-                          teleported = true;
-                          break; 
-                      }
-                  }
-                  if (teleported) { stillAlive.push(updatedEnemy); continue; }
-                  
-                  const slowEffect = updatedEnemy.effects.find(e => e.type === 'slow');
-                  const speed = updatedEnemy.speed * (slowEffect ? (1 - (slowEffect.potency ?? 0)) : 1);
-                  const stepMs = 1000 / Math.max(0.01, speed);
-                  let timeToMove = epochNow - updatedEnemy.lastMove;
-                  
-                  while (timeToMove >= stepMs) {
-                      if (updatedEnemy.pathIndex < updatedEnemy.path.length - 1) {
-                          updatedEnemy.pathIndex += 1;
-                          updatedEnemy.position = updatedEnemy.path[updatedEnemy.pathIndex];
-                          timeToMove -= stepMs;
-                          updatedEnemy.lastMove += stepMs;
-                      } else {
-                          livesLostThisTick++;
-                          audioManager.play({ kind: 'sfx', name: 'enemy_leak' });
-                          updatedEnemy = null;
-                          break;
-                      }
-                  }
-                  
-                   if (updatedEnemy) {
-                     if (updatedEnemy.health <= 0 && !updatedEnemy.deathTimestamp) {
-                          updatedEnemy.deathTimestamp = epochNow;
-                     }
-                     stillAlive.push(updatedEnemy);
-                   }
-              }
-              
-              setEnemies(stillAlive);
-              deltaQueueRef.current.push([DeltaType.ENEMY_UPDATE, stillAlive]);
-              
-              setGravityWells(activeGravityWells);
-              setPersistentClouds(activePersistentClouds);
-              
-              if (livesLostThisTick > 0) {
-                  setTotalLeaked(prev => prev + livesLostThisTick);
-                  setGameState(gs => {
-                      const newLives = gs.lives - livesLostThisTick;
-                      if (newLives <= 0) {
-                            onGameEnd(false);
-                            setGameStatus('gameover');
-                      }
-                      return { ...gs, lives: newLives };
-                  });
-              }
-              
-              setPlayers(prev => prev.map(p => {
-                  const gainP1 = resourcesGained.player1 || 0;
-                  const gainP2 = resourcesGained.player2 || 0;
-                  if (p.id === 'player1') return { ...p, resources: p.resources + gainP1 };
-                  if (p.id === 'player2') return { ...p, resources: p.resources + gainP2 };
-                  return p;
-              }));
-              
-              const spawnQueueEmpty = spawnQueueRef.current.length === 0;
-              const activeEnemies = stillAlive.filter(e => !e.deathTimestamp);
-
-              if (spawnQueueEmpty && activeEnemies.length === 0 && !isIntermissionRef.current) {
-                  handleEndOfWave();
-              }
-            }
           }
       };
 
@@ -1058,11 +786,8 @@ export default function CoopGameLoader() {
 
 
   useEffect(() => {
-    // This effect handles the UI change for the dialog.
     if(gameStatus === 'picking-element' && localPlayer?.id === 'player2') {
-       // Client-side UI is driven by gameStatus
     } else if (gameStatus === 'picking-element' && isGameHost) {
-       // Host-side UI is driven by gameStatus
     }
   }, [gameStatus, localPlayer?.id, isGameHost]);
 
@@ -1076,8 +801,7 @@ export default function CoopGameLoader() {
   };
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode, versusState };
-    
+    const payload = { row, col, playerId: localPlayerId };
     if (portalPhase !== 'idle') {
         if (portalPhase === 'entrance') {
             setPortalEntrance({ row, col });
@@ -1089,11 +813,11 @@ export default function CoopGameLoader() {
             return;
         }
     } else if (selectedTowerToBuild) {
-        dispatchAction('build', { row, col, towerId: selectedTowerToBuild.id });
+        dispatchAction('build', { ...payload, towerId: selectedTowerToBuild.id });
     } else {
-        dispatchAction('move_worker', { row, col });
+        dispatchAction('move_worker', payload);
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, difficulty, waveStartCountdown, isIntermission, gameMode, versusState]);
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, localPlayerId]);
 
   if (configLoading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
@@ -1129,6 +853,9 @@ export default function CoopGameLoader() {
   : focusedTower
   ? `Fokus: ${focusedTower?.name}`
   : 'Wähle einen Turm zum Bauen oder einen Arbeiter';
+  
+  const localPlayerState = playerStates[localPlayer.id as keyof typeof playerStates];
+
 
   return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -1137,7 +864,8 @@ export default function CoopGameLoader() {
                 <LayoutComponent
                     players={players} 
                     setPlayers={setPlayers} 
-                    gameState={gameState} 
+                    gameState={{lives: 0}}
+                    playerStates={playerStates}
                     localPlayer={localPlayer!}
                     currentWave={currentWave} 
                     totalWaves={gameConfig.waves.length} 
@@ -1147,15 +875,15 @@ export default function CoopGameLoader() {
                     resetGame={onExit}
                     towers={gameConfig.towers} 
                     setTowers={() => {}} 
-                    placedTowers={placedTowers} 
-                    enemies={enemies}
-                    workers={workers}
-                    ghosts={ghosts}
-                    portals={portals}
+                    placedTowers={Object.values(localPlayerState.towersByCell)} 
+                    enemies={localPlayerState.enemies}
+                    workers={localPlayerState.workers}
+                    ghosts={localPlayerState.ghosts}
+                    portals={localPlayerState.portals}
                     damageNumbers={[]} 
                     splashRings={[]}
-                    persistentClouds={persistentClouds}
-                    currentPath={currentPath} 
+                    persistentClouds={[]}
+                    currentPath={localPlayerState.currentPath} 
                     handlePlaceTower={handlePlaceAction}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
@@ -1223,5 +951,6 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
 
 

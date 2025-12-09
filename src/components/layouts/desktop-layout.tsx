@@ -16,7 +16,7 @@ import WavePreview from '@/components/game/wave-preview';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal, VersusEnemyToSend } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal, PlayerGameState } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -26,7 +26,7 @@ type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-eleme
 interface DesktopLayoutProps {
   players: Player[];
   setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
-  gameState: GameState;
+  playerStates: Record<Player['id'], PlayerGameState>;
   localPlayer: Player;
   currentWave: number;
   totalWaves: number;
@@ -41,15 +41,10 @@ interface DesktopLayoutProps {
   workers: Worker[];
   ghosts: GhostFoundation[];
   portals: Portal[];
-  playerStates: Record<Player['id'], {
-    lives: number;
-    towersByCell: Record<string, PlacedTower>;
-    enemies: Enemy[];
-    currentPath: Node[];
-  }>;
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
+  currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
@@ -100,10 +95,9 @@ interface DesktopLayoutProps {
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
   const {
-    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
+    players, setPlayers, playerStates, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
     resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, portals, damageNumbers, splashRings,
-    persistentClouds,
-    playerStates,
+    persistentClouds, currentPath,
     handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
     onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower,
@@ -159,9 +153,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
-
-  const localPlayerState = playerStates[localPlayer.id] || { lives: maxLives, towersByCell: {}, enemies: [], currentPath: [] };
-
+  
+  const localPlayerState = playerStates[localPlayer.id as keyof typeof playerStates] || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
+  
   const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -208,7 +202,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       {interactionPromptComponent}
         <div id="tutorial-player-stats">
             {players.map(player => {
-              const pState = playerStates[player.id];
+              const pState = playerStates[player.id as keyof typeof playerStates];
               return player && pState && (
                 <PlayerStats
                   key={player.id}
@@ -267,9 +261,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 ref={gameBoardRef}
                 placedTowers={Object.values(localPlayerState.towersByCell)}
                 enemies={localPlayerState.enemies}
-                workers={workers}
-                ghosts={ghosts}
-                portals={portals}
+                workers={localPlayerState.workers}
+                ghosts={localPlayerState.ghosts}
+                portals={localPlayerState.portals}
                 attacks={attacks}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
@@ -370,3 +364,4 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     </div>
   );
 });
+
