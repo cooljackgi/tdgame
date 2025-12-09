@@ -10,6 +10,7 @@ import GameStatsTracker from '@/components/game/game-stats-tracker';
 import DebugMenu from '@/components/game/debug-menu';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
 import TowerSelection from '@/components/game/tower-selection';
+import PlayerVersusControls from '@/components/game/player-versus-controls';
 import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
@@ -87,6 +88,8 @@ interface DesktopLayoutProps {
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
   isPlacingPortalEntrance?: boolean;
+  gameMode: 'coop' | 'versus';
+  onSendEnemy: (payload: { type: EnemyType; cost: number; incomeBonus: number }) => void;
 }
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
@@ -118,7 +121,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    gameMode,
+    onSendEnemy
   } = props;
   
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -283,19 +288,26 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-l from-background/95 via-background/80 to-transparent backdrop-blur-md border-l border-border/50 overflow-y-auto">
       <div id="tutorial-build-menu">
             {!isSpectator && (
-              <TowerSelection
-                allTowers={allTowers}
-                onSelectTower={onSelectTowerToBuild}
-                onEnterPortalMode={onEnterPortalMode}
-                focusedTower={focusedTower}
-                selectedTowerToBuild={selectedTowerToBuild}
-                onUpgradeTower={handleUpgradeTower}
-                onSellTower={handleSellTower}
-                onBack={cancelInteractions}
-                localPlayer={localPlayer}
-                buffedTowerIds={buffedTowerIds}
-                currentWave={currentWave}
-              />
+              gameMode === 'versus' ? (
+                <PlayerVersusControls 
+                  localPlayer={localPlayer} 
+                  onSendEnemy={onSendEnemy} 
+                />
+              ) : (
+                <TowerSelection
+                  allTowers={allTowers}
+                  onSelectTower={onSelectTowerToBuild}
+                  onEnterPortalMode={onEnterPortalMode}
+                  focusedTower={focusedTower}
+                  selectedTowerToBuild={selectedTowerToBuild}
+                  onUpgradeTower={handleUpgradeTower}
+                  onSellTower={handleSellTower}
+                  onBack={cancelInteractions}
+                  localPlayer={localPlayer}
+                  buffedTowerIds={buffedTowerIds}
+                  currentWave={currentWave}
+                />
+              )
             )}
         </div>
         {showDebugFeatures && (

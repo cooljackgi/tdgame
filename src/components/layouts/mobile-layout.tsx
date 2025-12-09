@@ -11,6 +11,7 @@ import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
 import TowerSelection from '@/components/game/tower-selection';
+import PlayerVersusControls from '@/components/game/player-versus-controls';
 import DebugMenu from '@/components/game/debug-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WaveStartTimer from '../game/wave-start-timer';
@@ -21,7 +22,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation, Portal
+  Worker, GhostFoundation, Portal, VersusEnemyToSend
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -94,6 +95,8 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
+  gameMode: 'coop' | 'versus';
+  onSendEnemy: (payload: VersusEnemyToSend) => void;
 }
 
 const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
@@ -122,7 +125,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    gameMode,
+    onSendEnemy,
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
@@ -186,7 +191,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
-    : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Turm bauen');
+    : (focusedTower ? `Upgrade ${focusedTower.name}` : (gameMode === 'versus' ? 'Gegner senden' : 'Turm bauen'));
   const sheetIcon = isSpectator ? <Eye /> : <Hammer />;
 
   const handleSelectAndClose = (tower: Tower | null) => {
@@ -373,23 +378,31 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <div className="flex-grow min-h-0">
                   <ScrollArea className="h-full px-4 py-4">
                     {!isSpectator && (
-                      <TowerSelection
-                        allTowers={allTowers}
-                        onSelectTower={handleSelectAndClose}
-                        onEnterPortalMode={() => {
-                            onEnterPortalMode();
-                            setIsBuildSheetOpen(false);
-                        }}
-                        focusedTower={focusedTower}
-                        selectedTowerToBuild={selectedTowerToBuild}
-                        onUpgradeTower={handleUpgrade}
-                        onSellTower={handleSell}
-                        onBack={cancelInteractions}
-                        localPlayer={localPlayer}
-                        isMobile
-                        buffedTowerIds={buffedTowerIds}
-                        currentWave={currentWave}
-                      />
+                        gameMode === 'versus' ? (
+                          <PlayerVersusControls 
+                            localPlayer={localPlayer} 
+                            onSendEnemy={onSendEnemy} 
+                            isMobile 
+                          />
+                        ) : (
+                          <TowerSelection
+                            allTowers={allTowers}
+                            onSelectTower={handleSelectAndClose}
+                            onEnterPortalMode={() => {
+                                onEnterPortalMode();
+                                setIsBuildSheetOpen(false);
+                            }}
+                            focusedTower={focusedTower}
+                            selectedTowerToBuild={selectedTowerToBuild}
+                            onUpgradeTower={handleUpgrade}
+                            onSellTower={handleSell}
+                            onBack={cancelInteractions}
+                            localPlayer={localPlayer}
+                            isMobile
+                            buffedTowerIds={buffedTowerIds}
+                            currentWave={currentWave}
+                          />
+                        )
                     )}
                   </ScrollArea>
                 </div>

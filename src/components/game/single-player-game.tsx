@@ -358,15 +358,18 @@ export default function SinglePlayerGame({
     }, [gameConfig]);
 
     const handleEndOfWave = useCallback(() => {
-        if (!gameConfig) return;
+        const gameIsOver = gameStateRef.current.lives <= 0;
+        const allEnemiesHandled = enemiesRef.current.length === 0;
 
-        if (gameStateRef.current.lives <= 0) {
+        if (!allEnemiesHandled || gameIsOver) return;
+
+        if (gameIsOver) {
             handleGameEnd(false);
             return;
         }
 
         const nextWaveIndex = currentWaveRef.current + 1;
-        if (nextWaveIndex >= gameConfig.waves.length) {
+        if (nextWaveIndex >= gameConfig!.waves.length) {
             handleGameEnd(true);
             return;
         }
@@ -374,18 +377,16 @@ export default function SinglePlayerGame({
         const expectedElements = 1 + Math.floor(nextWaveIndex / 5);
         const player = localPlayerRef.current;
         const shouldPickElement = (player?.unlockedElements?.length ?? 0) < expectedElements;
-        
+
         if (shouldPickElement && (nextWaveIndex % 5 === 0)) {
             setGameStatus('picking-element');
             setIsIntermission(true);
-            return; // Halt further execution
+        } else {
+            setCurrentWave(nextWaveIndex);
+            setIsIntermission(true);
+            setWaveStartCountdown(INTERMISSION_TIME);
+            setPortals([]);
         }
-        
-        // Default case: no element pick needed
-        setCurrentWave(nextWaveIndex);
-        setIsIntermission(true);
-        setWaveStartCountdown(INTERMISSION_TIME);
-        setPortals([]); // Clear portals at the end of a wave
     }, [gameConfig, handleGameEnd]);
 
     const handleStartNextWaveNow = useCallback(() => {
@@ -860,7 +861,7 @@ export default function SinglePlayerGame({
             const spawnQueueEmpty = spawnQueueRef.current.length === 0;
             const activeEnemies = nextEnemies.filter(e => !e.deathTimestamp);
 
-            if (spawnQueueEmpty && activeEnemies.length === 0 && !isIntermissionRef.current) {
+            if (spawnQueueEmpty && activeEnemies.length === 0) {
                 handleEndOfWave();
             }
         };
@@ -960,6 +961,8 @@ export default function SinglePlayerGame({
                     allTowers={gameConfig.towers}
                     attacks={attacks}
                     isPlacingPortalEntrance={portalPhase !== 'idle'}
+                    gameMode="coop"
+                    onSendEnemy={() => {}}
                 />
             </div>
 
@@ -993,6 +996,7 @@ export default function SinglePlayerGame({
 
 
     
+
 
 
 
