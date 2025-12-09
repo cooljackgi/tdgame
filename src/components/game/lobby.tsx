@@ -30,13 +30,14 @@ import { Separator } from '../ui/separator';
 type GameLobbyInfo = {
   id: string;
   gameName: string;
+  gameMode: 'coop' | 'versus';
   player1: Player | null;
   player2: Player | null;
   player1Id: string | null;
   gameStatus: 'waiting' | 'playing' | 'gameover' | 'archived';
 };
 
-const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () => void }) => {
+const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: (gameMode: 'coop' | 'versus') => void }) => {
   const [openGames, setOpenGames] = useState<GameLobbyInfo[]>([]);
   const [activeGame, setActiveGame] = useState<GameLobbyInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +60,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         return {
           id: doc.id,
           gameName: data.gameName || `Spiel ${doc.id.substring(0, 5)}`,
+          gameMode: data.gameMode || 'coop',
           player1: data.players?.player1 || null,
           player2: data.players?.player2 || null,
           player1Id: data.player1Id || null,
@@ -95,6 +97,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
               const gameData = {
                  id: gameDoc.id,
                  gameName: data.gameName || `Spiel ${gameDoc.id.substring(0, 5)}`,
+                 gameMode: data.gameMode || 'coop',
                  player1: data.players?.player1 || null,
                  player2: data.players?.player2 || null,
                  player1Id: data.player1Id || null,
@@ -200,9 +203,14 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: () =>
         <Card className="border-white/10 bg-card/70 backdrop-blur-sm">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-xl">Offene Spiele</CardTitle>
-            <Button onClick={onNewGame}>
-                <Swords className="mr-2"/> Neues Spiel
-            </Button>
+            <div className="flex gap-2">
+                <Button onClick={() => onNewGame('coop')}>
+                    <Users className="mr-2"/> Neues Koop-Spiel
+                </Button>
+                <Button onClick={() => onNewGame('versus')} variant="destructive">
+                    <Swords className="mr-2"/> Neues Versus-Spiel
+                </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {openGames.length === 0 ? (

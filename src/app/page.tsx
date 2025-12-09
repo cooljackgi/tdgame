@@ -66,14 +66,14 @@ export default function Home() {
   }, []);
 
 
-  const handleNewCoopGame = useCallback(async () => {
+  const handleNewCoopGame = useCallback(async (gameMode: 'coop' | 'versus') => {
     if (!user) {
       toast({ title: 'Anmeldung erforderlich', description: 'Bitte melde dich an, um ein Multiplayer-Spiel zu erstellen.', variant: 'destructive' });
       return;
     }
     setLoading(true);
     try {
-      const gameName = `${user.displayName}'s Spiel`;
+      const gameName = `${user.displayName}'s Spiel (${gameMode})`;
       const difficultyMod = difficultyModifiers[difficulty];
 
       const player1: Player = { 
@@ -88,9 +88,10 @@ export default function Home() {
 
       const gameDocRef = await addDoc(collection(db, "games"), {
         gameName: gameName,
+        gameMode: gameMode, // NEU: Spielmodus speichern
         player1Id: user.uid,
         player2Id: null,
-        members: { [user.uid]: true }, // Correctly initialize as an object
+        members: { [user.uid]: true },
         difficulty: difficulty,
         players: { player1: player1, player2: null },
         gameState: { lives: difficultyMod.startLives },
