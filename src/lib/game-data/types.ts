@@ -25,6 +25,16 @@ export type GameState = {
   lives: number;
 }
 
+export type PlayerGameState = {
+  lives: number;
+  towersByCell: Record<string, PlacedTower>;
+  enemies: Enemy[];
+  workers: Worker[];
+  ghosts: GhostFoundation[];
+  portals: Portal[];
+  currentPath: Node[];
+};
+
 export type GameSaveState = {
   players: { player1: Player, player2: Player | null };
   gameState: GameState;
@@ -210,6 +220,7 @@ export type DoTEffect = {
 
 export type Enemy = {
   id: string;
+  owner: Player['id'];
   type: EnemyType;
   health: number;
   maxHealth: number;
@@ -351,6 +362,7 @@ export interface GameSessionState {
   ghosts: GhostFoundation[];
   portals: Portal[];
   versusState?: VersusState; // Added for versus mode
+  gameMode: 'coop' | 'versus';
 }
 
 // --- Versus Mode Specific Types ---
