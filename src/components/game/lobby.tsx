@@ -10,7 +10,7 @@ import { collection, query, where, onSnapshot, orderBy, updateDoc, doc, limit } 
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -207,7 +207,7 @@ const Lobby = ({ currentUser, onNewGame }: { currentUser: User, onNewGame: (game
                 <Button onClick={() => onNewGame('coop')}>
                     <Users className="mr-2"/> Neues Koop-Spiel
                 </Button>
-                <Button onClick={() => onNewGame('versus')} variant="destructive">
+                <Button onClick={() => onNewGame('versus')} variant="secondary">
                     <Swords className="mr-2"/> Neues Versus-Spiel
                 </Button>
             </div>

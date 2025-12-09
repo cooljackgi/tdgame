@@ -86,9 +86,9 @@ export default function Home() {
           portalCooldownUntilWave: 0
       };
 
-      const gameDocRef = await addDoc(collection(db, "games"), {
+      const newGameData: any = {
         gameName: gameName,
-        gameMode: gameMode, // NEU: Spielmodus speichern
+        gameMode: gameMode,
         player1Id: user.uid,
         player2Id: null,
         members: { [user.uid]: true },
@@ -97,13 +97,25 @@ export default function Home() {
         gameState: { lives: difficultyMod.startLives },
         gameStatus: 'waiting',
         currentWave: 0,
-        isIntermission: true,
-        waveStartCountdown: 999,
         createdAt: serverTimestamp(),
         towersByCell: {},
         lastDeltaTimestamp: null,
         delta: {},
-      });
+      };
+
+      if (gameMode === 'versus') {
+          newGameData.isIntermission = false;
+          newGameData.versusState = {
+              nextWaveTimestamp: serverTimestamp(),
+              player1: { spawnQueue: [] },
+              player2: { spawnQueue: [] },
+          };
+      } else {
+           newGameData.isIntermission = true;
+           newGameData.waveStartCountdown = 999;
+      }
+
+      const gameDocRef = await addDoc(collection(db, "games"), newGameData);
       
       setActiveGame('coop');
       window.location.href = `/game/${gameDocRef.id}`;
@@ -180,7 +192,7 @@ export default function Home() {
                     Elementarer Nexus
                 </h1>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                    Ein strategisches Koop-Tower-Defense-Spiel. Verteidige den Nexus allein oder mit einem Freund gegen Wellen von Gegnern.
+                    Ein strategisches Tower-Defense-Spiel. Verteidige den Nexus allein oder mit einem Freund gegen Wellen von Gegnern.
                 </p>
             </div>
             
