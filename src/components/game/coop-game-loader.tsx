@@ -605,8 +605,9 @@ export default function CoopGameLoader() {
                     setLocalPlayerId(role);
 
                     if (role === 'player1' && !gameDataLoaded) {
+                         const mode = data.gameMode || 'coop';
                          setDifficulty(data.difficulty || 'Normal');
-                         setGameMode(data.gameMode || 'coop');
+                         setGameMode(mode);
                          setPlayers(normalizePlayers(data.players));
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
@@ -615,12 +616,24 @@ export default function CoopGameLoader() {
                          
                          const diffMods = difficultyModifiers[data.difficulty || 'Normal'];
                          const defaultPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [];
-                         const initialPlayerStates: Record<Player['id'], PlayerGameState> = {
-                           player1: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [{id: 'p1-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null}], ghosts: [], portals: [], currentPath: defaultPath },
-                           player2: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [{id: 'p2-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null}], ghosts: [], portals: [], currentPath: defaultPath },
-                           spectator: { lives: 0, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
-                         };
-                         setPlayerStates(initialPlayerStates);
+                         
+                         const p1Worker = {id: 'p1-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null};
+                         const p2Worker = {id: 'p2-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null};
+                         
+                         let initialPlayerStates: Record<string, PlayerGameState>;
+
+                         if (mode === 'coop') {
+                             initialPlayerStates = {
+                               player1: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [p1Worker], ghosts: [], portals: [], currentPath: defaultPath },
+                               player2: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [p2Worker], ghosts: [], portals: [], currentPath: defaultPath },
+                             };
+                         } else { // versus
+                             initialPlayerStates = {
+                               player1: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [p1Worker], ghosts: [], portals: [], currentPath: defaultPath },
+                               player2: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [p2Worker], ghosts: [], portals: [], currentPath: defaultPath },
+                             };
+                         }
+                         setPlayerStates(initialPlayerStates as any);
 
                          setGameDataLoaded(true);
                          setLoading(false);
