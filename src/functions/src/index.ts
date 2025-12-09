@@ -62,7 +62,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
          if (gameData.player2Id !== uid) { // A different player is P2
             throw new functions.https.HttpsError("already-exists", "The game is already full.");
          }
-         // The current user is already P2, do nothing further. This allows rejoining.
+         // The current user is already P2, do nothing further in the transaction. This allows rejoining.
          return; 
       }
 

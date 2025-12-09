@@ -255,6 +255,7 @@ export enum DeltaType {
     GHOST_UPDATE,        // payload: GhostFoundation[]
     PORTAL_UPDATE,       // payload: Portal[]
     STATS_UPDATE,        // payload: { totalKilled, totalLeaked }
+    VERSUS_STATE_UPDATE, // New: for versus mode state
 }
 
 
@@ -282,7 +283,8 @@ export type GameDelta =
     | [type: DeltaType.WORKER_UPDATE, payload: Worker[]]
     | [type: DeltaType.GHOST_UPDATE, payload: GhostFoundation[]]
     | [type: DeltaType.PORTAL_UPDATE, payload: Portal[]]
-    | [type: DeltaType.STATS_UPDATE, payload: { totalKilled: number, totalLeaked: number }];
+    | [type: DeltaType.STATS_UPDATE, payload: { totalKilled: number, totalLeaked: number }]
+    | [type: DeltaType.VERSUS_STATE_UPDATE, payload: VersusState];
 
 
 export type WaveEnemyData = {
@@ -348,5 +350,23 @@ export interface GameSessionState {
   workers: Worker[];
   ghosts: GhostFoundation[];
   portals: Portal[];
+  versusState?: VersusState; // Added for versus mode
 }
 
+// --- Versus Mode Specific Types ---
+export type VersusEnemyToSend = {
+  type: EnemyType;
+  cost: number;
+  incomeBonus: number;
+  health: number; // Base health for display
+};
+
+export type VersusState = {
+  nextWaveTimestamp: number;
+  player1: {
+    spawnQueue: { type: EnemyType; count: number }[];
+  };
+  player2: {
+    spawnQueue: { type: EnemyType; count: number }[];
+  };
+};
