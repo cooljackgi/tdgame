@@ -614,10 +614,11 @@ export default function CoopGameLoader() {
                          setVersusState(data.versusState || null);
                          
                          const diffMods = difficultyModifiers[data.difficulty || 'Normal'];
-                         const initialPlayerStates = {
-                             player1: { lives: diffMods.startLives, towersByCell: data.player1?.towersByCell || {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [] },
-                             player2: { lives: diffMods.startLives, towersByCell: data.player2?.towersByCell || {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [] },
-                             spectator: { lives: 0, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+                         const defaultPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, [], GRID_ROWS, GRID_COLS) || [];
+                         const initialPlayerStates: Record<Player['id'], PlayerGameState> = {
+                           player1: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [{id: 'p1-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null}], ghosts: [], portals: [], currentPath: defaultPath },
+                           player2: { lives: diffMods.startLives, towersByCell: {}, enemies: [], workers: [{id: 'p2-worker-1', x: 64, y: 64, speed: 260, state: 'idle', queue: [], moveTarget: null}], ghosts: [], portals: [], currentPath: defaultPath },
+                           spectator: { lives: 0, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
                          };
                          setPlayerStates(initialPlayerStates);
 
@@ -864,7 +865,6 @@ export default function CoopGameLoader() {
                 <LayoutComponent
                     players={players} 
                     setPlayers={setPlayers} 
-                    gameState={{lives: 0}}
                     playerStates={playerStates}
                     localPlayer={localPlayer!}
                     currentWave={currentWave} 
@@ -954,3 +954,6 @@ export default function CoopGameLoader() {
 
 
 
+
+
+    
