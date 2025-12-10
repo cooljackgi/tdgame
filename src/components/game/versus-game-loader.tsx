@@ -195,11 +195,11 @@ export default function VersusGameLoader() {
   }, [isGameHost, gameConfig]);
     
     const handleActionData = useCallback((msg: any) => {
-        if (!isGameHost) return;
+        if (!isGameHost || !gameDataLoaded) return;
         const { type, payload } = msg;
 
         if (type === 'CLIENT_READY') {
-             if (playerStatesRef.current && gameDataLoaded) { // Ensure host is ready before sending snapshot
+             if (playerStatesRef.current) {
                 const fullState: GameSessionState = {
                     gameMode: 'versus',
                     players: playersRef.current,
@@ -314,25 +314,27 @@ export default function VersusGameLoader() {
                     else if (data.player2Id === user.uid) role = 'player2';
                     
                     setLocalPlayerId(role);
-                    setPlayers(normalizePlayers(data.players));
                     
                     if (role === 'player1') {
-                         if (!gameDataLoaded) {
+                         if (!gameDataLoaded) { // Only load initial state once
+                            setPlayers(normalizePlayers(data.players));
                             setDifficulty(data.difficulty || 'Normal');
                             setPlayerStates(data.playerStates); 
                             setGameStatus(data.gameStatus);
                             setIsIntermission(data.isIntermission ?? true);
                             setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                            setGameDataLoaded(true);
+                            setGameDataLoaded(true); // LOCK IT
                             setLoading(false);
-                         } else {
-                            if (data.playerStates) setPlayerStates(data.playerStates);
+                         } else { // Subsequent updates for host only concern player data
+                             setPlayers(current => normalizePlayers(data.players));
+                             setPlayerStates(data.playerStates); // Also update states
                          }
-                    } else if (role === 'player2') {
-                        // CLIENT: Just get basic info and then wait for snapshot via WebRTC
-                        setDifficulty(data.difficulty || 'Normal');
-                        setGameStatus(data.gameStatus);
-                        setLoading(false); // Stop loading, let the component render and wait for snapshot
+                    } else if (role !== 'spectator') { // Client or P2
+                        setPlayers(normalizePlayers(data.players));
+                        if (!gameDataLoaded) { // First time loading for P2
+                           setGameDataLoaded(true); // Prevent re-loading from DB
+                           setLoading(false);
+                        }
                     }
                 });
             } catch (error: any) {
@@ -356,13 +358,9 @@ export default function VersusGameLoader() {
   
   const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
 
-  if (configLoading || loading || !localPlayer) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
-  }
-
-  // Final check for player 2: Wait for playerStates to be populated by the host snapshot
-  if (!isGameHost && !playerStates) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
+  // The final loading condition. If playerStates is null, we can't render the game.
+  if (configLoading || loading || !localPlayer || !playerStates) {
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{!playerStates ? "Warte auf Spielzustand vom Host..." : loadingMessage}</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
