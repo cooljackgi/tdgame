@@ -94,11 +94,9 @@ export default function Home() {
         members: { [user.uid]: true },
         difficulty: difficulty,
         players: { player1: player1, player2: null },
-        gameState: { lives: difficultyMod.startLives },
         gameStatus: 'waiting',
         currentWave: 0,
         createdAt: serverTimestamp(),
-        towersByCell: {},
         lastDeltaTimestamp: null,
         delta: {},
       };
@@ -110,9 +108,11 @@ export default function Home() {
               player1: { spawnQueue: [] },
               player2: { spawnQueue: [] },
           };
-      } else {
+      } else { // coop
            newGameData.isIntermission = true;
            newGameData.waveStartCountdown = 999;
+           newGameData.gameState = { lives: difficultyMod.startLives };
+           newGameData.towersByCell = {};
       }
 
       const gameDocRef = await addDoc(collection(db, "games"), newGameData);

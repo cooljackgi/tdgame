@@ -347,23 +347,35 @@ export interface Worker {
 export interface GhostFoundation { id: string; row: number; col: number; towerId: string; startedAt: number; buildTimeMs: number; progress: number; }
 
 export type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
-export interface GameSessionState {
+
+// Updated GameSessionState
+export type GameSessionState = {
+  gameMode: 'coop' | 'versus';
   players: Player[];
-  gameState: GameState;
-  towersByCell: Record<string, PlacedTower>;
-  enemies: Enemy[];
+  
+  // Coop-specific state
+  gameState?: GameState;
+  towersByCell?: Record<string, PlacedTower>;
+  enemies?: Enemy[];
+  workers?: Worker[];
+  ghosts?: GhostFoundation[];
+  portals?: Portal[];
+  currentPath?: Node[];
+  
+  // Versus-specific state
+  playerStates?: {
+    player1: PlayerGameState;
+    player2: PlayerGameState;
+  };
+  
+  // Shared state
   currentWave: number;
   difficulty: Difficulty;
   gameStatus: GameStatus;
-  currentPath: Node[];
   waveStartCountdown: number;
   isIntermission: boolean;
-  workers: Worker[];
-  ghosts: GhostFoundation[];
-  portals: Portal[];
-  versusState?: VersusState; // Added for versus mode
-  gameMode: 'coop' | 'versus';
-}
+  versusState?: VersusState;
+};
 
 // --- Versus Mode Specific Types ---
 export type VersusEnemyToSend = {
