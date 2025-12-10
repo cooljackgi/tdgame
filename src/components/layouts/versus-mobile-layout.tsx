@@ -170,6 +170,13 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
   
+  const opponent = players.find(p => p && p.id !== localPlayer.id);
+
+  const opponentConnectionStatus = () => {
+    if (!opponent) return 'waiting';
+    return isWsConnected ? 'connected' : 'disconnected';
+  }
+
   const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -256,18 +263,27 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
             className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
         >
            <div className="grid grid-cols-2 gap-2">
-            {players.map((p) => p && (
-              <div key={p.id} className="min-w-0">
+            
+              <PlayerStats
+                player={localPlayer}
+                lives={gameState.lives}
+                maxLives={maxLives}
+                isCompact
+                isLocalPlayer={true}
+                isCoop={isCoop}
+              />
+            
+            {opponent && (
                 <PlayerStats
-                  player={p}
-                  lives={gameState.lives}
+                  player={opponent}
+                  lives={gameState.lives} // This will need to be opponent's lives
                   maxLives={maxLives}
                   isCompact
-                  isLocalPlayer={p.id === localPlayer.id}
+                  isLocalPlayer={false}
                   isCoop={isCoop}
+                  connectionStatus={opponentConnectionStatus()}
                 />
-              </div>
-            ))}
+            )}
           </div>
         </div>
       </div>

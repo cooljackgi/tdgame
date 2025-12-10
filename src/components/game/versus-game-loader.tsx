@@ -18,7 +18,7 @@ import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
-import { useWebRTC } from '@/hooks/use-webrtc';
+import { useWebRTC, type NetMsg } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { VersusDesktopLayout } from '@/components/layouts/versus-desktop-layout';
@@ -296,7 +296,7 @@ export default function VersusGameLoader() {
                     setLocalPlayerId(role);
 
                     // HOST ONLY: Load initial state ONCE
-                    if (role === 'player1' && !gameDataLoaded) {
+                    if (role === 'player1') {
                          setDifficulty(data.difficulty || 'Normal');
                          setPlayers(normalizePlayers(data.players));
                          setPlayerStates(data.playerStates); // Load the whole object
@@ -310,16 +310,7 @@ export default function VersusGameLoader() {
                         // CLIENT: The `loading` state will now be handled by WebRTC connection status.
                         // We just need to set the players and wait for the snapshot.
                         setPlayers(normalizePlayers(data.players));
-                        setLoading(false); // **THE FIX**: Stop loading for P2 immediately.
-                    } else if (role === 'player1' && gameDataLoaded) {
-                        // HOST AFTER INITIAL LOAD: Only update other player's data
-                        setPlayers(currentPlayers => {
-                           const newPlayers = normalizePlayers(data.players);
-                           const self = currentPlayers.find(p => p.id === 'player1');
-                           const other = newPlayers.find(p => p.id === 'player2');
-                           const finalPlayers = [self, other].filter(Boolean) as Player[];
-                           return finalPlayers;
-                        });
+                        setLoading(false); // Stop loading for P2 immediately.
                     }
                 });
             } catch (error: any) {

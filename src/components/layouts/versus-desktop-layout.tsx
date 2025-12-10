@@ -152,6 +152,13 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
 
+  const opponent = players.find(p => p && p.id !== localPlayer.id);
+
+  const opponentConnectionStatus = () => {
+    if (!opponent) return 'waiting';
+    return isWsConnected ? 'connected' : 'disconnected';
+  }
+
   const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
@@ -196,17 +203,24 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
       {/* Left Sidebar */}
       <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-r from-background/95 via-background/80 to-transparent backdrop-blur-md border-r border-border/50 overflow-y-auto">
       {interactionPromptComponent}
-        <div id="tutorial-player-stats">
-            {players.map(player => player && (
-              <PlayerStats
-                key={player.id}
-                player={player}
-                lives={gameState.lives}
-                maxLives={maxLives}
-                isLocalPlayer={player.id === localPlayer.id}
-                isCoop={isCoop}
-              />
-            ))}
+        <div id="tutorial-player-stats" className="space-y-4">
+            <PlayerStats
+              player={localPlayer}
+              lives={gameState.lives}
+              maxLives={maxLives}
+              isLocalPlayer={true}
+              isCoop={isCoop}
+            />
+            {opponent && (
+                <PlayerStats
+                    player={opponent}
+                    lives={gameState.lives} // This will need to be opponent's lives
+                    maxLives={maxLives}
+                    isLocalPlayer={false}
+                    isCoop={isCoop}
+                    connectionStatus={opponentConnectionStatus()}
+                />
+            )}
         </div>
          <Card className="p-4 space-y-2">
           <div className="flex justify-around items-center">
