@@ -92,12 +92,16 @@ export default function VersusGameLoader() {
   
   const localPlayerState = useMemo(() => {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
-    return playerStates[localPlayerId as 'player1' | 'player2'];
+    const key = localPlayerId as 'player1' | 'player2';
+    if (!playerStates[key]) return null;
+    return playerStates[key];
   }, [localPlayerId, playerStates]);
+
 
   const opponentPlayerState = useMemo(() => {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     const opponentId = localPlayerId === 'player1' ? 'player2' : 'player1';
+    if (!playerStates[opponentId]) return null;
     return playerStates[opponentId];
   }, [localPlayerId, playerStates]);
 
@@ -178,7 +182,7 @@ export default function VersusGameLoader() {
   }, [isGameHost]);
   
   const handleSendEnemy = useCallback((payload: VersusEnemyToSend) => {
-      dispatchAction('send_enemy', payload);
+      // dispatchAction('send_enemy', payload);
   }, []);
 
   const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal' | 'send_enemy', payload:any) => {
@@ -193,8 +197,22 @@ export default function VersusGameLoader() {
         if (!isGameHost) return;
         const { type, payload } = msg;
 
-        // ...
-    }, [isGameHost, onHostAction]);
+        if (type === 'CLIENT_READY') {
+             if (playerStatesRef.current) {
+                const fullState: GameSessionState = {
+                    gameMode: 'versus',
+                    players: playersRef.current,
+                    playerStates: playerStatesRef.current,
+                    currentWave: 0,
+                    difficulty,
+                    gameStatus: gameStatusRef.current,
+                    isIntermission: isIntermissionRef.current,
+                    waveStartCountdown
+                };
+                deltaQueueRef.current.push([DeltaType.SNAPSHOT, fullState]);
+             }
+        }
+    }, [isGameHost, difficulty, waveStartCountdown]);
     
     const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
         localPlayerId ? gameId : null, 
@@ -298,7 +316,7 @@ export default function VersusGameLoader() {
                     if (role === 'player1' && !gameDataLoaded) {
                          setDifficulty(data.difficulty || 'Normal');
                          setPlayers(normalizePlayers(data.players));
-                         setPlayerStates(data.playerStates);
+                         setPlayerStates(data.playerStates); // Load the entire versus state
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
@@ -306,8 +324,9 @@ export default function VersusGameLoader() {
                          setGameDataLoaded(true);
                          setLoading(false);
                     } else if (role !== 'player1') {
+                        // Client logic for versus mode
                         setPlayers(normalizePlayers(data.players));
-                         if (!gameDataLoaded) {
+                        if (!gameDataLoaded) {
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
@@ -319,6 +338,9 @@ export default function VersusGameLoader() {
                            const finalPlayers = [self, other].filter(Boolean) as Player[];
                            return finalPlayers;
                         });
+                        if (data.playerStates) {
+                            setPlayerStates(data.playerStates);
+                        }
                     }
                 });
             } catch (error: any) {
@@ -342,8 +364,13 @@ export default function VersusGameLoader() {
   
   const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
 
-  if (configLoading || loading || !gameConfig || !localPlayer || (!isGameHost && !playerStates)) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{!isGameHost && !playerStates ? "Warte auf Spielzustand vom Host..." : loadingMessage}</p></div>;
+  if (configLoading || loading || !localPlayer) {
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
+  }
+
+  // Final check for player 2
+  if (!isGameHost && !localPlayerState) {
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });

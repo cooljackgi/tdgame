@@ -124,14 +124,14 @@ export function useWebRTC(
     const setupDataChannelEvents = useCallback((dc: RTCDataChannel) => {
         const handleOpen = () => {
             if (!gameId) return;
-            logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_OPEN' : 'DC_OPEN', { label: dc.label });
+            logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_OPEN' : 'DC_OPEN_ACTIONS', { label: dc.label });
             const isGameOpen = gameDataChannelRef.current?.readyState === 'open';
             const isActionsOpen = actionsChannelRef.current?.readyState === 'open';
             if (isGameOpen && isActionsOpen) setIsConnected(true);
         };
 
         const handleClose = () => {
-            if (gameId) logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_CLOSE' : 'DC_CLOSE', { label: dc.label });
+            if (gameId) logWebRTCEvent(gameId, isHost ? 'host' : 'client', dc.label === 'game_data' ? 'DC_CLOSE' : 'DC_CLOSE_ACTIONS', { label: dc.label });
             setIsConnected(false);
         };
 
@@ -325,12 +325,13 @@ export function useWebRTC(
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
                 }
-                
-                // This is the CRITICAL ADDITION
+
+                // Relay the CLIENT_READY message to the host's logic
                 if (msg.type === 'CLIENT_READY' && isHost && onActionMessageRef.current) {
                     onActionMessageRef.current(msg);
                     return;
                 }
+                
 
                 logWebRTCEvent(gameId, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
 
