@@ -274,13 +274,15 @@ export default function VersusGameLoader() {
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                         if (data.playerStates) { // Only finish loading if the crucial data is present
+                         
+                         // CORRECTED LOADING LOGIC
+                         if (data.playerStates) {
                             setGameDataLoaded(true);
                             setLoading(false);
                          }
                     } else if (role !== 'player1') {
                         setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded && data.playerStates) { // Client also waits for playerStates
+                        if (!gameDataLoaded && data.playerStates?.player1 && data.playerStates?.player2) {
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
