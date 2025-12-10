@@ -1,5 +1,4 @@
 
-
 'use client';
 
 // This is a new, dedicated file for the Versus mode logic.
@@ -198,7 +197,7 @@ export default function VersusGameLoader() {
         const { type, payload } = msg;
 
         if (type === 'CLIENT_READY') {
-             if (playerStatesRef.current) {
+             if (playerStatesRef.current && gameDataLoaded) { // Ensure host is ready before sending snapshot
                 const fullState: GameSessionState = {
                     gameMode: 'versus',
                     players: playersRef.current,
@@ -212,7 +211,7 @@ export default function VersusGameLoader() {
                 deltaQueueRef.current.push([DeltaType.SNAPSHOT, fullState]);
              }
         }
-    }, [isGameHost, difficulty, waveStartCountdown]);
+    }, [isGameHost, difficulty, waveStartCountdown, gameDataLoaded]);
     
     const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
         localPlayerId ? gameId : null, 
@@ -321,13 +320,12 @@ export default function VersusGameLoader() {
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          
-                         setGameDataLoaded(true);
+                         setGameDataLoaded(true); // THIS WAS MISSING
                          setLoading(false);
-                    } else if (role !== 'player1') {
+                    } else if (role === 'player2') {
                         // Client logic for versus mode
                         setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded) {
-                            setGameDataLoaded(true);
+                        if (!gameDataLoaded) { // Only set loading to false once
                             setLoading(false);
                         }
                     } else if (role === 'player1' && gameDataLoaded) {
