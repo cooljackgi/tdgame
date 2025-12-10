@@ -71,7 +71,7 @@ const PlayerVersusControls = ({
   }
 
   return (
-    <Card>
+    <Card className="bg-transparent border-none shadow-none h-full">
       <CardHeader>
         <CardTitle>Gegner senden</CardTitle>
         <CardDescription>
@@ -79,7 +79,7 @@ const PlayerVersusControls = ({
         </CardDescription>
       </CardHeader>
       <CardContent>
-         <ScrollArea className="h-[calc(100vh-320px)] pr-2">
+         <ScrollArea className="h-[calc(100vh-380px)] pr-2">
             {content}
          </ScrollArea>
       </CardContent>

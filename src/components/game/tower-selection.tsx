@@ -3,15 +3,16 @@
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { elementBackgroundColors } from "@/lib/game-data/constants";
-import type { Tower, PlacedTower, Element } from '@/lib/game-data/types';
-import type { Player } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Element, Player, VersusEnemyToSend } from '@/lib/game-data/types';
 import { Button } from "@/components/ui/button";
-import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna, Bot, Timer } from "lucide-react";
+import { Coins, Zap, ArrowLeft, Hammer, DollarSign, Bomb, Gauge, ChevronsUp, Target, Dna, Bot, Timer, Swords } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "../ui/tooltip";
 import TowerComponent from "@/components/game/Tower";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import PlayerVersusControls from "./player-versus-controls";
 
 
 type TowerSelectionProps = {
@@ -27,6 +28,8 @@ type TowerSelectionProps = {
   isMobile?: boolean;
   buffedTowerIds: Set<string>;
   currentWave: number;
+  gameMode?: 'coop' | 'versus';
+  onSendEnemy: (payload: { type: any; cost: number; incomeBonus: number }) => void;
 }
 
 const TowerCardIcon = React.memo(function TowerCardIcon({ tower }: { tower: Tower }) {
@@ -108,7 +111,7 @@ const StatDisplay = ({ icon: Icon, value, buff, label }: { icon: React.FC<any>, 
 );
 
 
-const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, onEnterPortalMode, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds, currentWave }: TowerSelectionProps) {
+const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectTower, onEnterPortalMode, focusedTower, selectedTowerToBuild, onUpgradeTower, onSellTower, onBack, localPlayer, isMobile = false, buffedTowerIds, currentWave, gameMode, onSendEnemy }: TowerSelectionProps) {
   
   const unlockedElementsSet = React.useMemo(() => new Set(localPlayer.unlockedElements), [localPlayer.unlockedElements]);
   
@@ -202,10 +205,9 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
     </Tooltip>
   );
 
-
-  const content = (
+  const buildContent = (
       <>
-      {focusedTower && focusedTowerStats ? (
+        {focusedTower && focusedTowerStats ? (
          <div className="space-y-3">
             <div className="flex items-center justify-between p-2 bg-card rounded-lg">
                 <div className="flex flex-col">
@@ -271,22 +273,44 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
 
   const getTitle = () => {
     if (focusedTower) return `Upgrade ${focusedTower.name}`;
-    return `Turm-Menü (${localPlayer?.name || '...'})`;
+    return `Menü (${localPlayer?.name || '...'})`;
   };
+  
+  const content = gameMode === 'versus' ? (
+    <Tabs defaultValue="build" className="flex flex-col h-full">
+      <TabsList className="grid w-full grid-cols-2">
+        <TabsTrigger value="build"><Hammer className="h-4 w-4 mr-2" />Bauen</TabsTrigger>
+        <TabsTrigger value="attack"><Swords className="h-4 w-4 mr-2" />Angriff</TabsTrigger>
+      </TabsList>
+      <TabsContent value="build" className="flex-grow min-h-0">
+          <ScrollArea className="h-full pr-2">
+            {buildContent}
+          </ScrollArea>
+      </TabsContent>
+      <TabsContent value="attack" className="flex-grow min-h-0">
+         <PlayerVersusControls 
+            localPlayer={localPlayer}
+            onSendEnemy={onSendEnemy}
+            isMobile={isMobile}
+         />
+      </TabsContent>
+    </Tabs>
+  ) : buildContent;
+
 
   if (isMobile) {
     return (
       <TooltipProvider>
-        <ScrollArea className="h-full">
-          {content}
-        </ScrollArea>
+        <div className="h-full">
+            {content}
+        </div>
       </TooltipProvider>
     );
   }
 
   return (
     <TooltipProvider>
-      <Card>
+      <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center gap-2">
           {focusedTower ? (
             <Button variant="ghost" size="icon" onClick={onBack}>
@@ -299,10 +323,8 @@ const TowerSelection = React.memo(function TowerSelection({ allTowers, onSelectT
             {getTitle()}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[calc(100vh-280px)] pr-4">
+        <CardContent className="flex-grow min-h-0">
             {content}
-          </ScrollArea>
         </CardContent>
       </Card>
     </TooltipProvider>

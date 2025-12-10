@@ -94,6 +94,8 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
+  onSendEnemy: (payload: any) => void;
+  gameMode: 'coop' | 'versus';
 }
 
 const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
@@ -122,7 +124,9 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    onSendEnemy,
+    gameMode
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
@@ -186,7 +190,7 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
-    : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Turm bauen');
+    : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Aktionen');
   const sheetIcon = isSpectator ? <Eye /> : <Hammer />;
 
   const handleSelectAndClose = (tower: Tower | null) => {
@@ -371,7 +375,6 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
                   </SheetHeader>
                 </div>
                 <div className="flex-grow min-h-0">
-                  <ScrollArea className="h-full px-4 py-4">
                     {!isSpectator && (
                       <TowerSelection
                         allTowers={allTowers}
@@ -389,9 +392,10 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
                         isMobile
                         buffedTowerIds={buffedTowerIds}
                         currentWave={currentWave}
+                        gameMode={gameMode}
+                        onSendEnemy={onSendEnemy}
                       />
                     )}
-                  </ScrollArea>
                 </div>
               </SheetContent>
             </Sheet>

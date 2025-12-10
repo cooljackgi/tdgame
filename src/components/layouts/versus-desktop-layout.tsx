@@ -87,6 +87,8 @@ interface DesktopLayoutProps {
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
   isPlacingPortalEntrance?: boolean;
+  onSendEnemy: (payload: any) => void; // Added for versus
+  gameMode: 'coop' | 'versus';
 }
 
 export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props: DesktopLayoutProps) {
@@ -118,7 +120,9 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    onSendEnemy,
+    gameMode
   } = props;
   
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -295,6 +299,8 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
                 localPlayer={localPlayer}
                 buffedTowerIds={buffedTowerIds}
                 currentWave={currentWave}
+                gameMode={gameMode}
+                onSendEnemy={onSendEnemy}
               />
             )}
         </div>
