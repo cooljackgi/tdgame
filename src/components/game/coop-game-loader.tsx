@@ -47,7 +47,7 @@ export default function CoopGameLoader() {
 
   // Core Game State
   const [players, setPlayers] = useState<Player[]>([]);
-  const [playerStates, setPlayerStates] = useState<Record<Player['id'], PlayerGameState>>({} as any);
+  const [playerStates, setPlayerStates] = useState<Record<string, PlayerGameState>>({});
 
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
@@ -99,7 +99,7 @@ export default function CoopGameLoader() {
   const lastFpsUpdateRef = useRef(Date.now());
   const fpsRef = useRef(0);
 
-  const deltaQueueRef = useRef<GameDelta[]>([]);
+  const deltaQueueRef = useRef<any[]>([]);
   const lastDeltaSentRef = useRef(0);
   
   const playerStatesRef = useRef(playerStates);
@@ -151,7 +151,7 @@ export default function CoopGameLoader() {
     if (isGameHost) return;
     
     if (msg.type === 'deltas') {
-        const deltas = msg.payload as GameDelta[];
+        const deltas = msg.payload as any[];
         for (const delta of deltas) {
             const deltaType = delta[0];
             const deltaPayload = delta[1];
@@ -223,7 +223,7 @@ export default function CoopGameLoader() {
     
     // This is the core change. We now operate on playerStates.
     setPlayerStates(currentStates => {
-      const newPlayerStates: Record<Player['id'], PlayerGameState> = JSON.parse(JSON.stringify(currentStates));
+      const newPlayerStates: Record<string, PlayerGameState> = JSON.parse(JSON.stringify(currentStates));
 
       // Determine which player's state to modify
       let targetPlayerId: 'player1' | 'player2' = payload.playerId;
@@ -467,7 +467,7 @@ export default function CoopGameLoader() {
 
 
     useEffect(() => {
-        if (!user || !gameId || configLoading) return;
+        if (!user || !gameId || configLoading || !gameConfig) return;
         const gameDocRef = doc(db, 'games', gameId);
 
         let gameUnsub: Unsubscribe | null = null;
@@ -518,47 +518,48 @@ export default function CoopGameLoader() {
                          
                          const lives = data.gameState?.lives ?? difficultyModifiers[data.difficulty || 'Normal'].startLives;
                          
-                        const p1Worker: Worker[] = [{ id: "worker-1", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null }];
-                        const p2Worker: Worker[] = [{ id: "worker-2", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null }];
+                        const p1Worker: Worker = { id: "worker-1", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null };
+                        const p2Worker: Worker = { id: "worker-2", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null };
                         
-                        let initialPlayerStates: Record<Player['id'], PlayerGameState>;
+                        let initialPlayerStates: Record<string, PlayerGameState>;
                         
                         if (mode === 'coop') {
+                            const towersByCell = data.towersByCell || {};
                             const sharedState: PlayerGameState = {
                                 lives,
-                                towersByCell: data.towersByCell || {},
+                                towersByCell,
                                 enemies: [],
-                                workers: [...p1Worker, ...p2Worker],
+                                workers: [p1Worker, p2Worker],
                                 ghosts: [],
                                 portals: [],
-                                currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(data.towersByCell || {}).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
+                                currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(towersByCell).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
                             };
                             initialPlayerStates = {
                                 player1: sharedState,
                                 player2: sharedState,
-                                spectator: {} as any,
                             };
                         } else { // versus
+                            const p1Towers = data.playerStates?.player1?.towersByCell || {};
+                            const p2Towers = data.playerStates?.player2?.towersByCell || {};
                             initialPlayerStates = {
                                player1: {
                                  lives,
-                                 towersByCell: data.playerStates?.player1?.towersByCell || {},
+                                 towersByCell: p1Towers,
                                  enemies: [],
-                                 workers: p1Worker,
+                                 workers: [p1Worker],
                                  ghosts: [],
                                  portals: [],
-                                 currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(data.playerStates?.player1?.towersByCell || {}).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
+                                 currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(p1Towers).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
                                },
                                player2: {
                                  lives,
-                                 towersByCell: data.playerStates?.player2?.towersByCell || {},
+                                 towersByCell: p2Towers,
                                  enemies: [],
-                                 workers: p2Worker,
+                                 workers: [p2Worker],
                                  ghosts: [],
                                  portals: [],
-                                 currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(data.playerStates?.player2?.towersByCell || {}).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
+                                 currentPath: findPath({row:1, col:1}, {row:GRID_ROWS, col:GRID_COLS}, Object.values(p2Towers).map(t => (t as PlacedTower).position), GRID_ROWS, GRID_COLS) ?? [],
                                },
-                               spectator: {} as any,
                              };
                         }
                          
@@ -605,7 +606,7 @@ export default function CoopGameLoader() {
         return () => {
             if (gameUnsub) gameUnsub();
         }
-    }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
+    }, [user, gameId, router, toast, configLoading, gameDataLoaded, gameConfig]);
     
 
   const onGameEnd = useCallback(async (won: boolean, winningPlayerId?: Player['id']) => {
@@ -765,6 +766,14 @@ export default function CoopGameLoader() {
     if (!localPlayer) return;
     dispatchAction('send_enemy', { enemy: { type: enemy.type, cost: enemy.cost, incomeBonus: enemy.incomeBonus }, playerId: localPlayer.id });
   };
+  
+  const localPlayerState = playerStates[localPlayerId as keyof typeof playerStates];
+  if (!localPlayerState) {
+    if (gameDataLoaded) { // Only show loader if we expect data
+        return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielerdaten...</p></div>;
+    }
+     return null; // Or some other placeholder
+  }
 
   return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
@@ -784,12 +793,12 @@ export default function CoopGameLoader() {
                     towers={gameConfig.towers} 
                     setTowers={() => {}} 
                     // Pass individual states to layout for rendering
-                    placedTowers={[]}
-                    enemies={[]}
-                    workers={[]}
-                    ghosts={[]}
-                    portals={[]}
-                    currentPath={[]}
+                    placedTowers={Object.values(localPlayerState.towersByCell)}
+                    enemies={localPlayerState.enemies}
+                    workers={localPlayerState.workers}
+                    ghosts={localPlayerState.ghosts}
+                    portals={localPlayerState.portals}
+                    currentPath={localPlayerState.currentPath}
                     damageNumbers={[]} 
                     splashRings={[]}
                     persistentClouds={[]}
@@ -861,3 +870,4 @@ export default function CoopGameLoader() {
         </div>
   );
 }
+
