@@ -229,6 +229,37 @@ export default function VersusGameLoader() {
   }, [isGameHost, onHostAction, onLocalAction, localPlayerId]);
   
     useEffect(() => {
+      if (!gameId) return;
+
+      const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (!currentUser) {
+          toast({ title: "Authentifizierung erforderlich.", variant: 'destructive' });
+          router.push('/');
+          return;
+        }
+        setUser(currentUser);
+      });
+
+      return () => authUnsubscribe();
+    }, [gameId, router, toast]);
+
+    useEffect(() => {
+        async function fetchConfig() {
+            try {
+                const config = await loadGameConfig();
+                setGameConfig(config);
+            } catch (error) {
+                console.error("Failed to load game config, using defaults:", error);
+                toast({ title: 'Fehler beim Laden der Konfiguration', description: 'Standardwerte werden verwendet.', variant: 'destructive' });
+            } finally {
+                setConfigLoading(false);
+            }
+        }
+        fetchConfig();
+    }, [toast]);
+
+
+    useEffect(() => {
         if (!user || !gameId || configLoading) return;
         const gameDocRef = doc(db, 'games', gameId);
 
@@ -276,9 +307,10 @@ export default function VersusGameLoader() {
                          setGameDataLoaded(true);
                          setLoading(false);
                     } else if (role !== 'player1') {
-                        // CLIENT: Only update players from DB, rest comes via WebRTC
+                        // CLIENT: Update players, rest comes via WebRTC
                         setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded && data.playerStates?.player1) { // Wait for host to set up states
+                        // Mark as loaded if host has initialized the states
+                        if (!gameDataLoaded && data.playerStates?.player1) {
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
@@ -306,21 +338,6 @@ export default function VersusGameLoader() {
   const handleGameEnd = useCallback(async (won: boolean) => {
     // ...
   }, [gameId, user, difficulty]);
-
-  useEffect(() => {
-    async function fetchConfig() {
-        try {
-            const config = await loadGameConfig();
-            setGameConfig(config);
-        } catch (error) {
-            console.error("Failed to load game config, using defaults:", error);
-            toast({ title: 'Fehler beim Laden der Konfiguration', description: 'Standardwerte werden verwendet.', variant: 'destructive' });
-        } finally {
-            setConfigLoading(false);
-        }
-    }
-    fetchConfig();
-}, [toast]);
 
   useEffect(() => {
       // The game loop will now need to iterate over playerStates and run simulations for each.
@@ -419,4 +436,3 @@ export default function VersusGameLoader() {
         </div>
   );
 }
-
