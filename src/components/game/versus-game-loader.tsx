@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -36,7 +35,6 @@ export default function VersusGameLoader() {
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Lade Spiel...');
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
-  const [gameDataLoaded, setGameDataLoaded] = useState(false);
 
   // --- Core Game State ---
   const [players, setPlayers] = useState<Player[]>([]);
@@ -70,18 +68,13 @@ export default function VersusGameLoader() {
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
 
-  // --- Refs for stable access in callbacks ---
   const playersRef = useRef(players);
   useEffect(() => { playersRef.current = players; }, [players]);
-  const gameDataLoadedRef = useRef(gameDataLoaded);
-  useEffect(() => { gameDataLoadedRef.current = gameDataLoaded; }, [gameDataLoaded]);
   const playerStatesRef = useRef(playerStates);
   useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
   
-    // --- WebRTC Logic ---
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
-    
     if (msg.type === 'deltas') {
         const deltas = msg.payload as any[];
         for (const delta of deltas) {
@@ -96,9 +89,8 @@ export default function VersusGameLoader() {
                   setIsIntermission(state.isIntermission);
                   setWaveStartCountdown(state.waveStartCountdown);
                   setGameStatus(state.gameStatus);
-                  setLoading(false); // Make sure loading is false after snapshot
+                  setLoading(false);
                   break;
-                // Add other delta handling here as needed for versus mode
             }
         }
     }
@@ -108,27 +100,16 @@ export default function VersusGameLoader() {
     if (!isGameHost) return;
     if (msg.type === 'CLIENT_READY') {
       const currentState: Partial<GameSessionState> = {
-        gameMode: 'versus',
-        players: playersRef.current,
-        playerStates: playerStatesRef.current,
-        currentWave: currentWave,
-        difficulty: difficulty,
-        gameStatus: gameStatus,
-        waveStartCountdown: waveStartCountdown,
-        isIntermission: isIntermission,
+        gameMode: 'versus', players: playersRef.current, playerStates: playerStatesRef.current,
+        currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission,
       };
-      
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
-  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission]);
+  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
   
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null,
-    isGameHost,
-    user,
-    false,
-    handleGameData,
-    handleActionData
+    localPlayerId ? gameId : null, isGameHost, user, false,
+    handleGameData, handleActionData
   );
 
   useEffect(() => {
@@ -158,10 +139,7 @@ export default function VersusGameLoader() {
             setGameConfig(config);
         } catch (error) {
             console.error("Failed to load game config:", error);
-            toast({ 
-                title: 'Fehler beim Laden der Konfiguration',
-                variant: 'destructive' 
-            });
+            toast({ title: 'Fehler beim Laden der Konfiguration', variant: 'destructive' });
         } finally {
             setConfigLoading(false);
         }
@@ -200,6 +178,8 @@ export default function VersusGameLoader() {
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
             
+            // This now mirrors the coop loader. It loads the player list and immediately
+            // stops blocking the UI render. The full state comes via WebRTC for player 2.
             if (role === 'player1') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
@@ -207,20 +187,11 @@ export default function VersusGameLoader() {
                  setGameStatus(data.gameStatus);
                  setIsIntermission(data.isIntermission ?? true);
                  setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                 if (!gameDataLoadedRef.current) {
-                    setGameDataLoaded(true);
-                 }
                  setLoading(false); 
             } else if (role === 'player2') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 // This is the key change: P2 now renders immediately, 
-                 // even with potentially empty states. The SNAPSHOT will fill it.
-                 setPlayerStates(data.playerStates || { player1: null, player2: null });
-                 if (!gameDataLoadedRef.current) {
-                    setGameDataLoaded(true);
-                 }
-                 setLoading(false);
+                 setLoading(false); // Render immediately
             }
         });
     };
@@ -241,9 +212,15 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  // This check is now safe, because P2 will get at least an empty state immediately.
-  if (!localPlayerState) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p>Warte auf Spielzustand vom Host...</p></div>;
+  // This check is now safe. P2 renders, but has no state. The `localPlayerState!` non-null assertion
+  // is now the key part. The UI components must handle the null case until the SNAPSHOT arrives.
+  if (!isGameHost && !localPlayerState) {
+      return (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-background">
+              <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p>
+          </div>
+      );
   }
 
   const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
@@ -255,7 +232,7 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState!}
+          gameState={localPlayerState!} // The UI must handle the initial null case gracefully.
           localPlayer={localPlayer!}
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
