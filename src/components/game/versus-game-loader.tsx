@@ -21,8 +21,8 @@ import { Loader2 } from 'lucide-react';
 import { useWebRTC } from '@/hooks/use-webrtc';
 import { findPath } from '@/lib/pathfinding';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { DesktopLayout } from '@/components/layouts/desktop-layout';
-import { MobileLayout } from '@/components/layouts/mobile-layout';
+import { VersusDesktopLayout } from '@/components/layouts/versus-desktop-layout';
+import { VersusMobileLayout } from '@/components/layouts/versus-mobile-layout';
 import { ElementPickDialog } from './element-pick-dialog';
 import Header from './header';
 import { audioManager } from '@/lib/audio/audio-manager';
@@ -311,7 +311,7 @@ export default function VersusGameLoader() {
         const player = tempPlayers[playerIndex];
         const tempTowersByCell = JSON.parse(JSON.stringify(towersByCellRef.current));
         
-        const tempState: GameSessionState = { players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'coop' };
+        const tempState: GameSessionState = { players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'versus' };
 
         switch(action){
             case 'place_portal': {
@@ -456,7 +456,7 @@ export default function VersusGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { gameMode: 'coop', players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current }]);
+                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { gameMode: 'versus', players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current }]);
                 return;
             }
             case 'PLACE_PORTAL_REQUEST':   onHostAction('place_portal', payload); return;
@@ -802,7 +802,7 @@ export default function VersusGameLoader() {
             return;
           }
               
-          const stateToUpdate: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'coop' };
+          const stateToUpdate: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'versus' };
           
           const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
           
@@ -1061,7 +1061,7 @@ export default function VersusGameLoader() {
   };
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'coop' };
+    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current, gameMode: 'versus' };
     
     if (portalPhase !== 'idle') {
         if (portalPhase === 'entrance') {
@@ -1078,7 +1078,7 @@ export default function VersusGameLoader() {
     } else {
         dispatchAction('move_worker', { row, col });
     }
-  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, waveStartCountdown, isIntermission]);
+  }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, difficulty, waveStartCountdown, isIntermission]);
 
   if (configLoading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
@@ -1104,7 +1104,7 @@ export default function VersusGameLoader() {
       }
   };
   
-  const LayoutComponent = isMobile ? MobileLayout : DesktopLayout;
+  const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
 
   const interactionPrompt = portalPhase !== 'idle'
   ? (portalPhase === 'entrance' ? 'Wähle den Eingang des Portals' : 'Wähle den Ausgang des Portals')
