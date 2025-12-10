@@ -122,7 +122,7 @@ export default function Home() {
 
       const gameDocRef = await addDoc(collection(db, "games"), newGameData);
       
-      setActiveGame('coop');
+      // CORRECTED: Direct navigation for both modes. Do not set activeGame state here.
       window.location.href = `/game/${gameDocRef.id}`;
 
     } catch (error: any) {
