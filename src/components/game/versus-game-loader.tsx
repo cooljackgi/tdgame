@@ -91,12 +91,12 @@ export default function VersusGameLoader() {
   }, [players, localPlayerId]);
   
   const localPlayerState = useMemo(() => {
-    if (!localPlayerId || !playerStates) return null;
+    if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
 
   const opponentPlayerState = useMemo(() => {
-    if (!localPlayerId || !playerStates) return null;
+    if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     const opponentId = localPlayerId === 'player1' ? 'player2' : 'player1';
     return playerStates[opponentId];
   }, [localPlayerId, playerStates]);
@@ -162,8 +162,6 @@ export default function VersusGameLoader() {
             const deltaType = delta[0];
             const deltaPayload = delta[1];
             switch(deltaType) {
-                // TODO: Adapt all delta handlers for the new PlayerGameState structure
-                // For now, let's just log it
                  case DeltaType.SNAPSHOT:
                   setPlayers((deltaPayload as GameSessionState).players);
                   setPlayerStates((deltaPayload as GameSessionState).playerStates || null);
@@ -180,9 +178,8 @@ export default function VersusGameLoader() {
   }, [isGameHost, gameConfig, localPlayer]);
 
   const handleSendEnemy = useCallback((payload: VersusEnemyToSend) => {
-      // Logic will be handled by onHostAction or sent to host via onLocalAction
       dispatchAction('send_enemy', payload);
-  }, [/* dependencies for dispatchAction */]);
+  }, []);
 
   const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal' | 'send_enemy', payload:any) => {
     if (!isGameHost || !gameConfig) return;
@@ -190,7 +187,7 @@ export default function VersusGameLoader() {
     // ... a lot of the logic will need to be duplicated inside a loop for each player state
     
     return;
-  }, [/* dependencies for onHostAction */]);
+  }, []);
     
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -276,17 +273,18 @@ export default function VersusGameLoader() {
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          
                          // CORRECTED LOADING LOGIC
-                         if (data.playerStates) {
-                            setGameDataLoaded(true);
-                            setLoading(false);
-                         }
+                         setGameDataLoaded(true);
+                         setLoading(false);
+                         
                     } else if (role !== 'player1') {
+                        // CLIENT: Only update players from DB, rest comes via WebRTC
                         setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded && data.playerStates?.player1 && data.playerStates?.player2) {
+                        if (!gameDataLoaded && data.playerStates?.player1) { // Wait for at least p1 state
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
                     } else if (role === 'player1' && gameDataLoaded) {
+                       // HOST AFTER INITIAL LOAD: Only update other player's data
                        setPlayers(currentPlayers => {
                            const newPlayers = normalizePlayers(data.players);
                            const self = currentPlayers.find(p => p.id === 'player1');
@@ -328,15 +326,16 @@ export default function VersusGameLoader() {
       // The game loop will now need to iterate over playerStates and run simulations for each.
       // This is a major refactor.
   }, [isGameHost, gameConfig, handleGameEnd]);
+  
+  const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
 
-  if (configLoading || !gameConfig || !localPlayer || !playerStates) {
+  if (configLoading || loading || !gameConfig || !localPlayer || !playerStates) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
   const handleSellTowerAction = () => focusedTower && dispatchAction('sell', { row: focusedTower.position.row, col: focusedTower.position.col, playerId: focusedTower.ownerId });
   const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
-  const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
   const toggleMute = () => {}; // Placeholder
   const handlePlaceAction = (row: number, col: number) => {}; // Placeholder
 
