@@ -1,22 +1,20 @@
 
 
-import React, {useRef, useEffect, useState} from 'react';
+import React, {useRef, useEffect} from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Pause, Play, LogOut, MessageCircle, X, Swords, Hammer } from 'lucide-react';
+import { Pause, Play, LogOut, MessageCircle, X } from 'lucide-react';
 import PlayerStats from '@/components/game/player-stats';
 import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
 import DebugMenu from '@/components/game/debug-menu';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
 import TowerSelection from '@/components/game/tower-selection';
-import PlayerVersusControls from '@/components/game/player-versus-controls';
 import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal, PlayerGameState } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -26,7 +24,7 @@ type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-eleme
 interface DesktopLayoutProps {
   players: Player[];
   setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
-  playerStates: Record<Player['id'], PlayerGameState>;
+  gameState: GameState;
   localPlayer: Player;
   currentWave: number;
   totalWaves: number;
@@ -89,16 +87,14 @@ interface DesktopLayoutProps {
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
   isPlacingPortalEntrance?: boolean;
-  gameMode: 'coop' | 'versus';
-  onSendEnemy: (payload: { type: any; cost: number; incomeBonus: number }) => void;
 }
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
   const {
-    players, setPlayers, playerStates, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
+    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
     resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, portals, damageNumbers, splashRings,
-    persistentClouds, currentPath,
-    handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
+    persistentClouds,
+    currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,
     onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
@@ -122,9 +118,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance,
-    gameMode,
-    onSendEnemy
+    isPlacingPortalEntrance
   } = props;
   
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -153,16 +147,13 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
-  
-  // This is the key fix. We ensure playerStates is never undefined and correctly reference it.
-  const localPlayerState = (playerStates && playerStates[localPlayer.id as keyof typeof playerStates]) || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
-  
-  const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
+
+  const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
     if (auraTowers.length === 0) return ids;
     
-    Object.values(localPlayerState.towersByCell).forEach(tower => {
+    placedTowers.forEach(tower => {
       if (tower.effects?.some(e => e.type === 'aura')) return;
       for (const auraTower of auraTowers) {
         const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
@@ -173,7 +164,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       }
     });
     return ids;
-  }, [localPlayerState.towersByCell, auraTowers]);
+  }, [placedTowers, auraTowers]);
 
 
   const interactionPromptComponent = (
@@ -202,19 +193,16 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-r from-background/95 via-background/80 to-transparent backdrop-blur-md border-r border-border/50 overflow-y-auto">
       {interactionPromptComponent}
         <div id="tutorial-player-stats">
-            {players.map(player => {
-              const pState = playerStates?.[player.id as keyof typeof playerStates];
-              return player && pState && (
-                <PlayerStats
-                  key={player.id}
-                  player={player}
-                  lives={pState.lives}
-                  maxLives={maxLives}
-                  isLocalPlayer={player.id === localPlayer.id}
-                  isCoop={isCoop}
-                />
-              )
-            })}
+            {players.map(player => player && (
+              <PlayerStats
+                key={player.id}
+                player={player}
+                lives={gameState.lives}
+                maxLives={maxLives}
+                isLocalPlayer={player.id === localPlayer.id}
+                isCoop={isCoop}
+              />
+            ))}
         </div>
          <Card className="p-4 space-y-2">
           <div className="flex justify-around items-center">
@@ -260,16 +248,16 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
             )}
             <GameBoard
                 ref={gameBoardRef}
-                placedTowers={Object.values(localPlayerState.towersByCell)}
-                enemies={localPlayerState.enemies}
-                workers={localPlayerState.workers}
-                ghosts={localPlayerState.ghosts}
-                portals={localPlayerState.portals}
+                placedTowers={placedTowers}
+                enemies={enemies}
+                workers={workers}
+                ghosts={ghosts}
+                portals={portals}
                 attacks={attacks}
                 damageNumbers={damageNumbers}
                 splashRings={splashRings}
                 persistentClouds={persistentClouds}
-                currentPath={localPlayerState.currentPath}
+                currentPath={currentPath}
                 handlePlaceTower={handlePlaceTower}
                 onFocusTower={onFocusTower}
                 cancelInteractions={cancelInteractions}
@@ -295,49 +283,19 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-l from-background/95 via-background/80 to-transparent backdrop-blur-md border-l border-border/50 overflow-y-auto">
       <div id="tutorial-build-menu">
             {!isSpectator && (
-              gameMode === 'versus' ? (
-                <Tabs defaultValue="build" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="build"><Hammer className="mr-2 h-4 w-4"/>Bauen</TabsTrigger>
-                    <TabsTrigger value="attack"><Swords className="mr-2 h-4 w-4"/>Angriff</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="build" className="mt-4">
-                      <TowerSelection
-                        allTowers={allTowers}
-                        onSelectTower={onSelectTowerToBuild}
-                        onEnterPortalMode={onEnterPortalMode}
-                        focusedTower={focusedTower}
-                        selectedTowerToBuild={selectedTowerToBuild}
-                        onUpgradeTower={handleUpgradeTower}
-                        onSellTower={handleSellTower}
-                        onBack={cancelInteractions}
-                        localPlayer={localPlayer}
-                        buffedTowerIds={buffedTowerIds}
-                        currentWave={currentWave}
-                      />
-                  </TabsContent>
-                  <TabsContent value="attack" className="mt-4">
-                    <PlayerVersusControls 
-                      localPlayer={localPlayer} 
-                      onSendEnemy={onSendEnemy} 
-                    />
-                  </TabsContent>
-                </Tabs>
-              ) : ( // Coop mode
-                <TowerSelection
-                  allTowers={allTowers}
-                  onSelectTower={onSelectTowerToBuild}
-                  onEnterPortalMode={onEnterPortalMode}
-                  focusedTower={focusedTower}
-                  selectedTowerToBuild={selectedTowerToBuild}
-                  onUpgradeTower={handleUpgradeTower}
-                  onSellTower={handleSellTower}
-                  onBack={cancelInteractions}
-                  localPlayer={localPlayer}
-                  buffedTowerIds={buffedTowerIds}
-                  currentWave={currentWave}
-                />
-              )
+              <TowerSelection
+                allTowers={allTowers}
+                onSelectTower={onSelectTowerToBuild}
+                onEnterPortalMode={onEnterPortalMode}
+                focusedTower={focusedTower}
+                selectedTowerToBuild={selectedTowerToBuild}
+                onUpgradeTower={handleUpgradeTower}
+                onSellTower={handleSellTower}
+                onBack={cancelInteractions}
+                localPlayer={localPlayer}
+                buffedTowerIds={buffedTowerIds}
+                currentWave={currentWave}
+              />
             )}
         </div>
         {showDebugFeatures && (

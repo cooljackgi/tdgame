@@ -5,13 +5,12 @@
 import React, { useState, memo, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot, Swords } from 'lucide-react';
+import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot } from 'lucide-react';
 import PlayerStats from '@/components/game/player-stats';
 import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
 import TowerSelection from '@/components/game/tower-selection';
-import PlayerVersusControls from '@/components/game/player-versus-controls';
 import DebugMenu from '@/components/game/debug-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WaveStartTimer from '../game/wave-start-timer';
@@ -22,7 +21,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation, Portal, PlayerGameState
+  Worker, GhostFoundation, Portal
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -37,7 +36,7 @@ interface MobileLayoutProps {
   currentWave: number;
   totalWaves: number;
   difficulty: Difficulty;
-  playerStates: Record<Player['id'], PlayerGameState>;
+  placedTowers: PlacedTower[];
   enemies: Enemy[];
   workers: Worker[];
   ghosts: GhostFoundation[];
@@ -45,6 +44,7 @@ interface MobileLayoutProps {
   damageNumbers: DamageNumber[];
   splashRings: SplashRing[];
   persistentClouds: PersistentCloud[];
+  currentPath: Node[];
   handlePlaceTower: (row: number, col: number) => void;
   onFocusTower: (tower: PlacedTower) => void;
   selectedTowerToBuild: Tower | null;
@@ -94,8 +94,6 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
-  gameMode: 'coop' | 'versus';
-  onSendEnemy: (payload: { type: any; cost: number; incomeBonus: number }) => void;
 }
 
 const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
@@ -104,9 +102,9 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 
 export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps) {
   const {
-    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, playerStates, enemies,
+    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
     workers, ghosts, portals,
-    damageNumbers, splashRings, persistentClouds, handlePlaceTower, onFocusTower, selectedTowerToBuild,
+    damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     portalEntrance, focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
     onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
@@ -124,9 +122,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance,
-    gameMode,
-    onSendEnemy,
+    isPlacingPortalEntrance
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
@@ -169,16 +165,13 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
 
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
-
-  // This is the key fix for mobile layout as well.
-  const localPlayerState = (playerStates && playerStates[localPlayer.id as keyof typeof playerStates]) || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
   
-  const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
+  const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
   const buffedTowerIds = React.useMemo(() => {
     const ids = new Set<string>();
     if (auraTowers.length === 0) return ids;
     
-    Object.values(localPlayerState.towersByCell).forEach(tower => {
+    placedTowers.forEach(tower => {
       if (tower.effects?.some(e => e.type === 'aura')) return;
       for (const auraTower of auraTowers) {
         const distSq = Math.pow(tower.position.col - auraTower.position.col, 2) + Math.pow(tower.position.row - auraTower.position.row, 2);
@@ -189,11 +182,11 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
       }
     });
     return ids;
-  }, [localPlayerState.towersByCell, auraTowers]);
+  }, [placedTowers, auraTowers]);
 
   const sheetTitle = isSpectator
     ? 'Zuschauer'
-    : (focusedTower ? `Upgrade ${focusedTower.name}` : (gameMode === 'versus' ? 'Menü' : 'Turm bauen'));
+    : (focusedTower ? `Upgrade ${focusedTower.name}` : 'Turm bauen');
   const sheetIcon = isSpectator ? <Eye /> : <Hammer />;
 
   const handleSelectAndClose = (tower: Tower | null) => {
@@ -259,21 +252,18 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
         >
            <div className="grid grid-cols-2 gap-2">
-            {players.map((p) => {
-              const pState = playerStates?.[p.id as keyof typeof playerStates];
-              return p && pState && (
-                <div key={p.id} className="min-w-0">
-                  <PlayerStats
-                    player={p}
-                    lives={pState.lives}
-                    maxLives={maxLives}
-                    isCompact
-                    isLocalPlayer={p.id === localPlayer.id}
-                    isCoop={isCoop}
-                  />
-                </div>
-              )
-            })}
+            {players.map((p) => p && (
+              <div key={p.id} className="min-w-0">
+                <PlayerStats
+                  player={p}
+                  lives={gameState.lives}
+                  maxLives={maxLives}
+                  isCompact
+                  isLocalPlayer={p.id === localPlayer.id}
+                  isCoop={isCoop}
+                />
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -290,8 +280,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
         )}
         <GameBoard
           ref={gameBoardRef}
-          placedTowers={Object.values(localPlayerState.towersByCell)}
-          enemies={localPlayerState.enemies}
+          placedTowers={placedTowers}
+          enemies={enemies}
           workers={workers}
           ghosts={ghosts}
           portals={portals}
@@ -299,7 +289,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           damageNumbers={damageNumbers}
           splashRings={splashRings}
           persistentClouds={persistentClouds}
-          currentPath={localPlayerState.currentPath}
+          currentPath={currentPath}
           handlePlaceTower={handlePlaceTower}
           onFocusTower={handleFocusTower} // Use the new handler
           cancelInteractions={cancelInteractions}
@@ -383,49 +373,23 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <div className="flex-grow min-h-0">
                   <ScrollArea className="h-full px-4 py-4">
                     {!isSpectator && (
-                      gameMode === 'versus' ? (
-                          <Tabs defaultValue="build" className="w-full">
-                            <TabsList className="grid w-full grid-cols-2">
-                              <TabsTrigger value="build"><Hammer className="mr-2 h-4 w-4"/>Bauen</TabsTrigger>
-                              <TabsTrigger value="attack"><Swords className="mr-2 h-4 w-4"/>Angriff</TabsTrigger>
-                            </TabsList>
-                            <TabsContent value="build" className="mt-4">
-                                <TowerSelection
-                                    allTowers={allTowers} onSelectTower={handleSelectAndClose}
-                                    onEnterPortalMode={() => { onEnterPortalMode(); setIsBuildSheetOpen(false); }}
-                                    focusedTower={focusedTower} selectedTowerToBuild={selectedTowerToBuild}
-                                    onUpgradeTower={handleUpgrade} onSellTower={handleSell} onBack={cancelInteractions}
-                                    localPlayer={localPlayer} isMobile buffedTowerIds={buffedTowerIds}
-                                    currentWave={currentWave}
-                                  />
-                            </TabsContent>
-                            <TabsContent value="attack" className="mt-4">
-                              <PlayerVersusControls 
-                                localPlayer={localPlayer} 
-                                onSendEnemy={onSendEnemy} 
-                                isMobile 
-                              />
-                            </TabsContent>
-                          </Tabs>
-                      ) : (
-                        <TowerSelection
-                          allTowers={allTowers}
-                          onSelectTower={handleSelectAndClose}
-                          onEnterPortalMode={() => {
-                              onEnterPortalMode();
-                              setIsBuildSheetOpen(false);
-                          }}
-                          focusedTower={focusedTower}
-                          selectedTowerToBuild={selectedTowerToBuild}
-                          onUpgradeTower={handleUpgrade}
-                          onSellTower={handleSell}
-                          onBack={cancelInteractions}
-                          localPlayer={localPlayer}
-                          isMobile
-                          buffedTowerIds={buffedTowerIds}
-                          currentWave={currentWave}
-                        />
-                      )
+                      <TowerSelection
+                        allTowers={allTowers}
+                        onSelectTower={handleSelectAndClose}
+                        onEnterPortalMode={() => {
+                            onEnterPortalMode();
+                            setIsBuildSheetOpen(false);
+                        }}
+                        focusedTower={focusedTower}
+                        selectedTowerToBuild={selectedTowerToBuild}
+                        onUpgradeTower={handleUpgrade}
+                        onSellTower={handleSell}
+                        onBack={cancelInteractions}
+                        localPlayer={localPlayer}
+                        isMobile
+                        buffedTowerIds={buffedTowerIds}
+                        currentWave={currentWave}
+                      />
                     )}
                   </ScrollArea>
                 </div>
