@@ -1,4 +1,5 @@
 
+
 'use client';
 
 // This is a new, dedicated file for the Versus mode logic.
@@ -174,6 +175,7 @@ export default function VersusGameLoader() {
                   setGameStatus((deltaPayload as GameSessionState).gameStatus);
                   break;
                 case DeltaType.PLAYER_UPDATE: setPlayers(deltaPayload as Player[]); break;
+                case DeltaType.VERSUS_STATE_UPDATE: setPlayerStates(deltaPayload as any); break;
                 // Add other cases as needed
             }
         }
@@ -310,35 +312,27 @@ export default function VersusGameLoader() {
                     let role: 'player1' | 'player2' | 'spectator' = 'spectator';
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
-                    setLocalPlayerId(role);
                     
-                    if (role === 'player1' && !gameDataLoaded) {
-                         setDifficulty(data.difficulty || 'Normal');
-                         setPlayers(normalizePlayers(data.players));
-                         setPlayerStates(data.playerStates); // Load the entire versus state
-                         setGameStatus(data.gameStatus);
-                         setIsIntermission(data.isIntermission ?? true);
-                         setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                         
-                         setGameDataLoaded(true); // THIS WAS MISSING
-                         setLoading(false);
-                    } else if (role === 'player2') {
-                        // Client logic for versus mode
-                        setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded) { // Only set loading to false once
+                    setLocalPlayerId(role);
+                    setPlayers(normalizePlayers(data.players));
+                    
+                    if (role === 'player1') {
+                         if (!gameDataLoaded) {
+                            setDifficulty(data.difficulty || 'Normal');
+                            setPlayerStates(data.playerStates); 
+                            setGameStatus(data.gameStatus);
+                            setIsIntermission(data.isIntermission ?? true);
+                            setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
+                            setGameDataLoaded(true);
                             setLoading(false);
-                        }
-                    } else if (role === 'player1' && gameDataLoaded) {
-                        setPlayers(currentPlayers => {
-                           const newPlayers = normalizePlayers(data.players);
-                           const self = currentPlayers.find(p => p.id === 'player1');
-                           const other = newPlayers.find(p => p.id === 'player2');
-                           const finalPlayers = [self, other].filter(Boolean) as Player[];
-                           return finalPlayers;
-                        });
-                        if (data.playerStates) {
-                            setPlayerStates(data.playerStates);
-                        }
+                         } else {
+                            if (data.playerStates) setPlayerStates(data.playerStates);
+                         }
+                    } else if (role === 'player2') {
+                        // CLIENT: Just get basic info and then wait for snapshot via WebRTC
+                        setDifficulty(data.difficulty || 'Normal');
+                        setGameStatus(data.gameStatus);
+                        setLoading(false); // Stop loading, let the component render and wait for snapshot
                     }
                 });
             } catch (error: any) {
@@ -366,8 +360,8 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
 
-  // Final check for player 2
-  if (!isGameHost && !localPlayerState) {
+  // Final check for player 2: Wait for playerStates to be populated by the host snapshot
+  if (!isGameHost && !playerStates) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
   }
   
