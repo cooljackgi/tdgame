@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -72,7 +73,8 @@ export default function VersusGameLoader() {
   useEffect(() => { playersRef.current = players; }, [players]);
   const playerStatesRef = useRef(playerStates);
   useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
-  
+
+  // --- WebRTC Logic ---
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -89,12 +91,18 @@ export default function VersusGameLoader() {
                   setIsIntermission(state.isIntermission);
                   setWaveStartCountdown(state.waveStartCountdown);
                   setGameStatus(state.gameStatus);
-                  setLoading(false);
                   break;
             }
         }
     }
   }, [isGameHost]);
+
+  // CORRECTED ORDER: Define useWebRTC before callbacks that use its functions.
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null, isGameHost, user, false,
+    handleGameData,
+    (msg) => handleActionData(msg) // Pass handleActionData directly
+  );
 
   const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
@@ -106,11 +114,6 @@ export default function VersusGameLoader() {
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
   }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
-  
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, isGameHost, user, false,
-    handleGameData, handleActionData
-  );
 
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -177,22 +180,16 @@ export default function VersusGameLoader() {
             if (data.player1Id === user.uid) role = 'player1';
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
+            setPlayers(normalizePlayers(data.players));
+            setDifficulty(data.difficulty || 'Normal');
             
-            // This now mirrors the coop loader. It loads the player list and immediately
-            // stops blocking the UI render. The full state comes via WebRTC for player 2.
             if (role === 'player1') {
-                 setPlayers(normalizePlayers(data.players));
-                 setDifficulty(data.difficulty || 'Normal');
                  setPlayerStates(data.playerStates);
                  setGameStatus(data.gameStatus);
                  setIsIntermission(data.isIntermission ?? true);
                  setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                 setLoading(false); 
-            } else if (role === 'player2') {
-                 setPlayers(normalizePlayers(data.players));
-                 setDifficulty(data.difficulty || 'Normal');
-                 setLoading(false); // Render immediately
             }
+            setLoading(false); 
         });
     };
 
@@ -212,8 +209,6 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  // This check is now safe. P2 renders, but has no state. The `localPlayerState!` non-null assertion
-  // is now the key part. The UI components must handle the null case until the SNAPSHOT arrives.
   if (!isGameHost && !localPlayerState) {
       return (
           <div className="w-full h-full flex flex-col items-center justify-center bg-background">
@@ -232,7 +227,7 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState!} // The UI must handle the initial null case gracefully.
+          gameState={localPlayerState!}
           localPlayer={localPlayer!}
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
