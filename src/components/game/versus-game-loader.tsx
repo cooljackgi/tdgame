@@ -9,7 +9,7 @@ import { doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower } from '@/lib/game-data/types';
+import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -20,6 +20,7 @@ import { VersusMobileLayout } from '@/components/layouts/versus-mobile-layout';
 import Header from './header';
 import type { GameBoardHandle } from './game-board';
 import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
+import { DeltaType } from '@/lib/game-data/types';
 
 export default function VersusGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -59,22 +60,6 @@ export default function VersusGameLoader() {
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
 
-  const handleActionData = useCallback((msg: any) => {
-    if (!isGameHost) return;
-    if (msg.type === 'CLIENT_READY') {
-      // Send Snapshot
-    }
-  }, [isGameHost]);
-
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, 
-    isGameHost, 
-    user, 
-    false,
-    undefined, // onGameData
-    handleActionData,
-  );
-
   const localPlayer = useMemo(() => {
     return players.find(p => p.id === localPlayerId);
   }, [players, localPlayerId]);
@@ -83,6 +68,72 @@ export default function VersusGameLoader() {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
+
+  // --- Refs for stable access in callbacks ---
+  const playersRef = useRef(players);
+  useEffect(() => { playersRef.current = players; }, [players]);
+  const gameDataLoadedRef = useRef(gameDataLoaded);
+  useEffect(() => { gameDataLoadedRef.current = gameDataLoaded; }, [gameDataLoaded]);
+  const playerStatesRef = useRef(playerStates);
+  useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
+  
+  const handleGameData = useCallback((msg: any) => {
+    if (isGameHost) return;
+    
+    if (msg.type === 'deltas') {
+        const deltas = msg.payload as any[];
+        for (const delta of deltas) {
+            const deltaType = delta[0];
+            const deltaPayload = delta[1];
+            switch(deltaType) {
+                case DeltaType.SNAPSHOT:
+                  setPlayers((deltaPayload as GameSessionState).players);
+                  setPlayerStates((deltaPayload as GameSessionState).playerStates!);
+                  setCurrentWave((deltaPayload as GameSessionState).currentWave);
+                  setIsIntermission((deltaPayload as GameSessionState).isIntermission);
+                  setWaveStartCountdown((deltaPayload as GameSessionState).waveStartCountdown);
+                  setGameStatus((deltaPayload as GameSessionState).gameStatus);
+                  setLoading(false); // Make sure loading is false after snapshot
+                  break;
+                // Add other delta handling here
+            }
+        }
+    }
+  }, [isGameHost]);
+  
+  const handleActionData = useCallback((msg: any) => {
+    if (!isGameHost) return;
+    if (msg.type === 'CLIENT_READY') {
+      const currentState = {
+        gameMode: 'versus',
+        players: playersRef.current,
+        playerStates: playerStatesRef.current,
+        currentWave: currentWave,
+        difficulty: difficulty,
+        gameStatus: gameStatus,
+        waveStartCountdown: waveStartCountdown,
+        isIntermission: isIntermission,
+      } as GameSessionState;
+      
+      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+    }
+  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
+
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null, 
+    isGameHost, 
+    user, 
+    false,
+    handleGameData,
+    handleActionData,
+  );
+  
+   useEffect(() => {
+      if (isConnected && !isGameHost && localPlayerId === 'player2') {
+          sendAction('CLIENT_READY', {});
+      }
+    }, [isConnected, isGameHost, localPlayerId, sendAction]);
+
 
   useEffect(() => {
     if (!gameId) return;
@@ -145,7 +196,7 @@ export default function VersusGameLoader() {
             if (data.player1Id === user.uid) role = 'player1';
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
-
+            
             if (role === 'player1') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
@@ -153,14 +204,15 @@ export default function VersusGameLoader() {
                  setGameStatus(data.gameStatus);
                  setIsIntermission(data.isIntermission ?? true);
                  setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                 if (!gameDataLoaded) {
+                 if (!gameDataLoadedRef.current) {
                     setGameDataLoaded(true);
                  }
                  setLoading(false);
             } else if (role === 'player2') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 if (!gameDataLoaded) {
+                 setPlayerStates(data.playerStates); // THE FIX
+                 if (!gameDataLoadedRef.current) {
                     setGameDataLoaded(true);
                  }
                  setLoading(false);
@@ -175,7 +227,7 @@ export default function VersusGameLoader() {
     });
 
     return () => unsub?.();
-  }, [user, gameId, router, toast, configLoading, gameDataLoaded, isGameHost]);
+  }, [user, gameId, router, toast, configLoading]);
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
@@ -185,9 +237,8 @@ export default function VersusGameLoader() {
   }
   
   if (!isGameHost && !localPlayerState) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p>Warte auf Spielzustand vom Host...</p></div>;
   }
-
 
   const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
 
@@ -250,7 +301,7 @@ export default function VersusGameLoader() {
           isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={() => {}}
+          onSendEnemy={(payload) => sendAction('SEND_ENEMY', payload)}
           gameMode="versus"
         />
       </div>
