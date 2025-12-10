@@ -79,7 +79,7 @@ export default function VersusGameLoader() {
   useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
   
   // --- WebRTC Logic ---
-  
+
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     
@@ -105,43 +105,37 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-    const handleActionData = useCallback((msg: any) => {
-    if (!isGameHost) return;
-    if (msg.type === 'CLIENT_READY') {
-      const currentState = {
-        gameMode: 'versus',
-        players: playersRef.current,
-        playerStates: playerStatesRef.current,
-        currentWave: currentWave,
-        difficulty: difficulty,
-        gameStatus: gameStatus,
-        waveStartCountdown: waveStartCountdown,
-        isIntermission: isIntermission,
-      } as GameSessionState;
-      
-      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
-    }
-    // Handle other actions like sending enemies here...
-  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission]);
+  const onGameDataRef = useRef(handleGameData);
+  useEffect(() => {
+    onGameDataRef.current = handleGameData;
+  }, [handleGameData]);
 
-  const onActionRef = useRef<(msg: any) => void>();
-  const onGameDataRef = useRef<(msg: any) => void>();
-  
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
     isGameHost, 
     user, 
     false,
     (msg: any) => onGameDataRef.current?.(msg),
-    (msg: any) => onActionRef.current?.(msg)
+    // Pass the action handler directly
+    (msg: any) => {
+        if (!isGameHost) return;
+        if (msg.type === 'CLIENT_READY') {
+          const currentState = {
+            gameMode: 'versus',
+            players: playersRef.current,
+            playerStates: playerStatesRef.current,
+            currentWave: currentWave,
+            difficulty: difficulty,
+            gameStatus: gameStatus,
+            waveStartCountdown: waveStartCountdown,
+            isIntermission: isIntermission,
+          } as GameSessionState;
+          
+          sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+        }
+    }
   );
 
-  useEffect(() => { onActionRef.current = (msg: any) => handleActionData(msg); }, [handleActionData]);
-  useEffect(() => { onGameDataRef.current = (msg: any) => handleGameData(msg); }, [handleGameData]);
-
-  // This is the callback that handles actions from the client.
-  // It needs access to sendGameData, hence the slightly complex setup with refs.
-  
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
       sendAction('CLIENT_READY', {});
