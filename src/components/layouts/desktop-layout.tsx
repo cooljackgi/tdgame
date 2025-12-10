@@ -154,7 +154,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
   
-  // This is the key fix. We ensure playerStates is never undefined.
+  // This is the key fix. We ensure playerStates is never undefined and correctly reference it.
   const localPlayerState = (playerStates && playerStates[localPlayer.id as keyof typeof playerStates]) || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
   
   const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
@@ -203,7 +203,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       {interactionPromptComponent}
         <div id="tutorial-player-stats">
             {players.map(player => {
-              const pState = playerStates[player.id as keyof typeof playerStates];
+              const pState = playerStates?.[player.id as keyof typeof playerStates];
               return player && pState && (
                 <PlayerStats
                   key={player.id}

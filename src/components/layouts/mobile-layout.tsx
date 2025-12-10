@@ -260,7 +260,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
         >
            <div className="grid grid-cols-2 gap-2">
             {players.map((p) => {
-              const pState = playerStates[p.id];
+              const pState = playerStates?.[p.id as keyof typeof playerStates];
               return p && pState && (
                 <div key={p.id} className="min-w-0">
                   <PlayerStats
