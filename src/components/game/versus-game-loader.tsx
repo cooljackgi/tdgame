@@ -100,6 +100,15 @@ export default function VersusGameLoader() {
         }
     }
   }, [isGameHost]);
+
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null, 
+    isGameHost, 
+    user, 
+    false,
+    handleGameData,
+    undefined // onActionMessage will be set in the next callback
+  );
   
   const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
@@ -119,20 +128,24 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
 
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+  // Re-assign the action handler to the useWebRTC hook's return object.
+  // This is a bit of a workaround because of the dependency cycle.
+  // A cleaner way might involve a more complex state management solution or restructuring the hook.
+  // For now, this ensures `handleActionData` has access to `sendGameData`.
+  const webrtc = useWebRTC(
     localPlayerId ? gameId : null, 
     isGameHost, 
     user, 
     false,
     handleGameData,
-    handleActionData,
+    handleActionData // Now we can pass the fully-defined callback
   );
   
    useEffect(() => {
-      if (isConnected && !isGameHost && localPlayerId === 'player2') {
-          sendAction('CLIENT_READY', {});
+      if (webrtc.isConnected && !isGameHost && localPlayerId === 'player2') {
+          webrtc.sendAction('CLIENT_READY', {});
       }
-    }, [isConnected, isGameHost, localPlayerId, sendAction]);
+    }, [webrtc.isConnected, isGameHost, localPlayerId, webrtc.sendAction]);
 
 
   useEffect(() => {
@@ -244,7 +257,7 @@ export default function VersusGameLoader() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : stats.fps} />
+      <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : webrtc.fps} />
       <div className="flex-grow p-2">
         <LayoutComponent
           players={players}
@@ -298,13 +311,15 @@ export default function VersusGameLoader() {
           cheat_unlockAll={() => {}}
           firingTowerIds={new Set()}
           allTowers={gameConfig.towers}
-          isWsConnected={isConnected}
+          isWsConnected={webrtc.isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload) => sendAction('SEND_ENEMY', payload)}
+          onSendEnemy={(payload) => webrtc.sendAction('SEND_ENEMY', payload)}
           gameMode="versus"
         />
       </div>
     </div>
   );
 }
+
+    
