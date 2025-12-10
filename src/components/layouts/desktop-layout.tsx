@@ -154,7 +154,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
   
-  const localPlayerState = playerStates[localPlayer.id as keyof typeof playerStates] || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
+  // This is the key fix. We ensure playerStates is never undefined.
+  const localPlayerState = (playerStates && playerStates[localPlayer.id as keyof typeof playerStates]) || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
   
   const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
   const buffedTowerIds = React.useMemo(() => {
@@ -364,4 +365,3 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     </div>
   );
 });
-

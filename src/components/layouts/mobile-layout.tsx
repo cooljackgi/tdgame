@@ -22,7 +22,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation, Portal, VersusEnemyToSend
+  Worker, GhostFoundation, Portal, PlayerGameState
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -37,12 +37,7 @@ interface MobileLayoutProps {
   currentWave: number;
   totalWaves: number;
   difficulty: Difficulty;
-  playerStates: Record<Player['id'], {
-    lives: number;
-    towersByCell: Record<string, PlacedTower>;
-    enemies: Enemy[];
-    currentPath: Node[];
-  }>;
+  playerStates: Record<Player['id'], PlayerGameState>;
   enemies: Enemy[];
   workers: Worker[];
   ghosts: GhostFoundation[];
@@ -175,7 +170,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
 
-  const localPlayerState = playerStates[localPlayer.id] || { lives: maxLives, towersByCell: {}, enemies: [], currentPath: [] };
+  // This is the key fix for mobile layout as well.
+  const localPlayerState = (playerStates && playerStates[localPlayer.id as keyof typeof playerStates]) || { lives: maxLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
   
   const auraTowers = React.useMemo(() => Object.values(localPlayerState.towersByCell).filter(t => t.effects?.some(e => e.type === 'aura')), [localPlayerState.towersByCell]);
   const buffedTowerIds = React.useMemo(() => {
