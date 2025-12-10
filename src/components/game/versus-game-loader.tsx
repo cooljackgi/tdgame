@@ -214,7 +214,7 @@ export default function VersusGameLoader() {
   const onLocalAction = useCallback((action: string, payload: any) => {
       if (!localPlayerId || localPlayerId === 'spectator' || isGameHost) return;
       
-      const actionType = `${action.toUpperCase()}_REQUEST`;
+      const actionType = `VS_${action.toUpperCase()}_REQUEST`;
       sendAction(actionType, { ...payload, playerId: localPlayerId });
   }, [localPlayerId, isGameHost, sendAction]);
   
@@ -258,13 +258,14 @@ export default function VersusGameLoader() {
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
+                    
+                    const newPlayers = normalizePlayers(data.players);
+                    setPlayers(newPlayers);
 
-                    // HOST ONLY: Load initial state ONCE
                     if (role === 'player1' && !gameDataLoaded) {
                          const difficultyMod = difficultyModifiers[data.difficulty || 'Normal'];
                          setDifficulty(data.difficulty || 'Normal');
-                         setPlayers(normalizePlayers(data.players));
-                         setPlayerStates(data.playerStates || { // Fallback if not set
+                         setPlayerStates(data.playerStates || {
                              player1: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
                              player2: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
                          });
@@ -272,25 +273,18 @@ export default function VersusGameLoader() {
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          
-                         // CORRECTED LOADING LOGIC
                          setGameDataLoaded(true);
                          setLoading(false);
                          
                     } else if (role !== 'player1') {
-                        // CLIENT: Only update players from DB, rest comes via WebRTC
-                        setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded && data.playerStates?.player1) { // Wait for at least p1 state
+                        if (data.playerStates) {
+                            setPlayerStates(data.playerStates);
+                        }
+                        // Stop loading as soon as we have any player state data
+                        if (!gameDataLoaded && data.playerStates?.player1) {
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
-                    } else if (role === 'player1' && gameDataLoaded) {
-                       // HOST AFTER INITIAL LOAD: Only update other player's data
-                       setPlayers(currentPlayers => {
-                           const newPlayers = normalizePlayers(data.players);
-                           const self = currentPlayers.find(p => p.id === 'player1');
-                           const other = newPlayers.find(p => p.id === 'player2');
-                           return [self, other].filter(Boolean) as Player[];
-                        });
                     }
                 });
             } catch (error: any) {
