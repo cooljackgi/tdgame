@@ -251,40 +251,46 @@ export default function VersusGameLoader() {
                 }
 
                 gameUnsub = onSnapshot(gameDocRef, (snap) => {
-                    if (!snap.exists()) return;
+                    if (!snap.exists()) {
+                      toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
+                      router.push('/');
+                      return;
+                    };
                     const data = snap.data();
                     if (!data) return;
+
                     let role: 'player1' | 'player2' | 'spectator' = 'spectator';
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
-                    
-                    const newPlayers = normalizePlayers(data.players);
-                    setPlayers(newPlayers);
 
+                    // HOST ONLY: Load initial state ONCE
                     if (role === 'player1' && !gameDataLoaded) {
-                         const difficultyMod = difficultyModifiers[data.difficulty || 'Normal'];
                          setDifficulty(data.difficulty || 'Normal');
-                         setPlayerStates(data.playerStates || {
-                             player1: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
-                             player2: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
-                         });
+                         setPlayers(normalizePlayers(data.players));
+                         setPlayerStates(data.playerStates); // Load the whole object
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          
                          setGameDataLoaded(true);
                          setLoading(false);
-                         
                     } else if (role !== 'player1') {
-                        if (data.playerStates) {
-                            setPlayerStates(data.playerStates);
-                        }
-                        // Stop loading as soon as we have any player state data
-                        if (!gameDataLoaded && data.playerStates?.player1) {
+                        // CLIENT: Only update players from DB, rest comes via WebRTC
+                        setPlayers(normalizePlayers(data.players));
+                        if (!gameDataLoaded && data.playerStates?.player1) { // Wait for host to set up states
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
+                    } else if (role === 'player1' && gameDataLoaded) {
+                        // HOST AFTER INITIAL LOAD: Only update other player's data
+                        setPlayers(currentPlayers => {
+                           const newPlayers = normalizePlayers(data.players);
+                           const self = currentPlayers.find(p => p.id === 'player1');
+                           const other = newPlayers.find(p => p.id === 'player2');
+                           const finalPlayers = [self, other].filter(Boolean) as Player[];
+                           return finalPlayers;
+                        });
                     }
                 });
             } catch (error: any) {
@@ -347,7 +353,7 @@ export default function VersusGameLoader() {
                     onSendEnemy={handleSendEnemy}
                     players={players} 
                     setPlayers={setPlayers} 
-                    gameState={playerStates[localPlayerId as 'player1'|'player2']} // Pass local player's state
+                    gameState={localPlayerState!} // Pass local player's state
                     localPlayer={localPlayer!}
                     currentWave={currentWave} 
                     totalWaves={gameConfig.waves.length} 
@@ -357,15 +363,15 @@ export default function VersusGameLoader() {
                     resetGame={onExit}
                     towers={gameConfig.towers} 
                     setTowers={() => {}} 
-                    placedTowers={Object.values(playerStates[localPlayerId as 'player1'|'player2'].towersByCell)} 
-                    enemies={playerStates[localPlayerId as 'player1'|'player2'].enemies}
-                    workers={playerStates[localPlayerId as 'player1'|'player2'].workers}
-                    ghosts={playerStates[localPlayerId as 'player1'|'player2'].ghosts}
-                    portals={playerStates[localPlayerId as 'player1'|'player2'].portals}
+                    placedTowers={Object.values(localPlayerState!.towersByCell)} 
+                    enemies={localPlayerState!.enemies}
+                    workers={localPlayerState!.workers}
+                    ghosts={localPlayerState!.ghosts}
+                    portals={localPlayerState!.portals}
                     damageNumbers={[]} 
                     splashRings={[]}
                     persistentClouds={[]}
-                    currentPath={playerStates[localPlayerId as 'player1'|'player2'].currentPath} 
+                    currentPath={localPlayerState!.currentPath} 
                     handlePlaceTower={handlePlaceAction}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
@@ -413,3 +419,4 @@ export default function VersusGameLoader() {
         </div>
   );
 }
+
