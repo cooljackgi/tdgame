@@ -2,6 +2,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { z } from "zod";
+import type { PlayerGameState } from "../../lib/game-data/types"; // Import the type
 
 // Initialize Firebase Admin
 if (admin.apps.length === 0) {
@@ -52,28 +53,22 @@ export const joinGame = functions.https.onCall(async (data, context) => {
       }
       const gameData = gameDoc.data();
       
-      // If user is player 1, do nothing.
       if (gameData?.player1Id === uid) {
           return;
       }
       
-      // If a player 2 is already set, check if it's the same user trying to rejoin.
       if (gameData?.player2Id) {
-         if (gameData.player2Id !== uid) { // A different player is P2
+         if (gameData.player2Id !== uid) {
             throw new functions.https.HttpsError("already-exists", "The game is already full.");
          }
-         // The current user is already P2, do nothing further in the transaction. This allows rejoining.
          return; 
       }
 
-      // If we reach here, P2 slot is free.
       const resources = gameData?.players?.player1?.resources ?? 1250;
       
-      // The game status is NOT changed here anymore. It remains 'waiting'.
-      // The host will trigger the start of the game from the game screen.
-      transaction.update(gameRef, { 
+      const updateData: any = {
         player2Id: uid, 
-        'members': { ...gameData?.members, [uid]: true }, // Correctly merge into the members object
+        'members': { ...gameData?.members, [uid]: true },
         'players.player2': {
             id: 'player2', 
             name: displayName, 
@@ -83,7 +78,24 @@ export const joinGame = functions.https.onCall(async (data, context) => {
             incomePerSecond: 5,
             portalCooldownUntilWave: 0
         },
-      });
+      };
+
+      // Correctly initialize player 2 state for versus mode
+      if (gameData?.gameMode === 'versus') {
+        const startLives = gameData?.playerStates?.player1?.lives || 20; // Default to 20 if p1 state is missing
+        const player2State: PlayerGameState = {
+            lives: startLives,
+            towersByCell: {},
+            enemies: [],
+            workers: [],
+            ghosts: [],
+            portals: [],
+            currentPath: []
+        };
+        updateData['playerStates.player2'] = player2State;
+      }
+
+      transaction.update(gameRef, updateData);
     });
     return { success: true, message: `User ${uid} successfully joined or was re-admitted to game ${gameId}` };
   } catch (error: any) {
