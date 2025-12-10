@@ -21,7 +21,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation, Portal
+  Worker, GhostFoundation, Portal, VersusEnemyToSend
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -94,7 +94,7 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
-  onSendEnemy: (payload: any) => void;
+  onSendEnemy: (payload: VersusEnemyToSend) => void;
   gameMode: 'coop' | 'versus';
 }
 

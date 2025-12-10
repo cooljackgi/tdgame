@@ -13,7 +13,7 @@ import { doc, onSnapshot, Unsubscribe, updateDoc, collection, addDoc, serverTime
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, SoundEvent, Worker, GhostFoundation, GameSessionState, Portal, GameDelta } from '@/lib/game-data/types';
+import type { Player, GameState, GameStatus, PlacedTower, Difficulty, Tower, Element, Enemy, Attack, DamageNumber, SplashRing, Node, EnemyStatusEffect, TowerEffect, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, GravityWell, PersistentCloud, SoundEvent, Worker, GhostFoundation, GameSessionState, Portal, GameDelta, VersusEnemyToSend } from '@/lib/game-data/types';
 import { DeltaType } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_ROWS, GRID_COLS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
@@ -300,6 +300,34 @@ export default function VersusGameLoader() {
     ]);
 
   }, [isGameHost, difficulty, gameConfig]);
+
+    const handleSendEnemy = useCallback((payload: VersusEnemyToSend) => {
+        if (!isGameHost) {
+            // TODO: Client needs to send this action to the host
+            return;
+        }
+
+        setPlayers(currentPlayers => {
+            const tempPlayers = JSON.parse(JSON.stringify(currentPlayers));
+            const sendingPlayerIndex = tempPlayers.findIndex((p: Player) => p.id === localPlayerId);
+            if (sendingPlayerIndex === -1) return currentPlayers;
+
+            const sendingPlayer = tempPlayers[sendingPlayerIndex];
+            if (sendingPlayer.resources < payload.cost) {
+                // Should be prevented by UI, but double-check
+                return currentPlayers;
+            }
+
+            sendingPlayer.resources -= payload.cost;
+            sendingPlayer.incomePerSecond += payload.incomeBonus;
+
+            // TODO: Add the enemy to the OPPONENT's spawn queue
+            // This requires modifying the game state structure for versus mode
+
+            return tempPlayers;
+        });
+
+    }, [isGameHost, localPlayerId]);
 
   const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
     if (!isGameHost || !gameConfig) return;
@@ -1081,6 +1109,10 @@ export default function VersusGameLoader() {
     }
   }, [portalPhase, portalEntrance, selectedTowerToBuild, cancelInteractions, dispatchAction, difficulty, waveStartCountdown, isIntermission]);
 
+    const handleStartNextWaveNowAction = () => {
+        dispatchAction('start_wave_now', {});
+    }
+
   if (configLoading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
@@ -1092,7 +1124,6 @@ export default function VersusGameLoader() {
       dispatchAction('pick_element', { element, playerId: localPlayerId });
   };
   
-  const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
   const handleGameControlAction = (cmd: 'start' | 'start_wave_now' | 'pause' | 'resume') => {
       if (!isGameHost && cmd !== 'start_wave_now') return;
 
@@ -1120,6 +1151,8 @@ export default function VersusGameLoader() {
              <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={isGameHost ? fps : stats.fps} />
              <div className="flex-grow p-2">
                 <LayoutComponent
+                    gameMode="versus"
+                    onSendEnemy={handleSendEnemy}
                     players={players} 
                     setPlayers={setPlayers} 
                     gameState={gameState} 
