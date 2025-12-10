@@ -325,8 +325,8 @@ export function useWebRTC(
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
                 }
-
-                // Relay the CLIENT_READY message to the host's logic
+                
+                // CRITICAL FIX: Relay the message to the main game logic via the correct callback ref
                 if (msg.type === 'CLIENT_READY' && isHost && onActionMessageRef.current) {
                     onActionMessageRef.current(msg);
                     return;
