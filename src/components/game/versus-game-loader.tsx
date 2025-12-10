@@ -117,13 +117,11 @@ export default function VersusGameLoader() {
         gameStatus: gameStatus,
         waveStartCountdown: waveStartCountdown,
         isIntermission: isIntermission,
-      } as GameSessionState;
+      } as Partial<GameSessionState>;
       
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
   }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission]);
-
-  const onActionRef = useRef<(msg: any) => void>();
   
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null,
@@ -131,13 +129,8 @@ export default function VersusGameLoader() {
     user,
     false,
     handleGameData,
-    (msg: any) => onActionRef.current?.(msg)
+    (msg: any) => handleActionData(msg, sendGameData)
   );
-
-  useEffect(() => {
-    onActionRef.current = (msg: any) => handleActionData(msg, sendGameData);
-  }, [handleActionData, sendGameData]);
-
 
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -222,7 +215,7 @@ export default function VersusGameLoader() {
             } else if (role === 'player2') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 setPlayerStates(data.playerStates);
+                 setPlayerStates(data.playerStates); // This was the missing part
                  if (!gameDataLoaded) {
                     setGameDataLoaded(true);
                  }
@@ -318,3 +311,4 @@ export default function VersusGameLoader() {
     </div>
   );
 }
+
