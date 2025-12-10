@@ -39,8 +39,8 @@ export type UseWebRTCReturn = {
     fps: number; // Added for host FPS
 };
 
-const getSignalingUrl = (gameId: string, isMonitor: boolean): string => {
-  const q = `?gameId=${encodeURIComponent(gameId)}&monitor=${isMonitor ? '1' : '0'}`;
+const getSignalingUrl = (gameId: string, isMonitor: boolean, clientId: string): string => {
+  const q = `?gameId=${encodeURIComponent(gameId)}&monitor=${isMonitor ? '1' : '0'}&clientId=${encodeURIComponent(clientId)}`;
   const envBase = process.env.NEXT_PUBLIC_WS_BASE;
   const base = (envBase ? envBase.replace(/\/ws$/, '') : RELAY_DEFAULT);
   return `${base}/ws${q}`;
@@ -264,7 +264,7 @@ export function useWebRTC(
                 signalingSocketRef.current.close();
             }
 
-            const signalingUrl = getSignalingUrl(gameId, isMonitor);
+            const signalingUrl = getSignalingUrl(gameId, isMonitor, selfIdRef.current);
             logWebRTCEvent(gameId, currentRole, 'SIGNALING_CONNECTING', { url: signalingUrl });
             const ws = new WebSocket(signalingUrl);
             signalingSocketRef.current = ws;
@@ -288,16 +288,21 @@ export function useWebRTC(
                      ws.send(JSON.stringify(msg));
                    }
                 };
-                sendHello();
+                sendHello(); // Initial hello
                 if(helloIntervalRef.current) clearInterval(helloIntervalRef.current);
-                helloIntervalRef.current = setInterval(sendHello, 10000); // Send hello more frequently for rejoin
+                // Keep sending hellos to handle reconnects on the other side
+                helloIntervalRef.current = setInterval(sendHello, 10000); 
             };
             
             ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
+                // Ignore messages sent from self
                 if (msg.from && msg.from === selfIdRef.current) return;
                 
+                logWebRTCEvent(gameId, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
+
                 if (msg.type === 'hello' && isHost) {
+                    // Client said hello, let's (re)start the connection process
                     if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
                       peerConnectionRef.current = createPeerConnection(gameId, currentRole);
                     }
@@ -325,16 +330,9 @@ export function useWebRTC(
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
                 }
-                
-                // CRITICAL FIX: Relay the message to the main game logic via the correct callback ref
-                if (msg.type === 'CLIENT_READY' && isHost && onActionMessageRef.current) {
-                    onActionMessageRef.current(msg);
-                    return;
-                }
-                
 
-                logWebRTCEvent(gameId, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
-
+                if (onActionMessageRef.current) onActionMessageRef.current(msg);
+                
                 if (!peerConnectionRef.current || peerConnectionRef.current.connectionState === 'closed') {
                     peerConnectionRef.current = createPeerConnection(gameId, currentRole);
                 }
