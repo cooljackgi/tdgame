@@ -120,11 +120,8 @@ export default function VersusGameLoader() {
     // This is where host-side logic for actions like building, upgrading, etc., would go.
     // For now, it's a placeholder.
   }, []);
-  
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, isGameHost, user, false,
-    (msg) => handleGameData(msg), 
-    (msg) => {
+
+  const handleActionData = useCallback((msg: any) => {
       if (!isGameHost) return;
       if (msg.type === 'CLIENT_READY') {
           const currentState: GameSessionState = {
@@ -137,12 +134,18 @@ export default function VersusGameLoader() {
             waveStartCountdown: waveStartCountdownRef.current,
             isIntermission: isIntermissionRef.current,
           };
+          // This now uses the sendGameData defined in the outer scope
           sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
       } else {
         const { type, payload } = msg;
         onHostAction(type, payload);
       }
-    }
+    }, [isGameHost, onHostAction]);
+  
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null, isGameHost, user, false,
+    handleGameData, 
+    handleActionData
   );
 
   const dispatchAction = useCallback((action: string, payload: any) => {
@@ -188,8 +191,6 @@ export default function VersusGameLoader() {
     fetchConfig();
   }, [toast]);
   
-  const [gameDataLoaded, setGameDataLoaded] = useState(false);
-
   useEffect(() => {
     if (!user || !gameId || configLoading) return;
 
@@ -251,7 +252,7 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  if (!localPlayerState) {
+  if (!isGameHost && !localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
   }
   
@@ -264,7 +265,7 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState}
+          gameState={localPlayerState!}
           localPlayer={localPlayer}
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
@@ -274,16 +275,16 @@ export default function VersusGameLoader() {
           resetGame={onExit}
           towers={gameConfig?.towers ?? []}
           setTowers={() => {}}
-          placedTowers={Object.values(localPlayerState.towersByCell)}
-          enemies={localPlayerState.enemies}
-          workers={localPlayerState.workers}
-          ghosts={localPlayerState.ghosts}
-          portals={localPlayerState.portals}
+          placedTowers={Object.values(localPlayerState!.towersByCell)}
+          enemies={localPlayerState!.enemies}
+          workers={localPlayerState!.workers}
+          ghosts={localPlayerState!.ghosts}
+          portals={localPlayerState!.portals}
           damageNumbers={[]}
           splashRings={[]}
           persistentClouds={[]}
-          currentPath={localPlayerState.currentPath}
-          handlePlaceTower={(row, col) => dispatchAction('build', {row, col, towerId: selectedTowerToBuild?.id})}
+          currentPath={localPlayerState!.currentPath}
+          handlePlaceTower={(row, col) => dispatchAction('BUILD_TOWER_REQUEST', {row, col, towerId: selectedTowerToBuild?.id})}
           onFocusTower={setFocusedTower}
           selectedTowerToBuild={selectedTowerToBuild}
           portalEntrance={portalEntrance}
@@ -293,8 +294,8 @@ export default function VersusGameLoader() {
           cancelInteractions={cancelInteractions}
           onSelectTowerToBuild={setSelectedTowerToBuild}
           onEnterPortalMode={() => {}}
-          handleUpgradeTower={(upgradeId) => focusedTower && dispatchAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId})}
-          handleSellTower={() => focusedTower && dispatchAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col})}
+          handleUpgradeTower={(upgradeId) => focusedTower && dispatchAction('UPGRADE_TOWER_REQUEST', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId})}
+          handleSellTower={() => focusedTower && dispatchAction('SELL_TOWER_REQUEST', {row: focusedTower.position.row, col: focusedTower.position.col})}
           setFocusedTower={setFocusedTower}
           spawnedThisWave={0}
           totalEnemiesInWave={0}
@@ -316,11 +317,10 @@ export default function VersusGameLoader() {
           isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload: any) => sendAction('SEND_ENEMY', payload)}
+          onSendEnemy={(payload: any) => sendAction('SEND_ENEMY_REQUEST', payload)}
           gameMode="versus"
         />
       </div>
     </div>
   );
 }
-
