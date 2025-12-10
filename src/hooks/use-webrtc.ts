@@ -325,6 +325,12 @@ export function useWebRTC(
                     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pong' }));
                     return;
                 }
+                
+                // This is the CRITICAL ADDITION
+                if (msg.type === 'CLIENT_READY' && isHost && onActionMessageRef.current) {
+                    onActionMessageRef.current(msg);
+                    return;
+                }
 
                 logWebRTCEvent(gameId, currentRole, 'SIGNALING_MESSAGE_RECEIVED', { type: msg.type });
 
