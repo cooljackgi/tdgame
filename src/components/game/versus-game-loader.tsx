@@ -296,7 +296,7 @@ export default function VersusGameLoader() {
                     setLocalPlayerId(role);
 
                     // HOST ONLY: Load initial state ONCE
-                    if (role === 'player1') {
+                    if (role === 'player1' && !gameDataLoaded) {
                          setDifficulty(data.difficulty || 'Normal');
                          setPlayers(normalizePlayers(data.players));
                          setPlayerStates(data.playerStates); // Load the whole object
@@ -306,7 +306,7 @@ export default function VersusGameLoader() {
                          
                          setGameDataLoaded(true);
                          setLoading(false);
-                    } else if (role !== 'player1') {
+                    } else if (role === 'player2') {
                         // CLIENT: The `loading` state will now be handled by WebRTC connection status.
                         // We just need to set the players and wait for the snapshot.
                         setPlayers(normalizePlayers(data.players));
@@ -336,11 +336,6 @@ export default function VersusGameLoader() {
 
   if (configLoading || loading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
-  }
-  
-  // NEW: Also show loader if we are a client and don't have the player states yet
-  if (!isGameHost && !playerStates) {
-     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Host...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
