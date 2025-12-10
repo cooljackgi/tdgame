@@ -85,9 +85,6 @@ export default function VersusGameLoader() {
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
   
-  // --- WebRTC Logic ---
-
-    // Correct implementation with useCallback and correct dependency array
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -106,7 +103,6 @@ export default function VersusGameLoader() {
                   setGameStatus(state.gameStatus);
                   setDifficulty(state.difficulty);
                   break;
-                // Add other delta types here as needed for versus mode
                  case DeltaType.PLAYER_UPDATE: setPlayers(deltaPayload); break;
                  case DeltaType.VERSUS_STATE_UPDATE: setPlayerStates(deltaPayload); break;
                  case DeltaType.GAME_STATE_UPDATE:
@@ -120,42 +116,43 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-    // This function will now be stable and correctly handle the CLIENT_READY message
-  const handleActionData = useCallback((msg: any) => {
-    if (!isGameHost) return;
-    
-    if (msg.type === 'CLIENT_READY') {
-      const currentState: GameSessionState = {
-        gameMode: 'versus',
-        players: playersRef.current,
-        playerStates: playerStatesRef.current,
-        currentWave: currentWaveRef.current,
-        difficulty: difficultyRef.current,
-        gameStatus: gameStatusRef.current,
-        waveStartCountdown: waveStartCountdownRef.current,
-        isIntermission: isIntermissionRef.current,
-      };
-      // `sendGameData` is now available here because of the correct declaration order
-      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
-    }
-     // Future-proof: Handle actions sent from clients
-    const { type, payload } = msg;
-    const playerId = payload?.playerId;
-    if (type === 'BUILD_TOWER_REQUEST' && playerId) {
-        // onHostAction('build', payload);
-    }
-    // ... handle other actions
-  }, [isGameHost, sendGameData]); // Dependency on sendGameData is crucial
-
-
+  const onHostAction = useCallback((action: string, payload: any) => {
+    // This is where host-side logic for actions like building, upgrading, etc., would go.
+    // For now, it's a placeholder.
+  }, []);
+  
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, 
-    isGameHost, 
-    user, 
-    false,
-    handleGameData, 
-    handleActionData
+    localPlayerId ? gameId : null, isGameHost, user, false,
+    (msg) => handleGameData(msg), 
+    (msg) => {
+      if (!isGameHost) return;
+      if (msg.type === 'CLIENT_READY') {
+          const currentState: GameSessionState = {
+            gameMode: 'versus',
+            players: playersRef.current,
+            playerStates: playerStatesRef.current,
+            currentWave: currentWaveRef.current,
+            difficulty: difficultyRef.current,
+            gameStatus: gameStatusRef.current,
+            waveStartCountdown: waveStartCountdownRef.current,
+            isIntermission: isIntermissionRef.current,
+          };
+          sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+      } else {
+        const { type, payload } = msg;
+        onHostAction(type, payload);
+      }
+    }
   );
+
+  const dispatchAction = useCallback((action: string, payload: any) => {
+      const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
+      if (isGameHost) {
+          onHostAction(action, finalPayload);
+      } else {
+          sendAction(action, finalPayload);
+      }
+  }, [isGameHost, onHostAction, sendAction, localPlayerId]);
 
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -224,19 +221,17 @@ export default function VersusGameLoader() {
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
 
-            // Both players get the high-level data from Firestore
             setPlayers(normalizePlayers(data.players));
             setDifficulty(data.difficulty || 'Normal');
             setGameStatus(data.gameStatus);
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            // HOST ONLY sets state directly from Firestore.
             if (role === 'player1') {
                  setPlayerStates(data.playerStates);
             }
             
-            setLoading(false); // Both players are considered "loaded" now
+            setLoading(false);
         });
     };
 
@@ -249,36 +244,17 @@ export default function VersusGameLoader() {
     return () => unsub?.();
   }, [user, gameId, router, toast, configLoading]);
   
-  const dispatchAction = (action: string, payload: any) => {
-      const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
-      if (isGameHost) {
-          // onHostAction(action, finalPayload); // Host processes action directly
-      } else {
-          // sendAction(action, finalPayload); // Client sends action to host
-      }
-  };
-
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
 
-  // Show loading screen until essential data is ready
   if (loading || configLoading || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  // CRITICAL FIX: Render immediately for P2, data will come via WebRTC
-  if (!localPlayerState && !isGameHost) {
-      const emptyState: PlayerGameState = { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] };
-      const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
-       return (
-        <div className="w-full h-full flex flex-col">
-            <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : stats.fps} />
-            <p className="text-center p-4">Warte auf Spielzustand vom Host...</p>
-        </div>
-    );
+  if (!localPlayerState) {
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Spielzustand vom Host...</p></div>;
   }
   
-  // From here on, localPlayerState is guaranteed to exist for both players.
   const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
 
   return (
@@ -288,8 +264,8 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState!}
-          localPlayer={localPlayer!}
+          gameState={localPlayerState}
+          localPlayer={localPlayer}
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
           difficulty={difficulty}
@@ -298,16 +274,16 @@ export default function VersusGameLoader() {
           resetGame={onExit}
           towers={gameConfig?.towers ?? []}
           setTowers={() => {}}
-          placedTowers={Object.values(localPlayerState!.towersByCell)}
-          enemies={localPlayerState!.enemies}
-          workers={localPlayerState!.workers}
-          ghosts={localPlayerState!.ghosts}
-          portals={localPlayerState!.portals}
+          placedTowers={Object.values(localPlayerState.towersByCell)}
+          enemies={localPlayerState.enemies}
+          workers={localPlayerState.workers}
+          ghosts={localPlayerState.ghosts}
+          portals={localPlayerState.portals}
           damageNumbers={[]}
           splashRings={[]}
           persistentClouds={[]}
-          currentPath={localPlayerState!.currentPath}
-          handlePlaceTower={() => {}}
+          currentPath={localPlayerState.currentPath}
+          handlePlaceTower={(row, col) => dispatchAction('build', {row, col, towerId: selectedTowerToBuild?.id})}
           onFocusTower={setFocusedTower}
           selectedTowerToBuild={selectedTowerToBuild}
           portalEntrance={portalEntrance}
@@ -317,8 +293,8 @@ export default function VersusGameLoader() {
           cancelInteractions={cancelInteractions}
           onSelectTowerToBuild={setSelectedTowerToBuild}
           onEnterPortalMode={() => {}}
-          handleUpgradeTower={() => {}}
-          handleSellTower={() => {}}
+          handleUpgradeTower={(upgradeId) => focusedTower && dispatchAction('upgrade', {row: focusedTower.position.row, col: focusedTower.position.col, upgradeId})}
+          handleSellTower={() => focusedTower && dispatchAction('sell', {row: focusedTower.position.row, col: focusedTower.position.col})}
           setFocusedTower={setFocusedTower}
           spawnedThisWave={0}
           totalEnemiesInWave={0}
@@ -347,3 +323,4 @@ export default function VersusGameLoader() {
     </div>
   );
 }
+
