@@ -78,8 +78,7 @@ export default function VersusGameLoader() {
   const playerStatesRef = useRef(playerStates);
   useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
   
-  // --- WebRTC Logic ---
-
+    // --- WebRTC Logic ---
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     
@@ -105,10 +104,10 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-  const handleActionData = useCallback((msg: any, sendGameData: (type: string, payload: any) => void) => {
+  const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
     if (msg.type === 'CLIENT_READY') {
-      const currentState = {
+      const currentState: Partial<GameSessionState> = {
         gameMode: 'versus',
         players: playersRef.current,
         playerStates: playerStatesRef.current,
@@ -117,7 +116,7 @@ export default function VersusGameLoader() {
         gameStatus: gameStatus,
         waveStartCountdown: waveStartCountdown,
         isIntermission: isIntermission,
-      } as Partial<GameSessionState>;
+      };
       
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
@@ -129,7 +128,7 @@ export default function VersusGameLoader() {
     user,
     false,
     handleGameData,
-    (msg: any) => handleActionData(msg, sendGameData)
+    handleActionData
   );
 
   useEffect(() => {
@@ -208,17 +207,20 @@ export default function VersusGameLoader() {
                  setGameStatus(data.gameStatus);
                  setIsIntermission(data.isIntermission ?? true);
                  setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                 if (!gameDataLoaded) {
+                 if (!gameDataLoadedRef.current) {
                     setGameDataLoaded(true);
                  }
                  setLoading(false); 
             } else if (role === 'player2') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 setPlayerStates(data.playerStates); // This was the missing part
-                 if (!gameDataLoaded) {
+                 // This is the key change: P2 now renders immediately, 
+                 // even with potentially empty states. The SNAPSHOT will fill it.
+                 setPlayerStates(data.playerStates || { player1: null, player2: null });
+                 if (!gameDataLoadedRef.current) {
                     setGameDataLoaded(true);
                  }
+                 setLoading(false);
             }
         });
     };
@@ -230,16 +232,17 @@ export default function VersusGameLoader() {
     });
 
     return () => unsub?.();
-  }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
+  }, [user, gameId, router, toast, configLoading]);
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
 
-  if (configLoading || !localPlayer) {
+  if (loading || configLoading || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  if (!isGameHost && !localPlayerState) {
+  // This check is now safe, because P2 will get at least an empty state immediately.
+  if (!localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p>Warte auf Spielzustand vom Host...</p></div>;
   }
 
@@ -311,4 +314,3 @@ export default function VersusGameLoader() {
     </div>
   );
 }
-
