@@ -105,8 +105,16 @@ export default function Home() {
           newGameData.isIntermission = false;
           // CORRECT INITIALIZATION FOR VERSUS
           newGameData.playerStates = {
-              player1: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
-              player2: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+              player1: { 
+                  lives: difficultyMod.startLives, 
+                  towersByCell: {}, 
+                  enemies: [], 
+                  workers: [{ id: "worker-1", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }], 
+                  ghosts: [], 
+                  portals: [], 
+                  currentPath: [] 
+              },
+              player2: null, // Player 2 state is initialized on join
           };
           newGameData.versusState = {
               nextWaveTimestamp: serverTimestamp(),
@@ -122,7 +130,6 @@ export default function Home() {
 
       const gameDocRef = await addDoc(collection(db, "games"), newGameData);
       
-      // CORRECTED: Direct navigation for both modes. Do not set activeGame state here.
       window.location.href = `/game/${gameDocRef.id}`;
 
     } catch (error: any) {
@@ -249,7 +256,7 @@ export default function Home() {
                     <CardContent className="space-y-2">
                         {user ? (
                            <div className="flex gap-2">
-                             <Button onClick={() => startGame('coop')} className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
+                             <Button onClick={() => setActiveGame('coop')} className="w-full bg-cyan-500 hover:bg-cyan-600 text-white">
                                <Users className="mr-2" /> Zur Lobby
                              </Button>
                              <Button onClick={handleLogout} variant="outline" size="icon">
