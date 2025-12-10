@@ -153,7 +153,7 @@ export default function VersusGameLoader() {
 
   // --- WebRTC Logic ---
   
-  const handleGameData = useCallback((msg: any) => {
+  const handleGameData = useCallback((msg: NetMsg) => {
     if (isGameHost) return;
     
     if (msg.type === 'deltas') {
@@ -175,8 +175,8 @@ export default function VersusGameLoader() {
             }
         }
     }
-  }, [isGameHost, gameConfig, localPlayer]);
-
+  }, [isGameHost]);
+  
   const handleSendEnemy = useCallback((payload: VersusEnemyToSend) => {
       dispatchAction('send_enemy', payload);
   }, []);
@@ -187,7 +187,7 @@ export default function VersusGameLoader() {
     // ... a lot of the logic will need to be duplicated inside a loop for each player state
     
     return;
-  }, []);
+  }, [isGameHost, gameConfig]);
     
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -307,13 +307,10 @@ export default function VersusGameLoader() {
                          setGameDataLoaded(true);
                          setLoading(false);
                     } else if (role !== 'player1') {
-                        // CLIENT: Update players, rest comes via WebRTC
+                        // CLIENT: The `loading` state will now be handled by WebRTC connection status.
+                        // We just need to set the players and wait for the snapshot.
                         setPlayers(normalizePlayers(data.players));
-                        // Mark as loaded if host has initialized the states
-                        if (!gameDataLoaded && data.playerStates?.player1) {
-                            setGameDataLoaded(true);
-                            setLoading(false);
-                        }
+                        setLoading(false); // **THE FIX**: Stop loading for P2 immediately.
                     } else if (role === 'player1' && gameDataLoaded) {
                         // HOST AFTER INITIAL LOAD: Only update other player's data
                         setPlayers(currentPlayers => {
@@ -346,8 +343,13 @@ export default function VersusGameLoader() {
   
   const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
 
-  if (configLoading || loading || !gameConfig || !localPlayer || !playerStates) {
+  if (configLoading || loading || !gameConfig || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
+  }
+  
+  // NEW: Also show loader if we are a client and don't have the player states yet
+  if (!isGameHost && !playerStates) {
+     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Warte auf Host...</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
