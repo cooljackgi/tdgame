@@ -103,6 +103,11 @@ export default function Home() {
 
       if (gameMode === 'versus') {
           newGameData.isIntermission = false;
+          // CORRECT INITIALIZATION FOR VERSUS
+          newGameData.playerStates = {
+              player1: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+              player2: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
+          };
           newGameData.versusState = {
               nextWaveTimestamp: serverTimestamp(),
               player1: { spawnQueue: [] },

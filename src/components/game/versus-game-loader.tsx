@@ -239,7 +239,19 @@ export default function VersusGameLoader() {
 
         const joinAndListen = async () => {
             try {
-                // ... (joining logic is mostly the same)
+                const gameSnap = await getDoc(gameDocRef);
+                if (!gameSnap.exists()) {
+                    toast({ title: "Spiel nicht gefunden", variant: 'destructive'});
+                    router.push('/');
+                    return;
+                }
+
+                const initialData = gameSnap.data();
+                if (initialData.player1Id !== user.uid && !initialData.player2Id) {
+                    const joinGameCallable = httpsCallable(functions, 'joinGame');
+                    setLoadingMessage('Trete Spiel bei...');
+                    await joinGameCallable({ gameId });
+                }
 
                 gameUnsub = onSnapshot(gameDocRef, (snap) => {
                     if (!snap.exists()) return;
@@ -255,18 +267,20 @@ export default function VersusGameLoader() {
                          const difficultyMod = difficultyModifiers[data.difficulty || 'Normal'];
                          setDifficulty(data.difficulty || 'Normal');
                          setPlayers(normalizePlayers(data.players));
-                         setPlayerStates({
+                         setPlayerStates(data.playerStates || { // Fallback if not set
                              player1: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
                              player2: { lives: difficultyMod.startLives, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] },
                          });
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                         setGameDataLoaded(true);
-                         setLoading(false);
+                         if (data.playerStates) { // Only finish loading if the crucial data is present
+                            setGameDataLoaded(true);
+                            setLoading(false);
+                         }
                     } else if (role !== 'player1') {
                         setPlayers(normalizePlayers(data.players));
-                        if (!gameDataLoaded) {
+                        if (!gameDataLoaded && data.playerStates) { // Client also waits for playerStates
                             setGameDataLoaded(true);
                             setLoading(false);
                         }
@@ -294,6 +308,21 @@ export default function VersusGameLoader() {
   }, [gameId, user, difficulty]);
 
   useEffect(() => {
+    async function fetchConfig() {
+        try {
+            const config = await loadGameConfig();
+            setGameConfig(config);
+        } catch (error) {
+            console.error("Failed to load game config, using defaults:", error);
+            toast({ title: 'Fehler beim Laden der Konfiguration', description: 'Standardwerte werden verwendet.', variant: 'destructive' });
+        } finally {
+            setConfigLoading(false);
+        }
+    }
+    fetchConfig();
+}, [toast]);
+
+  useEffect(() => {
       // The game loop will now need to iterate over playerStates and run simulations for each.
       // This is a major refactor.
   }, [isGameHost, gameConfig, handleGameEnd]);
@@ -307,6 +336,8 @@ export default function VersusGameLoader() {
   const onElementPick = (element: Element) => dispatchAction('pick_element', { element, playerId: localPlayerId });
   const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
   const toggleMute = () => {}; // Placeholder
+  const handlePlaceAction = (row: number, col: number) => {}; // Placeholder
+
 
   const LayoutComponent = isMobile ? VersusMobileLayout : VersusDesktopLayout;
 
@@ -340,7 +371,7 @@ export default function VersusGameLoader() {
                     splashRings={[]}
                     persistentClouds={[]}
                     currentPath={playerStates[localPlayerId as 'player1'|'player2'].currentPath} 
-                    handlePlaceTower={(r, c) => {}}
+                    handlePlaceTower={handlePlaceAction}
                     onFocusTower={onFocusTower} 
                     selectedTowerToBuild={selectedTowerToBuild}
                     portalEntrance={portalEntrance}
