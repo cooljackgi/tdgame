@@ -184,15 +184,15 @@ export default function VersusGameLoader() {
             switch(deltaType) {
                 case DeltaType.SNAPSHOT:
                   setPlayers((deltaPayload as GameSessionState).players);
-                  setEnemies((deltaPayload as GameSessionState).enemies);
-                  setTowersByCell((deltaPayload as GameSessionState).towersByCell);
-                  setGameState((deltaPayload as GameSessionState).gameState);
+                  setEnemies((deltaPayload as GameSessionState).enemies || []);
+                  setTowersByCell((deltaPayload as GameSessionState).towersByCell || {});
+                  setGameState((deltaPayload as GameSessionState).gameState || { lives: 20 });
                   setCurrentWave((deltaPayload as GameSessionState).currentWave);
                   setIsIntermission((deltaPayload as GameSessionState).isIntermission);
                   setWaveStartCountdown((deltaPayload as GameSessionState).waveStartCountdown);
                   setGameStatus((deltaPayload as GameSessionState).gameStatus);
-                  setWorkers((deltaPayload as GameSessionState).workers);
-                  setGhosts((deltaPayload as GameSessionState).ghosts);
+                  setWorkers((deltaPayload as GameSessionState).workers || []);
+                  setGhosts((deltaPayload as GameSessionState).ghosts || []);
                   setPortals((deltaPayload as GameSessionState).portals || []);
                   break;
                 case DeltaType.ENEMY_UPDATE: setEnemies(deltaPayload as Enemy[]); break;
@@ -263,6 +263,7 @@ export default function VersusGameLoader() {
         return {
             id: `enemy-${waveIndex}-${enemyIdCounter.current++}`,
             type: spec.enemies.type,
+            owner: 'player1', // In coop, all enemies are neutral, here they belong to player1 by default
             health: health,
             maxHealth: health,
             armor: spec.enemies.armor,
@@ -708,7 +709,7 @@ export default function VersusGameLoader() {
     
     logGameStats(gameId, 'host', { 
         fps: fpsRef.current, 
-        enemyCount: enemiesRef.current.filter(e => !e.deathTimestamp).length, 
+        enemyCount: (enemiesRef.current || []).filter(e => !e.deathTimestamp).length, 
         towerCount: Object.keys(towersByCellRef.current).length,
         wave: currentWaveRef.current
     });
@@ -740,7 +741,7 @@ export default function VersusGameLoader() {
     setCurrentWave(nextWaveIndex);
     setIsIntermission(true);
     setWaveStartCountdown(INTERMISSION_TIME);
-    setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
+    setPortals(prev => (prev || []).map(p => ({ ...p, expiresAt: Date.now() + 500 })));
     setIsLogicPaused(false);
   }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown, gameId]);
 
@@ -808,13 +809,13 @@ export default function VersusGameLoader() {
           
           const towersChanged = Object.keys(towersAfterBuild).length !== Object.keys(towersByCellRef.current).length;
           const ghostsChanged = nextGhosts.length !== ghostsRef.current.length;
-          const portalsChanged = nextPortals?.length !== (portalsRef.current?.length || 0);
+          const portalsChanged = (nextPortals?.length || 0) !== (portalsRef.current?.length || 0);
 
           setWorkers(nextWorkers);
           setPlayers(playersAfterBuild);
           if (ghostsChanged) { setGhosts(nextGhosts); deltaQueueRef.current.push([DeltaType.GHOST_UPDATE, nextGhosts]); }
           if (towersChanged) { setTowersByCell(towersAfterBuild); deltaQueueRef.current.push([DeltaType.TOWERS_UPDATE, towersAfterBuild]); }
-          if (portalsChanged) { setPortals(nextPortals); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals]); }
+          if (portalsChanged) { setPortals(nextPortals || []); deltaQueueRef.current.push([DeltaType.PORTAL_UPDATE, nextPortals || []]); }
           
           if(ghostsChanged || towersChanged || portalsChanged) {
             deltaQueueRef.current.push([DeltaType.WORKER_UPDATE, nextWorkers]);
@@ -846,7 +847,7 @@ export default function VersusGameLoader() {
               let newGravityWells: GravityWell[] = [];
               let newPersistentClouds: PersistentCloud[] = [];
               
-              let currentEnemies = [...enemiesRef.current];
+              let currentEnemies = [...(enemiesRef.current || [])];
               let updatedTowers = {...towersByCellRef.current};
 
                 const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
@@ -936,7 +937,7 @@ export default function VersusGameLoader() {
               const stillAlive: Enemy[] = [];
               const activeGravityWells = [...(gravityWellsRef.current || []), ...newGravityWells].filter(w => w.expires > epochNow);
               const activePersistentClouds = [...(persistentCloudsRef.current || []), ...newPersistentClouds].filter(c => c.expires > epochNow);
-              const activePortals = (portalsRef.current ?? []).filter(p => p.expiresAt > epochNow || p.expiresAt === 0);
+              const activePortals = (portalsRef.current ?? []).filter(p => (p.expiresAt > epochNow || p.expiresAt === 0));
 
               for (let enemy of currentEnemies) {
                   if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
@@ -1091,12 +1092,12 @@ export default function VersusGameLoader() {
       dispatchAction('pick_element', { element, playerId: localPlayerId });
   };
   
-  const handleStartWaveNowAction = () => dispatchAction('start_wave_now', {});
+  const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
   const handleGameControlAction = (cmd: 'start' | 'start_wave_now' | 'pause' | 'resume') => {
       if (!isGameHost && cmd !== 'start_wave_now') return;
 
       if (cmd === 'start' || cmd === 'start_wave_now') {
-          handleStartWaveNowAction();
+          handleStartNextWaveNowAction();
       } else if (cmd === 'pause') {
           setGameStatus('paused');
       } else if (cmd === 'resume') {
@@ -1153,7 +1154,7 @@ export default function VersusGameLoader() {
                     handleUpgradeTower={handleUpgradeTowerAction}
                     handleSellTower={handleSellTowerAction}
                     setFocusedTower={setFocusedTower}
-                    spawnedThisWave={isIntermission ? 0 : (gameConfig.waves[currentWave]?.enemies.count - spawnQueueRef.current.length)}
+                    spawnedThisWave={isIntermission ? 0 : ((gameConfig.waves[currentWave]?.enemies.count || 0) - spawnQueueRef.current.length)}
                     totalEnemiesInWave={gameConfig.waves[currentWave]?.enemies.count || 0}
                     totalKilled={totalKilled}
                     totalLeaked={totalLeaked}
