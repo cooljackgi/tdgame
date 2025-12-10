@@ -519,7 +519,7 @@ export default function CoopGameLoader() {
                          const lives = data.gameState?.lives ?? difficultyModifiers[data.difficulty || 'Normal'].startLives;
                          
                         const p1Worker: Worker = { id: "worker-1", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null };
-                        const p2Worker: Worker = { id: "worker-2", x: 64 * 3, y: 64 * 3, speed: 260, state: "idle", queue: [], moveTarget: null };
+                        const p2Worker: Worker = { id: "worker-2", x: 64 * 3, y: 64 * (GRID_COLS-2), speed: 260, state: "idle", queue: [], moveTarget: null };
                         
                         let initialPlayerStates: Record<string, PlayerGameState>;
                         
@@ -870,4 +870,3 @@ export default function CoopGameLoader() {
         </div>
   );
 }
-
