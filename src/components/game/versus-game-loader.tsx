@@ -77,6 +77,8 @@ export default function VersusGameLoader() {
   const playerStatesRef = useRef(playerStates);
   useEffect(() => { playerStatesRef.current = playerStates; }, [playerStates]);
   
+  // --- WebRTC Logic ---
+  
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     
@@ -87,29 +89,37 @@ export default function VersusGameLoader() {
             const deltaPayload = delta[1];
             switch(deltaType) {
                 case DeltaType.SNAPSHOT:
-                  setPlayers((deltaPayload as GameSessionState).players);
-                  setPlayerStates((deltaPayload as GameSessionState).playerStates!);
-                  setCurrentWave((deltaPayload as GameSessionState).currentWave);
-                  setIsIntermission((deltaPayload as GameSessionState).isIntermission);
-                  setWaveStartCountdown((deltaPayload as GameSessionState).waveStartCountdown);
-                  setGameStatus((deltaPayload as GameSessionState).gameStatus);
+                  const state = deltaPayload as GameSessionState;
+                  setPlayers(state.players);
+                  setPlayerStates(state.playerStates!);
+                  setCurrentWave(state.currentWave);
+                  setIsIntermission(state.isIntermission);
+                  setWaveStartCountdown(state.waveStartCountdown);
+                  setGameStatus(state.gameStatus);
                   setLoading(false); // Make sure loading is false after snapshot
                   break;
-                // Add other delta handling here
+                // Add other delta handling here as needed for versus mode
             }
         }
     }
   }, [isGameHost]);
 
+  const onActionRef = useRef<(msg: any) => void>();
+  const onGameDataRef = useRef<(msg: any) => void>();
+  useEffect(() => { onActionRef.current = (msg: any) => handleActionData(msg); }, [handleActionData]);
+  useEffect(() => { onGameDataRef.current = (msg: any) => handleGameData(msg); }, [handleGameData]);
+  
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
     isGameHost, 
     user, 
     false,
-    handleGameData,
-    undefined // onActionMessage will be set in the next callback
+    (msg: any) => onGameDataRef.current?.(msg),
+    (msg: any) => onActionRef.current?.(msg)
   );
-  
+
+  // This is the callback that handles actions from the client.
+  // It needs access to sendGameData, hence the slightly complex setup with refs.
   const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
     if (msg.type === 'CLIENT_READY') {
@@ -126,26 +136,15 @@ export default function VersusGameLoader() {
       
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
+    // Handle other actions like sending enemies here...
   }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
 
-  // Re-assign the action handler to the useWebRTC hook's return object.
-  // This is a bit of a workaround because of the dependency cycle.
-  // A cleaner way might involve a more complex state management solution or restructuring the hook.
-  // For now, this ensures `handleActionData` has access to `sendGameData`.
-  const webrtc = useWebRTC(
-    localPlayerId ? gameId : null, 
-    isGameHost, 
-    user, 
-    false,
-    handleGameData,
-    handleActionData // Now we can pass the fully-defined callback
-  );
   
-   useEffect(() => {
-      if (webrtc.isConnected && !isGameHost && localPlayerId === 'player2') {
-          webrtc.sendAction('CLIENT_READY', {});
-      }
-    }, [webrtc.isConnected, isGameHost, localPlayerId, webrtc.sendAction]);
+  useEffect(() => {
+    if (isConnected && !isGameHost && localPlayerId === 'player2') {
+      sendAction('CLIENT_READY', {});
+    }
+  }, [isConnected, isGameHost, localPlayerId, sendAction]);
 
 
   useEffect(() => {
@@ -210,6 +209,7 @@ export default function VersusGameLoader() {
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
             
+            // Host loads initial data and then waits for client to be ready
             if (role === 'player1') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
@@ -220,15 +220,13 @@ export default function VersusGameLoader() {
                  if (!gameDataLoadedRef.current) {
                     setGameDataLoaded(true);
                  }
-                 setLoading(false);
-            } else if (role === 'player2') {
+                 setLoading(false); // Host is ready to be displayed
+            } else if (role === 'player2' && !gameDataLoadedRef.current) {
+                 // Client only needs minimal data, rest comes from snapshot
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 setPlayerStates(data.playerStates); // THE FIX
-                 if (!gameDataLoadedRef.current) {
-                    setGameDataLoaded(true);
-                 }
-                 setLoading(false);
+                 setGameDataLoaded(true);
+                 // Loading remains true until snapshot is received
             }
         });
     };
@@ -249,6 +247,7 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
+  // This is the correct loading state for Player 2
   if (!isGameHost && !localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p>Warte auf Spielzustand vom Host...</p></div>;
   }
@@ -257,7 +256,7 @@ export default function VersusGameLoader() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : webrtc.fps} />
+      <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : stats.fps} />
       <div className="flex-grow p-2">
         <LayoutComponent
           players={players}
@@ -311,15 +310,13 @@ export default function VersusGameLoader() {
           cheat_unlockAll={() => {}}
           firingTowerIds={new Set()}
           allTowers={gameConfig.towers}
-          isWsConnected={webrtc.isConnected}
+          isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload) => webrtc.sendAction('SEND_ENEMY', payload)}
+          onSendEnemy={(payload) => sendAction('SEND_ENEMY', payload)}
           gameMode="versus"
         />
       </div>
     </div>
   );
 }
-
-    
