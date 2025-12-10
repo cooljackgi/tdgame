@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -104,23 +105,7 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-  const onActionRef = useRef<(msg: any) => void>();
-  const onGameDataRef = useRef<(msg: any) => void>();
-  useEffect(() => { onActionRef.current = (msg: any) => handleActionData(msg); }, [handleActionData]);
-  useEffect(() => { onGameDataRef.current = (msg: any) => handleGameData(msg); }, [handleGameData]);
-  
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, 
-    isGameHost, 
-    user, 
-    false,
-    (msg: any) => onGameDataRef.current?.(msg),
-    (msg: any) => onActionRef.current?.(msg)
-  );
-
-  // This is the callback that handles actions from the client.
-  // It needs access to sendGameData, hence the slightly complex setup with refs.
-  const handleActionData = useCallback((msg: any) => {
+    const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
     if (msg.type === 'CLIENT_READY') {
       const currentState = {
@@ -137,8 +122,25 @@ export default function VersusGameLoader() {
       sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
     // Handle other actions like sending enemies here...
-  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission, sendGameData]);
+  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission]);
 
+  const onActionRef = useRef<(msg: any) => void>();
+  const onGameDataRef = useRef<(msg: any) => void>();
+  
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null, 
+    isGameHost, 
+    user, 
+    false,
+    (msg: any) => onGameDataRef.current?.(msg),
+    (msg: any) => onActionRef.current?.(msg)
+  );
+
+  useEffect(() => { onActionRef.current = (msg: any) => handleActionData(msg); }, [handleActionData]);
+  useEffect(() => { onGameDataRef.current = (msg: any) => handleGameData(msg); }, [handleGameData]);
+
+  // This is the callback that handles actions from the client.
+  // It needs access to sendGameData, hence the slightly complex setup with refs.
   
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -217,16 +219,19 @@ export default function VersusGameLoader() {
                  setGameStatus(data.gameStatus);
                  setIsIntermission(data.isIntermission ?? true);
                  setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
-                 if (!gameDataLoadedRef.current) {
+                 if (!gameDataLoaded) {
                     setGameDataLoaded(true);
                  }
                  setLoading(false); // Host is ready to be displayed
-            } else if (role === 'player2' && !gameDataLoadedRef.current) {
+            } else if (role === 'player2') {
                  // Client only needs minimal data, rest comes from snapshot
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 setGameDataLoaded(true);
-                 // Loading remains true until snapshot is received
+                 setPlayerStates(data.playerStates); // THE FIX
+                 if (!gameDataLoaded) {
+                    setGameDataLoaded(true);
+                 }
+                 // setLoading(false) will be called by the SNAPSHOT
             }
         });
     };
@@ -238,12 +243,12 @@ export default function VersusGameLoader() {
     });
 
     return () => unsub?.();
-  }, [user, gameId, router, toast, configLoading]);
+  }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
 
-  if (loading || !gameConfig || !localPlayer) {
+  if (configLoading || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
@@ -264,12 +269,12 @@ export default function VersusGameLoader() {
           gameState={localPlayerState!}
           localPlayer={localPlayer!}
           currentWave={currentWave}
-          totalWaves={gameConfig.waves.length}
+          totalWaves={gameConfig?.waves.length ?? 0}
           difficulty={difficulty}
           handleGameControl={() => {}}
           gameStatus={gameStatus}
           resetGame={onExit}
-          towers={gameConfig.towers}
+          towers={gameConfig?.towers ?? []}
           setTowers={() => {}}
           placedTowers={Object.values(localPlayerState!.towersByCell)}
           enemies={localPlayerState!.enemies}
@@ -309,11 +314,11 @@ export default function VersusGameLoader() {
           isCheating={false}
           cheat_unlockAll={() => {}}
           firingTowerIds={new Set()}
-          allTowers={gameConfig.towers}
+          allTowers={gameConfig?.towers ?? []}
           isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload) => sendAction('SEND_ENEMY', payload)}
+          onSendEnemy={(payload: any) => sendAction('SEND_ENEMY', payload)}
           gameMode="versus"
         />
       </div>
