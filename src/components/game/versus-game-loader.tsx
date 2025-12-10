@@ -105,36 +105,39 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-  const onGameDataRef = useRef(handleGameData);
-  useEffect(() => {
-    onGameDataRef.current = handleGameData;
-  }, [handleGameData]);
-
-  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, 
-    isGameHost, 
-    user, 
-    false,
-    (msg: any) => onGameDataRef.current?.(msg),
-    // Pass the action handler directly
-    (msg: any) => {
-        if (!isGameHost) return;
-        if (msg.type === 'CLIENT_READY') {
-          const currentState = {
-            gameMode: 'versus',
-            players: playersRef.current,
-            playerStates: playerStatesRef.current,
-            currentWave: currentWave,
-            difficulty: difficulty,
-            gameStatus: gameStatus,
-            waveStartCountdown: waveStartCountdown,
-            isIntermission: isIntermission,
-          } as GameSessionState;
-          
-          sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
-        }
+  const handleActionData = useCallback((msg: any, sendGameData: (type: string, payload: any) => void) => {
+    if (!isGameHost) return;
+    if (msg.type === 'CLIENT_READY') {
+      const currentState = {
+        gameMode: 'versus',
+        players: playersRef.current,
+        playerStates: playerStatesRef.current,
+        currentWave: currentWave,
+        difficulty: difficulty,
+        gameStatus: gameStatus,
+        waveStartCountdown: waveStartCountdown,
+        isIntermission: isIntermission,
+      } as GameSessionState;
+      
+      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
     }
+  }, [isGameHost, currentWave, difficulty, gameStatus, waveStartCountdown, isIntermission]);
+
+  const onActionRef = useRef<(msg: any) => void>();
+  
+  const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
+    localPlayerId ? gameId : null,
+    isGameHost,
+    user,
+    false,
+    handleGameData,
+    (msg: any) => onActionRef.current?.(msg)
   );
+
+  useEffect(() => {
+    onActionRef.current = (msg: any) => handleActionData(msg, sendGameData);
+  }, [handleActionData, sendGameData]);
+
 
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -205,7 +208,6 @@ export default function VersusGameLoader() {
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
             
-            // Host loads initial data and then waits for client to be ready
             if (role === 'player1') {
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
@@ -216,16 +218,14 @@ export default function VersusGameLoader() {
                  if (!gameDataLoaded) {
                     setGameDataLoaded(true);
                  }
-                 setLoading(false); // Host is ready to be displayed
+                 setLoading(false); 
             } else if (role === 'player2') {
-                 // Client only needs minimal data, rest comes from snapshot
                  setPlayers(normalizePlayers(data.players));
                  setDifficulty(data.difficulty || 'Normal');
-                 setPlayerStates(data.playerStates); // THE FIX
+                 setPlayerStates(data.playerStates);
                  if (!gameDataLoaded) {
                     setGameDataLoaded(true);
                  }
-                 // setLoading(false) will be called by the SNAPSHOT
             }
         });
     };
@@ -246,7 +246,6 @@ export default function VersusGameLoader() {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
-  // This is the correct loading state for Player 2
   if (!isGameHost && !localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p>Warte auf Spielzustand vom Host...</p></div>;
   }
