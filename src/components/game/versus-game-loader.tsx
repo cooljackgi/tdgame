@@ -294,23 +294,31 @@ export default function VersusGameLoader() {
                     if (data.player1Id === user.uid) role = 'player1';
                     else if (data.player2Id === user.uid) role = 'player2';
                     setLocalPlayerId(role);
-
-                    // HOST ONLY: Load initial state ONCE
+                    
                     if (role === 'player1' && !gameDataLoaded) {
                          setDifficulty(data.difficulty || 'Normal');
                          setPlayers(normalizePlayers(data.players));
-                         setPlayerStates(data.playerStates); // Load the whole object
+                         setPlayerStates(data.playerStates);
                          setGameStatus(data.gameStatus);
                          setIsIntermission(data.isIntermission ?? true);
                          setWaveStartCountdown(data.waveStartCountdown ?? INTERMISSION_TIME);
                          
                          setGameDataLoaded(true);
                          setLoading(false);
-                    } else if (role === 'player2') {
-                        // CLIENT: The `loading` state will now be handled by WebRTC connection status.
-                        // We just need to set the players and wait for the snapshot.
+                    } else if (role !== 'player1') {
                         setPlayers(normalizePlayers(data.players));
-                        setLoading(false); // Stop loading for P2 immediately.
+                         if (!gameDataLoaded) {
+                            setGameDataLoaded(true);
+                            setLoading(false);
+                        }
+                    } else if (role === 'player1' && gameDataLoaded) {
+                        setPlayers(currentPlayers => {
+                           const newPlayers = normalizePlayers(data.players);
+                           const self = currentPlayers.find(p => p.id === 'player1');
+                           const other = newPlayers.find(p => p.id === 'player2');
+                           const finalPlayers = [self, other].filter(Boolean) as Player[];
+                           return finalPlayers;
+                        });
                     }
                 });
             } catch (error: any) {
@@ -334,8 +342,8 @@ export default function VersusGameLoader() {
   
   const handleStartNextWaveNowAction = () => dispatchAction('start_wave_now', {});
 
-  if (configLoading || loading || !gameConfig || !localPlayer) {
-    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
+  if (configLoading || loading || !gameConfig || !localPlayer || (!isGameHost && !playerStates)) {
+    return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{!isGameHost && !playerStates ? "Warte auf Spielzustand vom Host..." : loadingMessage}</p></div>;
   }
   
   const handleUpgradeTowerAction = (upgradeId: string) => focusedTower && dispatchAction('upgrade', { row: focusedTower.position.row, col: focusedTower.position.col, upgradeId });
