@@ -1,4 +1,3 @@
-
 // Minimaler WS-Relay für Räume nach ?gameId=...
 import http from "http";
 import { WebSocketServer } from "ws";
@@ -52,9 +51,9 @@ function joinRoom(ws, gameId, isMonitor) {
     }
     room.players.add(ws);
   }
-  
-  const playerCountAfterJoin = [...room.players].filter(p => !p.__isMonitor).length;
-  console.log("[JOIN]", { gameId, isMonitor, total: room.players.size + room.monitors.size, players: playerCountAfterJoin, monitors: room.monitors.size });
+
+  const playerCount = [...room.players].filter(p => !p.__isMonitor).length;
+  console.log("[JOIN]", { gameId, isMonitor, total: room.players.size + room.monitors.size, players: playerCount, monitors: room.monitors.size });
 }
 
 function leaveRoom(ws) {
@@ -87,6 +86,8 @@ wss.on("connection", (ws, request) => {
   const gameId = query?.gameId;
   const isMonitor = query?.monitor === '1';
   
+  // Diese Prüfung ist jetzt redundant, da sie im Upgrade-Handler stattfindet,
+  // aber als doppelter Boden schadet sie nicht.
   if (!gameId || typeof gameId !== "string") {
     console.warn("[CONN CLOSE] missing gameId");
     ws.close(1008, "Missing gameId");
@@ -102,11 +103,38 @@ wss.on("connection", (ws, request) => {
     const room = rooms.get(gameId);
     if (!room) return;
 
-    // Einfache Broadcast-Logik: an alle anderen im Raum senden.
-    const clients = new Set([...room.players, ...room.monitors]);
-    for (const client of clients) {
-        if (client !== ws && client.readyState === 1) { // WebSocket.OPEN === 1
-            client.send(data, { binary: isBinary });
+    // A message from a monitor is ignored.
+    if (ws.__isMonitor) return;
+    
+    let msgObj;
+    try {
+        msgObj = JSON.parse(data.toString());
+    } catch(e) {
+        // Not a JSON message, relay as is
+    }
+
+    if (msgObj && msgObj.type === 'hello') {
+        // This is our manual keep-alive. Mark the connection as alive.
+        ws.isAlive = true;
+        // console.log(`[RELAY] Received hello for room ${gameId}, will relay.`);
+        // DO NOT return here, we must relay this message!
+    }
+    
+    // A message from a player is broadcast to the other player and all monitors.
+    const messageString = data.toString();
+    // console.log(`[RELAY] Broadcasting from player in room ${gameId}:`, messageString.substring(0, 100));
+    
+    // Send to the other player in the room.
+    for (const peer of room.players) {
+      if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
+        peer.send(data, { binary: isBinary });
+      }
+    }
+    
+    // Also send a copy to all monitor clients.
+    for (const monitor of room.monitors) {
+        if (monitor.readyState === 1) {
+            monitor.send(data, { binary: isBinary });
         }
     }
   });
@@ -125,6 +153,7 @@ wss.on("connection", (ws, request) => {
 
 // Cloud Run Upgrade-Handling
 server.on("upgrade", (request, socket, head) => {
+  // CORRECTED: Parse the URL with `true` to correctly separate pathname and query.
   const { pathname } = url.parse(request.url, true);
   console.log(`[UPGRADE] Attempt for path: ${pathname}`);
 
@@ -146,7 +175,9 @@ const interval = setInterval(() => {
       return ws.terminate();
     }
     ws.isAlive = false;
-    ws.ping(); 
+    // We now rely on the client to send 'hello' messages instead of ping/pong.
+    // The client-side ping is just to keep its own connection alive from its end if needed.
+    // ws.ping(); 
   });
 }, 30000);
 

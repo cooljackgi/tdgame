@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -58,6 +57,7 @@ export default function VersusGameLoader() {
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
+  const isSpectator = useMemo(() => localPlayerId === 'spectator', [localPlayerId]);
 
   // Refs for stable access in callbacks
   const playersRef = useRef(players);
@@ -85,7 +85,6 @@ export default function VersusGameLoader() {
   }, [localPlayerId, playerStates]);
   
   // --- WebRTC Logic (Correct Order) ---
-
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -118,8 +117,11 @@ export default function VersusGameLoader() {
   }, [isGameHost]);
   
   const handleActionData = useCallback((msg: any) => {
-    // This now refers to an externally defined `sendGameData` function
-    if (!isGameHost || !sendGameData) return;
+    if (!isGameHost) return;
+    // We get sendGameData from the hook's return value, but we need a stable reference to it
+    // inside this callback. A ref is perfect for this.
+    const sendGameDataFunc = sendGameDataRef.current;
+    if (!sendGameDataFunc) return;
     
     if (msg.type === 'CLIENT_READY') {
       const currentState: GameSessionState = {
@@ -132,23 +134,27 @@ export default function VersusGameLoader() {
         waveStartCountdown: waveStartCountdownRef.current,
         isIntermission: isIntermissionRef.current,
       };
-      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+      sendGameDataFunc('deltas', [[DeltaType.SNAPSHOT, currentState]]);
       return;
     }
     
     const { type, payload } = msg;
-    dispatchAction(type, payload, true); // True for isRemoteAction
-  }, [isGameHost]); // sendGameData will be stable, so it's not needed here
+    dispatchAction(type, payload, true);
+  }, [isGameHost]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, isGameHost, user, false,
     handleGameData,
     handleActionData
   );
+
+  // This ref will hold the `sendGameData` function so the useCallback `handleActionData` has a stable reference to it.
+  const sendGameDataRef = useRef(sendGameData);
+  useEffect(() => {
+    sendGameDataRef.current = sendGameData;
+  }, [sendGameData]);
   
   const onHostAction = useCallback((actionType: string, payload: any) => {
-    // Implement host-side logic here based on actionType from the client
-    // For now, this is a placeholder.
     console.log(`Host received action: ${actionType}`, payload);
   }, []);
 
