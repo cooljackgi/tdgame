@@ -34,12 +34,11 @@ function initializeRoom(gameId) {
     return rooms.get(gameId);
 }
 
-function joinRoom(ws, gameId, isMonitor, clientId) {
+function joinRoom(ws, gameId, isMonitor) {
   const room = initializeRoom(gameId);
 
   ws.__roomId = gameId;
   ws.__isMonitor = isMonitor;
-  ws.__clientId = clientId; // Store the unique client ID
 
   if (isMonitor) {
     room.monitors.add(ws);
@@ -47,19 +46,15 @@ function joinRoom(ws, gameId, isMonitor, clientId) {
     // Verhindern, dass mehr als 2 Spieler einem Raum beitreten
     const playerCount = [...room.players].filter(p => !p.__isMonitor).length;
     if (playerCount >= 2) {
-        // Allow re-joining for existing clients
-        const existingPlayer = [...room.players].find(p => p.__clientId === clientId);
-        if (!existingPlayer) {
-            console.warn("[CONN CLOSE] room full", { gameId, playerCount });
-            ws.close(1008, "Room is full");
-            return;
-        }
+        console.warn("[CONN CLOSE] room full", { gameId, playerCount });
+        ws.close(1008, "Room is full");
+        return;
     }
     room.players.add(ws);
   }
 
   const playerCount = [...room.players].filter(p => !p.__isMonitor).length;
-  console.log("[JOIN]", { gameId, clientId, isMonitor, total: room.players.size + room.monitors.size, players: playerCount, monitors: room.monitors.size });
+  console.log("[JOIN]", { gameId, isMonitor, total: room.players.size + room.monitors.size, players: playerCount, monitors: room.monitors.size });
 }
 
 function leaveRoom(ws) {
@@ -91,15 +86,16 @@ wss.on("connection", (ws, request) => {
   const { query } = url.parse(request.url, true);
   const gameId = query?.gameId;
   const isMonitor = query?.monitor === '1';
-  const clientId = query?.clientId;
   
-  if (!gameId || typeof gameId !== "string" || !clientId || typeof clientId !== "string") {
-    console.warn("[CONN CLOSE] missing gameId or clientId");
-    ws.close(1008, "Missing gameId or clientId");
+  // Diese Prüfung ist jetzt redundant, da sie im Upgrade-Handler stattfindet,
+  // aber als doppelter Boden schadet sie nicht.
+  if (!gameId || typeof gameId !== "string") {
+    console.warn("[CONN CLOSE] missing gameId");
+    ws.close(1008, "Missing gameId");
     return;
   }
 
-  joinRoom(ws, gameId, isMonitor, clientId);
+  joinRoom(ws, gameId, isMonitor);
   if (!ws.__roomId || ws.readyState === ws.CLOSING || ws.readyState === ws.CLOSED) {
     return; // Wenn der Raum voll war und die Verbindung geschlossen wurde
   }
@@ -111,12 +107,23 @@ wss.on("connection", (ws, request) => {
     // A message from a monitor is ignored.
     if (ws.__isMonitor) return;
     
+    let msgObj;
+    try {
+        msgObj = JSON.parse(data.toString());
+    } catch(e) {
+        // Not a JSON message, relay as is
+    }
+
+    if (msgObj && msgObj.type === 'hello') {
+        // This is our manual keep-alive. Mark the connection as alive.
+        ws.isAlive = true;
+    }
+    
     // A message from a player is broadcast to the other player and all monitors.
     
     // Send to the other player in the room.
     for (const peer of room.players) {
-      // **CRITICAL FIX**: Do not send messages back to the sender
-      if (peer.__clientId !== ws.__clientId && peer.readyState === 1) { // WebSocket.OPEN === 1
+      if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
         peer.send(data, { binary: isBinary });
       }
     }
@@ -131,21 +138,23 @@ wss.on("connection", (ws, request) => {
 
   ws.on("close", (code, reason) => {
     const r = reason instanceof Buffer ? reason.toString() : String(reason || "");
-    console.log("[CLOSE]", { gameId, clientId: ws.__clientId, isMonitor: ws.__isMonitor, code, reason: r });
+    console.log("[CLOSE]", { gameId, isMonitor: ws.__isMonitor, code, reason: r });
     leaveRoom(ws);
   });
   
   ws.on("error", (err) => {
-    console.error("[ERROR]", { gameId, clientId: ws.__clientId, isMonitor: ws.__isMonitor, err: String(err) });
+    console.error("[ERROR]", { gameId, isMonitor: ws.__isMonitor, err: String(err) });
     leaveRoom(ws);
   });
 });
 
 // Cloud Run Upgrade-Handling
 server.on("upgrade", (request, socket, head) => {
+  // CORRECTED: Parse the URL with `true` to correctly separate pathname and query.
   const { pathname } = url.parse(request.url, true);
-
+  
   if (pathname !== "/ws") {
+    console.warn(`[UPGRADE DENY] Incorrect path: ${pathname}. Destroying socket.`);
     socket.destroy();
     return;
   }
