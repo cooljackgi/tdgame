@@ -23,6 +23,8 @@ import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
 import { DeltaType } from '@/lib/game-data/types';
 import { findPath } from '@/lib/pathfinding';
 import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
+import { processAttack, tickDots } from '@/lib/game-logic';
+
 
 export default function VersusGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -46,6 +48,7 @@ export default function VersusGameLoader() {
   const [isIntermission, setIsIntermission] = useState(true);
   const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
   const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
+  const [versusState, setVersusState] = useState<any>({ player1: { spawnQueue: [] }, player2: { spawnQueue: [] }});
   
   const [fps, setFps] = useState(0);
 
@@ -64,6 +67,9 @@ export default function VersusGameLoader() {
   const lastTickRef = useRef(performance.now());
   const deltaQueueRef = useRef<GameDelta[]>([]);
   const lastDeltaSentRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const lastFpsUpdateRef = useRef(Date.now());
+
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const isSpectator = useMemo(() => localPlayerId === 'spectator', [localPlayerId]);
@@ -83,6 +89,8 @@ export default function VersusGameLoader() {
   useEffect(() => { isIntermissionRef.current = isIntermission; }, [isIntermission]);
   const waveStartCountdownRef = useRef(waveStartCountdown);
   useEffect(() => { waveStartCountdownRef.current = waveStartCountdown; }, [waveStartCountdown]);
+  const versusStateRef = useRef(versusState);
+  useEffect(() => { versusStateRef.current = versusState; }, [versusState]);
   
   const localPlayer = useMemo(() => {
     return players.find(p => p.id === localPlayerId);
@@ -93,64 +101,11 @@ export default function VersusGameLoader() {
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
 
-  const onHostAction = useCallback((actionType: string, payload: any) => {
-    const { playerId, row, col, towerId, upgradeId } = payload;
-    if (!playerId || !gameConfig) return;
+  const onExit = () => router.push('/');
+  const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
 
-    const playerStateKey = playerId as 'player1' | 'player2';
-    const currentPlayerState = playerStatesRef.current[playerStateKey];
-    const player = playersRef.current.find(p => p.id === playerId);
-
-    if (!currentPlayerState || !player) return;
-
-    let newState: PlayerGameState = JSON.parse(JSON.stringify(currentPlayerState));
-
-    switch(actionType) {
-        case 'BUILD_TOWER_REQUEST': {
-            const towerSpec = gameConfig.towers.find(t => t.id === towerId);
-            if (!towerSpec) break;
-
-            const cost = towerSpec.cost;
-            if (player.resources < cost) break;
-
-            const isOccupied = Object.values(newState.towersByCell).some(t => t.position.row === row && t.position.col === col) || newState.ghosts.some(g => g.row === row && g.col === col);
-            if (isOccupied) break;
-
-            const newBlocked = [...Object.values(newState.towersByCell).map(t => t.position), {row, col}];
-            if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
-
-            player.resources -= cost;
-
-            const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
-            const ghostId = `ghost-${row}-${col}-${Date.now()}`;
-            newState.ghosts.push({
-                id: ghostId,
-                row: row,
-                col: col,
-                towerId: towerId,
-                startedAt: Date.now(), // Building starts now
-                buildTimeMs: buildTimeMs,
-                progress: 0,
-            });
-            break;
-        }
-        case 'SEND_ENEMY_REQUEST': {
-            // Logic to add enemy to opponent's spawn queue
-            const opponentId = playerId === 'player1' ? 'player2' : 'player1';
-            //...
-            break;
-        }
-    }
-    
-    setPlayers([...playersRef.current]); // Trigger re-render for resource changes
-    setPlayerStates(prev => ({
-        ...prev,
-        [playerStateKey]: newState
-    }));
-
-  }, [gameConfig]);
-
-
+  // --- WebRTC Setup ---
+  
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -168,6 +123,7 @@ export default function VersusGameLoader() {
                   setWaveStartCountdown(state.waveStartCountdown);
                   setGameStatus(state.gameStatus);
                   setDifficulty(state.difficulty);
+                  setVersusState(state.versusState || { player1: { spawnQueue: [] }, player2: { spawnQueue: [] }});
                   break;
                  case DeltaType.PLAYER_UPDATE: setPlayers(deltaPayload); break;
                  case DeltaType.VERSUS_STATE_UPDATE: setPlayerStates(deltaPayload); break;
@@ -182,27 +138,75 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-  const handleActionData = useCallback((msg: any) => {
-    if (!isGameHost) return;
+  const onHostAction = useCallback((actionType: string, payload: any) => {
+    const { playerId, row, col, towerId, upgradeId, type: enemyType, cost, incomeBonus } = payload;
+    if (!playerId || !gameConfig) return;
 
-    if (msg.type === 'CLIENT_READY') {
-      const currentState: GameSessionState = {
-        gameMode: 'versus',
-        players: playersRef.current,
-        playerStates: playerStatesRef.current,
-        currentWave: currentWaveRef.current,
-        difficulty: difficultyRef.current,
-        gameStatus: gameStatusRef.current,
-        waveStartCountdown: waveStartCountdownRef.current,
-        isIntermission: isIntermissionRef.current,
-      };
-      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
-      return;
+    const playerStateKey = playerId as 'player1' | 'player2';
+    
+    // Use refs to get latest state inside callback
+    const currentPlayers = playersRef.current;
+    const currentPlayerStates = playerStatesRef.current;
+    const currentVersusState = versusStateRef.current;
+
+    const playerIndex = currentPlayers.findIndex(p => p.id === playerId);
+    const playerState = currentPlayerStates[playerStateKey];
+
+    if (playerIndex === -1 || !playerState) return;
+
+    const player = currentPlayers[playerIndex];
+    let newPlayerState: PlayerGameState = JSON.parse(JSON.stringify(playerState));
+    let newPlayers = [...currentPlayers];
+    let newVersusState = JSON.parse(JSON.stringify(currentVersusState));
+
+    switch(actionType) {
+        case 'BUILD_TOWER_REQUEST': {
+            const towerSpec = gameConfig.towers.find(t => t.id === towerId);
+            if (!towerSpec) break;
+
+            if (player.resources < towerSpec.cost) break;
+            const isOccupied = Object.values(newPlayerState.towersByCell).some(t => t.position.row === row && t.position.col === col) || newPlayerState.ghosts.some(g => g.row === row && g.col === col);
+            if (isOccupied) break;
+
+            const newBlocked = [...Object.values(newPlayerState.towersByCell).map(t => t.position), {row, col}];
+            if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
+
+            player.resources -= towerSpec.cost;
+
+            const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
+            const ghostId = `ghost-${row}-${col}-${Date.now()}`;
+            newPlayerState.ghosts.push({
+                id: ghostId,
+                row: row,
+                col: col,
+                towerId: towerId,
+                startedAt: Date.now(),
+                buildTimeMs: buildTimeMs,
+                progress: 0,
+            });
+            break;
+        }
+         case 'SEND_ENEMY_REQUEST': {
+            if (player.resources < cost) break;
+            player.resources -= cost;
+            player.incomePerSecond += incomeBonus;
+            
+            const opponentId = playerId === 'player1' ? 'player2' : 'player1';
+            newVersusState[opponentId].spawnQueue.push({ type: enemyType, count: 1 });
+            break;
+        }
     }
     
-    const { type, payload } = msg;
-    onHostAction(type, payload);
-  }, [isGameHost, onHostAction, sendGameData]);
+    setPlayers(newPlayers);
+    setPlayerStates(prev => ({ ...prev, [playerStateKey]: newPlayerState }));
+    setVersusState(newVersusState);
+
+  }, [gameConfig]);
+  
+  const handleActionData = useCallback((msg: any) => {
+    if (!isGameHost) return;
+    onHostAction(msg.type, msg.payload);
+  }, [isGameHost, onHostAction]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
@@ -212,10 +216,26 @@ export default function VersusGameLoader() {
     handleGameData,
     handleActionData
   );
-  
+
+  useEffect(() => {
+    if (isConnected && !isGameHost && localPlayerId === 'player2') {
+        const fullState = {
+            gameMode: 'versus',
+            players: playersRef.current,
+            playerStates: playerStatesRef.current,
+            currentWave: currentWaveRef.current,
+            difficulty: difficultyRef.current,
+            gameStatus: gameStatusRef.current,
+            waveStartCountdown: waveStartCountdownRef.current,
+            isIntermission: isIntermissionRef.current,
+            versusState: versusStateRef.current
+        };
+        sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
+    }
+  }, [isConnected, isGameHost, localPlayerId, sendGameData]);
+
   const dispatchAction = useCallback((actionType: string, payload: any) => {
     if (isSpectator) return;
-    
     const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
     
     if (isGameHost) {
@@ -224,13 +244,6 @@ export default function VersusGameLoader() {
       sendAction(actionType, finalPayload);
     }
   }, [isGameHost, onHostAction, sendAction, localPlayerId, isSpectator]);
-
-
-  useEffect(() => {
-    if (isConnected && !isGameHost && localPlayerId === 'player2') {
-      sendAction('CLIENT_READY', {});
-    }
-  }, [isConnected, isGameHost, localPlayerId, sendAction]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -291,15 +304,16 @@ export default function VersusGameLoader() {
             else if (data.player2Id === user.uid) role = 'player2';
             setLocalPlayerId(role);
 
-            setPlayers(normalizePlayers(data.players));
+            const normalized = normalizePlayers(data.players);
+            setPlayers(normalized);
             setDifficulty(data.difficulty || 'Normal');
             setGameStatus(data.gameStatus);
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            // Host has the authoritative state, clients receive it via snapshot
-            if (role === 'player1') {
+            if (role === 'player1' && !playerStatesRef.current.player1) {
                  setPlayerStates(data.playerStates);
+                 setVersusState(data.versusState || { player1: { spawnQueue: [] }, player2: { spawnQueue: [] } });
             }
             
             setLoading(false);
@@ -315,8 +329,6 @@ export default function VersusGameLoader() {
     return () => unsub?.();
   }, [user, gameId, router, toast, configLoading]);
   
-  const onExit = () => router.push('/');
-  const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
   
     useEffect(() => {
       if (!isGameHost || configLoading || !gameConfig) return;
@@ -326,54 +338,21 @@ export default function VersusGameLoader() {
           const delta = now - lastTickRef.current;
           lastTickRef.current = now;
   
-          // Minimal loop for host to process logic and send updates
-          // This is where you'd add enemy movement, attacks etc. later
-          
-          setPlayerStates(currentStates => {
-              const newStates = {...currentStates};
-              
-              const processPlayerState = (state: PlayerGameState | null): PlayerGameState | null => {
-                  if (!state) return null;
-                  
-                  const updatedGhosts = state.ghosts.filter(g => {
-                      const elapsed = now - g.startedAt;
-                      g.progress = Math.min(1, elapsed / g.buildTimeMs);
-                      if (g.progress >= 1) {
-                          const towerSpec = gameConfig.towers.find(t => t.id === g.towerId)!;
-                          const cellKey = `${g.row}_${g.col}`;
-                          state.towersByCell[cellKey] = {
-                              ...towerSpec,
-                              id: `tower-${g.row}-${g.col}-${now}`,
-                              specId: towerSpec.id,
-                              position: { row: g.row, col: g.col },
-                              lastAttack: 0,
-                              health: towerSpec.maxHealth,
-                              ownerId: state === newStates.player1 ? 'player1' : 'player2',
-                          };
-                          return false; // remove from ghosts
-                      }
-                      return true; // keep in ghosts
-                  });
-                  
-                  return { ...state, ghosts: updatedGhosts };
-              }
-
-              newStates.player1 = processPlayerState(newStates.player1);
-              newStates.player2 = processPlayerState(newStates.player2);
-
-              return newStates;
-          });
-
-          // Send updates periodically
           if (now - lastDeltaSentRef.current > 100) {
-            deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, playerStatesRef.current]);
-            deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
-            
-            const deltasToSend = [...deltaQueueRef.current];
-            if (deltasToSend.length > 0) {
-               sendGameData('deltas', deltasToSend);
+            const deltas: GameDelta[] = [];
+            deltas.push([DeltaType.VERSUS_STATE_UPDATE, playerStatesRef.current]);
+            deltas.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
+            deltas.push([DeltaType.GAME_STATE_UPDATE, {
+                currentWave: currentWaveRef.current,
+                gameStatus: gameStatusRef.current,
+                isIntermission: isIntermissionRef.current,
+                waveStartCountdown: waveStartCountdownRef.current,
+                lives: 0,
+            }]);
+
+            if (deltas.length > 0) {
+               sendGameData('deltas', deltas);
             }
-            deltaQueueRef.current = [];
             lastDeltaSentRef.current = now;
           }
   
@@ -456,7 +435,7 @@ export default function VersusGameLoader() {
           isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload: any) => dispatchAction('SEND_ENEMY_REQUEST', payload)}
+          onSendEnemy={(payload) => dispatchAction('SEND_ENEMY_REQUEST', payload)}
           gameMode="versus"
         />
       </div>
@@ -464,3 +443,4 @@ export default function VersusGameLoader() {
   );
 }
 
+    
