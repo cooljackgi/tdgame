@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -85,6 +84,8 @@ export default function VersusGameLoader() {
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
   
+  // --- WebRTC Logic (Correct Order) ---
+
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -115,47 +116,54 @@ export default function VersusGameLoader() {
         }
     }
   }, [isGameHost]);
-
-  const onHostAction = useCallback((action: string, payload: any) => {
-    // This is where host-side logic for actions like building, upgrading, etc., would go.
-    // For now, it's a placeholder.
-  }, []);
-
-  const handleActionData = useCallback((msg: any) => {
-      if (!isGameHost) return;
-      if (msg.type === 'CLIENT_READY') {
-          const currentState: GameSessionState = {
-            gameMode: 'versus',
-            players: playersRef.current,
-            playerStates: playerStatesRef.current,
-            currentWave: currentWaveRef.current,
-            difficulty: difficultyRef.current,
-            gameStatus: gameStatusRef.current,
-            waveStartCountdown: waveStartCountdownRef.current,
-            isIntermission: isIntermissionRef.current,
-          };
-          // This now uses the sendGameData defined in the outer scope
-          sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
-      } else {
-        const { type, payload } = msg;
-        onHostAction(type, payload);
-      }
-    }, [isGameHost, onHostAction]);
   
+  const handleActionData = useCallback((msg: any) => {
+    // This now refers to an externally defined `sendGameData` function
+    if (!isGameHost || !sendGameData) return;
+    
+    if (msg.type === 'CLIENT_READY') {
+      const currentState: GameSessionState = {
+        gameMode: 'versus',
+        players: playersRef.current,
+        playerStates: playerStatesRef.current,
+        currentWave: currentWaveRef.current,
+        difficulty: difficultyRef.current,
+        gameStatus: gameStatusRef.current,
+        waveStartCountdown: waveStartCountdownRef.current,
+        isIntermission: isIntermissionRef.current,
+      };
+      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+      return;
+    }
+    
+    const { type, payload } = msg;
+    dispatchAction(type, payload, true); // True for isRemoteAction
+  }, [isGameHost]); // sendGameData will be stable, so it's not needed here
+
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, isGameHost, user, false,
-    handleGameData, 
+    handleGameData,
     handleActionData
   );
+  
+  const onHostAction = useCallback((actionType: string, payload: any) => {
+    // Implement host-side logic here based on actionType from the client
+    // For now, this is a placeholder.
+    console.log(`Host received action: ${actionType}`, payload);
+  }, []);
 
-  const dispatchAction = useCallback((action: string, payload: any) => {
+  const dispatchAction = useCallback((actionType: string, payload: any, isRemoteAction = false) => {
+      if (isSpectator) return;
+      
       const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
+      
       if (isGameHost) {
-          onHostAction(action, finalPayload);
-      } else {
-          sendAction(action, finalPayload);
+          onHostAction(actionType, finalPayload);
+      } else if (!isRemoteAction) {
+          sendAction(actionType, finalPayload);
       }
-  }, [isGameHost, onHostAction, sendAction, localPlayerId]);
+  }, [isGameHost, onHostAction, sendAction, localPlayerId, isSpectator]);
+
 
   useEffect(() => {
     if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -317,7 +325,7 @@ export default function VersusGameLoader() {
           isWsConnected={isConnected}
           onPing={() => {}}
           isPlacingPortalEntrance={portalPhase !== 'idle'}
-          onSendEnemy={(payload: any) => sendAction('SEND_ENEMY_REQUEST', payload)}
+          onSendEnemy={(payload: any) => dispatchAction('SEND_ENEMY_REQUEST', payload)}
           gameMode="versus"
         />
       </div>

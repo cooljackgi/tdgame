@@ -107,31 +107,12 @@ wss.on("connection", (ws, request) => {
     // A message from a monitor is ignored.
     if (ws.__isMonitor) return;
     
-    let msgObj;
-    try {
-        msgObj = JSON.parse(data.toString());
-    } catch(e) {
-        // Not a JSON message, relay as is
-    }
+    // Combine players and monitors into one set for broadcasting
+    const allPeers = new Set([...room.players, ...room.monitors]);
 
-    if (msgObj && msgObj.type === 'hello') {
-        // This is our manual keep-alive. Mark the connection as alive.
-        ws.isAlive = true;
-    }
-    
-    // A message from a player is broadcast to the other player and all monitors.
-    
-    // Send to the other player in the room.
-    for (const peer of room.players) {
-      if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
-        peer.send(data, { binary: isBinary });
-      }
-    }
-    
-    // Also send a copy to all monitor clients.
-    for (const monitor of room.monitors) {
-        if (monitor.readyState === 1) {
-            monitor.send(data, { binary: isBinary });
+    for (const peer of allPeers) {
+        if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
+            peer.send(data, { binary: isBinary });
         }
     }
   });
