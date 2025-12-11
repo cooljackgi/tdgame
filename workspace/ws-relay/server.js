@@ -44,9 +44,8 @@ function joinRoom(ws, gameId, isMonitor) {
     room.monitors.add(ws);
   } else {
     // Verhindern, dass mehr als 2 Spieler einem Raum beitreten
-    const playerCount = [...room.players].filter(p => !p.__isMonitor).length;
-    if (playerCount >= 2) {
-        console.warn("[CONN CLOSE] room full", { gameId, playerCount });
+    if (room.players.size >= 2) {
+        console.warn("[CONN CLOSE] room full", { gameId });
         ws.close(1008, "Room is full");
         return;
     }
@@ -79,40 +78,35 @@ function leaveRoom(ws) {
 // Heartbeat (damit tote Verbindungen aufgeräumt werden)
 function heartbeat() { this.isAlive = true; }
 
-wss.on("connection", (ws, request) => {
+wss.on("connection", (ws, request, gameId, isMonitor) => {
   ws.isAlive = true;
   ws.on("pong", heartbeat);
 
-  const { query } = url.parse(request.url, true);
-  const gameId = query?.gameId;
-  const isMonitor = query?.monitor === '1';
-  
-  // Diese Prüfung ist jetzt redundant, da sie im Upgrade-Handler stattfindet,
-  // aber als doppelter Boden schadet sie nicht.
   if (!gameId || typeof gameId !== "string") {
-    console.warn("[CONN CLOSE] missing gameId");
+    console.warn("[CONN CLOSE] missing gameId on connection event");
     ws.close(1008, "Missing gameId");
     return;
   }
-
+  
   joinRoom(ws, gameId, isMonitor);
   if (!ws.__roomId || ws.readyState === ws.CLOSING || ws.readyState === ws.CLOSED) {
-    return; // Wenn der Raum voll war und die Verbindung geschlossen wurde
+    return; 
   }
 
   ws.on("message", (data, isBinary) => {
-    const room = rooms.get(gameId);
-    if (!room) return;
+    const currentRoom = rooms.get(gameId);
+    if (!currentRoom) return;
 
     // A message from a monitor is ignored.
     if (ws.__isMonitor) return;
     
-    // Combine players and monitors into one set for broadcasting
-    const allPeers = new Set([...room.players, ...room.monitors]);
+    // Create a list of all clients in the room (players and monitors)
+    const allClients = [...currentRoom.players, ...currentRoom.monitors];
 
-    for (const peer of allPeers) {
-        if (peer !== ws && peer.readyState === 1) { // WebSocket.OPEN === 1
-            peer.send(data, { binary: isBinary });
+    // Broadcast to everyone except the sender
+    for (const client of allClients) {
+        if (client !== ws && client.readyState === 1) { // WebSocket.OPEN === 1
+            client.send(data, { binary: isBinary });
         }
     }
   });
@@ -131,16 +125,25 @@ wss.on("connection", (ws, request) => {
 
 // Cloud Run Upgrade-Handling
 server.on("upgrade", (request, socket, head) => {
-  // CORRECTED: Parse the URL with `true` to correctly separate pathname and query.
-  const { pathname } = url.parse(request.url, true);
-  
+  const { pathname, query } = url.parse(request.url, true);
+
   if (pathname !== "/ws") {
     console.warn(`[UPGRADE DENY] Incorrect path: ${pathname}. Destroying socket.`);
     socket.destroy();
     return;
   }
+
+  const gameId = query?.gameId;
+  const isMonitor = query?.monitor === '1';
+
+  if (!gameId) {
+      console.warn(`[UPGRADE DENY] Missing gameId. Destroying socket.`);
+      socket.destroy();
+      return;
+  }
+
   wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit("connection", ws, request);
+    wss.emit("connection", ws, request, gameId, isMonitor);
   });
 });
 
