@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -84,7 +85,10 @@ export default function VersusGameLoader() {
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
   
-  // --- WebRTC Logic (Correct Order) ---
+  const onHostAction = useCallback((actionType: string, payload: any) => {
+    console.log(`Host received action: ${actionType}`, payload);
+  }, []);
+
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -115,14 +119,10 @@ export default function VersusGameLoader() {
         }
     }
   }, [isGameHost]);
-  
-  const handleActionData = useCallback((msg: any) => {
+
+  const handleActionData = useCallback((msg: any, sendGameData: (type: string, payload: any) => void) => {
     if (!isGameHost) return;
-    // We get sendGameData from the hook's return value, but we need a stable reference to it
-    // inside this callback. A ref is perfect for this.
-    const sendGameDataFunc = sendGameDataRef.current;
-    if (!sendGameDataFunc) return;
-    
+
     if (msg.type === 'CLIENT_READY') {
       const currentState: GameSessionState = {
         gameMode: 'versus',
@@ -134,40 +134,33 @@ export default function VersusGameLoader() {
         waveStartCountdown: waveStartCountdownRef.current,
         isIntermission: isIntermissionRef.current,
       };
-      sendGameDataFunc('deltas', [[DeltaType.SNAPSHOT, currentState]]);
+      sendGameData('deltas', [[DeltaType.SNAPSHOT, currentState]]);
       return;
     }
     
     const { type, payload } = msg;
-    dispatchAction(type, payload, true);
-  }, [isGameHost]);
+    onHostAction(type, payload);
+  }, [isGameHost, onHostAction]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
-    localPlayerId ? gameId : null, isGameHost, user, false,
+    localPlayerId ? gameId : null, 
+    isGameHost, 
+    user, 
+    false,
     handleGameData,
-    handleActionData
+    (msg) => handleActionData(msg, sendGameData) // Pass sendGameData to the callback
   );
-
-  // This ref will hold the `sendGameData` function so the useCallback `handleActionData` has a stable reference to it.
-  const sendGameDataRef = useRef(sendGameData);
-  useEffect(() => {
-    sendGameDataRef.current = sendGameData;
-  }, [sendGameData]);
   
-  const onHostAction = useCallback((actionType: string, payload: any) => {
-    console.log(`Host received action: ${actionType}`, payload);
-  }, []);
-
-  const dispatchAction = useCallback((actionType: string, payload: any, isRemoteAction = false) => {
-      if (isSpectator) return;
-      
-      const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
-      
-      if (isGameHost) {
-          onHostAction(actionType, finalPayload);
-      } else if (!isRemoteAction) {
-          sendAction(actionType, finalPayload);
-      }
+  const dispatchAction = useCallback((actionType: string, payload: any) => {
+    if (isSpectator) return;
+    
+    const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
+    
+    if (isGameHost) {
+      onHostAction(actionType, finalPayload);
+    } else {
+      sendAction(actionType, finalPayload);
+    }
   }, [isGameHost, onHostAction, sendAction, localPlayerId, isSpectator]);
 
 
