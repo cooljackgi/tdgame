@@ -9,8 +9,8 @@ import { doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta } from '@/lib/game-data/types';
-import { INTERMISSION_TIME, difficultyModifiers } from '@/lib/game-data/constants';
+import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, WorkerOrder } from '@/lib/game-data/types';
+import { INTERMISSION_TIME, difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
 import { useWebRTC } from '@/hooks/use-webrtc';
@@ -21,6 +21,8 @@ import Header from './header';
 import type { GameBoardHandle } from './game-board';
 import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
 import { DeltaType } from '@/lib/game-data/types';
+import { findPath } from '@/lib/pathfinding';
+import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 
 export default function VersusGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -56,6 +58,12 @@ export default function VersusGameLoader() {
   const gameBoardRef = useRef<GameBoardHandle>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  
+  // Game Loop refs
+  const gameLoopRef = useRef<number>();
+  const lastTickRef = useRef(performance.now());
+  const deltaQueueRef = useRef<GameDelta[]>([]);
+  const lastDeltaSentRef = useRef(0);
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const isSpectator = useMemo(() => localPlayerId === 'spectator', [localPlayerId]);
@@ -84,10 +92,64 @@ export default function VersusGameLoader() {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
-  
+
   const onHostAction = useCallback((actionType: string, payload: any) => {
-    console.log(`Host received action: ${actionType}`, payload);
-  }, []);
+    const { playerId, row, col, towerId, upgradeId } = payload;
+    if (!playerId || !gameConfig) return;
+
+    const playerStateKey = playerId as 'player1' | 'player2';
+    const currentPlayerState = playerStatesRef.current[playerStateKey];
+    const player = playersRef.current.find(p => p.id === playerId);
+
+    if (!currentPlayerState || !player) return;
+
+    let newState: PlayerGameState = JSON.parse(JSON.stringify(currentPlayerState));
+
+    switch(actionType) {
+        case 'BUILD_TOWER_REQUEST': {
+            const towerSpec = gameConfig.towers.find(t => t.id === towerId);
+            if (!towerSpec) break;
+
+            const cost = towerSpec.cost;
+            if (player.resources < cost) break;
+
+            const isOccupied = Object.values(newState.towersByCell).some(t => t.position.row === row && t.position.col === col) || newState.ghosts.some(g => g.row === row && g.col === col);
+            if (isOccupied) break;
+
+            const newBlocked = [...Object.values(newState.towersByCell).map(t => t.position), {row, col}];
+            if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
+
+            player.resources -= cost;
+
+            const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
+            const ghostId = `ghost-${row}-${col}-${Date.now()}`;
+            newState.ghosts.push({
+                id: ghostId,
+                row: row,
+                col: col,
+                towerId: towerId,
+                startedAt: Date.now(), // Building starts now
+                buildTimeMs: buildTimeMs,
+                progress: 0,
+            });
+            break;
+        }
+        case 'SEND_ENEMY_REQUEST': {
+            // Logic to add enemy to opponent's spawn queue
+            const opponentId = playerId === 'player1' ? 'player2' : 'player1';
+            //...
+            break;
+        }
+    }
+    
+    setPlayers([...playersRef.current]); // Trigger re-render for resource changes
+    setPlayerStates(prev => ({
+        ...prev,
+        [playerStateKey]: newState
+    }));
+
+  }, [gameConfig]);
+
 
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
@@ -120,7 +182,7 @@ export default function VersusGameLoader() {
     }
   }, [isGameHost]);
 
-  const handleActionData = useCallback((msg: any, sendGameData: (type: string, payload: any) => void) => {
+  const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
 
     if (msg.type === 'CLIENT_READY') {
@@ -140,7 +202,7 @@ export default function VersusGameLoader() {
     
     const { type, payload } = msg;
     onHostAction(type, payload);
-  }, [isGameHost, onHostAction]);
+  }, [isGameHost, onHostAction, sendGameData]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
@@ -148,7 +210,7 @@ export default function VersusGameLoader() {
     user, 
     false,
     handleGameData,
-    (msg) => handleActionData(msg, sendGameData) // Pass sendGameData to the callback
+    handleActionData
   );
   
   const dispatchAction = useCallback((actionType: string, payload: any) => {
@@ -235,6 +297,7 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
+            // Host has the authoritative state, clients receive it via snapshot
             if (role === 'player1') {
                  setPlayerStates(data.playerStates);
             }
@@ -254,6 +317,75 @@ export default function VersusGameLoader() {
   
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
+  
+    useEffect(() => {
+      if (!isGameHost || configLoading || !gameConfig) return;
+  
+      const gameLoop = () => {
+          const now = performance.now();
+          const delta = now - lastTickRef.current;
+          lastTickRef.current = now;
+  
+          // Minimal loop for host to process logic and send updates
+          // This is where you'd add enemy movement, attacks etc. later
+          
+          setPlayerStates(currentStates => {
+              const newStates = {...currentStates};
+              
+              const processPlayerState = (state: PlayerGameState | null): PlayerGameState | null => {
+                  if (!state) return null;
+                  
+                  const updatedGhosts = state.ghosts.filter(g => {
+                      const elapsed = now - g.startedAt;
+                      g.progress = Math.min(1, elapsed / g.buildTimeMs);
+                      if (g.progress >= 1) {
+                          const towerSpec = gameConfig.towers.find(t => t.id === g.towerId)!;
+                          const cellKey = `${g.row}_${g.col}`;
+                          state.towersByCell[cellKey] = {
+                              ...towerSpec,
+                              id: `tower-${g.row}-${g.col}-${now}`,
+                              specId: towerSpec.id,
+                              position: { row: g.row, col: g.col },
+                              lastAttack: 0,
+                              health: towerSpec.maxHealth,
+                              ownerId: state === newStates.player1 ? 'player1' : 'player2',
+                          };
+                          return false; // remove from ghosts
+                      }
+                      return true; // keep in ghosts
+                  });
+                  
+                  return { ...state, ghosts: updatedGhosts };
+              }
+
+              newStates.player1 = processPlayerState(newStates.player1);
+              newStates.player2 = processPlayerState(newStates.player2);
+
+              return newStates;
+          });
+
+          // Send updates periodically
+          if (now - lastDeltaSentRef.current > 100) {
+            deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, playerStatesRef.current]);
+            deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
+            
+            const deltasToSend = [...deltaQueueRef.current];
+            if (deltasToSend.length > 0) {
+               sendGameData('deltas', deltasToSend);
+            }
+            deltaQueueRef.current = [];
+            lastDeltaSentRef.current = now;
+          }
+  
+          gameLoopRef.current = requestAnimationFrame(gameLoop);
+      };
+  
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+      return () => {
+          if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      };
+    }, [isGameHost, configLoading, gameConfig, sendGameData]);
+
 
   if (loading || configLoading || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
@@ -331,3 +463,4 @@ export default function VersusGameLoader() {
     </div>
   );
 }
+
