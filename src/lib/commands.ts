@@ -1,9 +1,8 @@
-
 // src/lib/commands.ts
 import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
 import { GRID_ROWS, GRID_COLS } from './game-data/constants';
-import type { GameSessionState, BuildTowerOrder, Worker, PlacePortalOrder, Player } from './game-data/types';
+import type { GameSessionState, BuildTowerOrder, Worker, PlacePortalOrder, Player, PlayerGameState } from './game-data/types';
 
 function tierToBuildTime(tier: number) {
   if (tier <= 0) return 1200;
@@ -13,16 +12,17 @@ function tierToBuildTime(tier: number) {
 }
 
 export function enqueueMoveOrder(state: GameSessionState, workerId: string, row: number, col: number): GameSessionState {
-    const worker = state.workers.find(w => w.id === workerId);
+    const isVersus = state.gameMode === 'versus';
+    const playerStateKey = workerId.includes('1') ? 'player1' : 'player2';
+
+    const workersSource = isVersus ? state.playerStates![playerStateKey].workers : state.workers!;
+    const worker = workersSource.find(w => w.id === workerId);
     if (!worker) return state;
 
-    // A direct move command should only be executed if the worker is idle and has no build queue.
-    // Otherwise, we let the build queue take precedence.
     if (worker.state === 'idle' && worker.queue.length === 0) {
         worker.moveTarget = { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 };
-        worker.state = 'moving'; // Start moving immediately
+        worker.state = 'moving';
     } else if (worker.state === 'moving' && !worker.current) {
-        // If already moving to a point (not for a build), update the target
         worker.moveTarget = { x: (col - 1) * 64 + 32, y: (row - 1) * 64 + 32 };
     }
     
@@ -38,11 +38,25 @@ export function enqueueBuildOrder(
   towerId: string,
   now: number
 ): GameSessionState {
-  const worker = state.workers.find(w => w.id === workerId);
-  const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2'));
+  const isVersus = state.gameMode === 'versus';
+  const playerStateKey = workerId.includes('1') ? 'player1' : 'player2';
+  const player = state.players.find(p => p.id === playerStateKey);
+  
+  if (!player) return state;
 
-  if (!worker || !player) return state;
+  let playerState: PlayerGameState;
+  if (isVersus) {
+      if (!state.playerStates) return state; // Should not happen
+      playerState = state.playerStates[playerStateKey];
+  } else {
+      playerState = state as unknown as PlayerGameState; // Treat coop state as a single player state
+  }
 
+  const { workers, ghosts, towersByCell } = playerState;
+
+  const worker = workers.find(w => w.id === workerId);
+  if (!worker) return state;
+  
   const towerSpec = allTowers.find(t => t.id === towerId);
   if (!towerSpec) return state;
 
@@ -50,12 +64,12 @@ export function enqueueBuildOrder(
   const buildTimeMs = towerSpec.buildTimeMs ?? tierToBuildTime(towerSpec.tier);
 
   const isOccupied = 
-    Object.values(state.towersByCell).some(t => t.position.row === row && t.position.col === col) ||
-    state.ghosts.some(g => g.row === row && g.col === col);
+    Object.values(towersByCell).some(t => t.position.row === row && t.position.col === col) ||
+    ghosts.some(g => g.row === row && g.col === col);
     
   if (isOccupied) return state;
 
-  const newBlocked = [...Object.values(state.towersByCell).map(t => t.position), {row, col}];
+  const newBlocked = [...Object.values(towersByCell).map(t => t.position), {row, col}];
   if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) {
       return state;
   }
@@ -65,7 +79,7 @@ export function enqueueBuildOrder(
   player.resources -= cost;
 
   const ghostId = `ghost-${row}-${col}-${now}`;
-  state.ghosts.push({
+  ghosts.push({
     id: ghostId,
     row: row,
     col: col,
@@ -95,17 +109,31 @@ export function enqueuePlacePortalOrder(
     const cost = 250;
     const buildEntranceTime = 1200;
     const buildExitTime = 1500;
+    
+    const isVersus = state.gameMode === 'versus';
+    const playerStateKey = workerId.includes('1') ? 'player1' : 'player2';
+    const player = state.players.find(p => p.id === playerStateKey) as Player;
 
-    const worker = state.workers.find(w => w.id === workerId);
-    const player = state.players.find(p => p.id === (workerId.includes('1') ? 'player1' : 'player2')) as Player;
-
-    if (!worker || !player || player.resources < cost) return state;
+    if (!player || player.resources < cost) return state;
     if ((player.portalCooldownUntilWave || 0) > state.currentWave) return state;
+    
+    let playerState: PlayerGameState;
+    if (isVersus) {
+      if (!state.playerStates) return state;
+      playerState = state.playerStates[playerStateKey];
+    } else {
+      playerState = state as unknown as PlayerGameState;
+    }
+    
+    const { workers, ghosts, towersByCell } = playerState;
+    const worker = workers.find(w => w.id === workerId);
+    if(!worker) return state;
+
 
     // Simplified validation checks
     const isOccupied = (r: number, c: number) => 
-        Object.values(state.towersByCell).some(t => t.position.row === r && t.position.col === c) ||
-        state.ghosts.some(g => g.row === r && g.col === c);
+        Object.values(towersByCell).some(t => t.position.row === r && t.position.col === c) ||
+        ghosts.some(g => g.row === r && g.col === c);
 
     if (isOccupied(entrance.row, entrance.col) || isOccupied(exit.row, exit.col)) return state;
 
