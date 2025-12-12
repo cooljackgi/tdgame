@@ -1,3 +1,4 @@
+
 // src/lib/commands.ts
 import { towers as allTowers } from './game-data/towers';
 import { findPath } from './pathfinding';
@@ -46,10 +47,15 @@ export function enqueueBuildOrder(
 
   let playerState: PlayerGameState;
   if (isVersus) {
-      if (!state.playerStates) return state; // Should not happen
+      if (!state.playerStates) return state;
       playerState = state.playerStates[playerStateKey];
   } else {
-      playerState = state as unknown as PlayerGameState; // Treat coop state as a single player state
+      playerState = state as unknown as PlayerGameState;
+  }
+
+  // Defensive check to ensure playerState and its properties exist
+  if (!playerState || !Array.isArray(playerState.workers) || !Array.isArray(playerState.ghosts) || typeof playerState.towersByCell !== 'object') {
+    return state;
   }
 
   const { workers, ghosts, towersByCell } = playerState;
@@ -133,7 +139,7 @@ export function enqueuePlacePortalOrder(
     // Simplified validation checks
     const isOccupied = (r: number, c: number) => 
         Object.values(towersByCell).some(t => t.position.row === r && t.position.col === c) ||
-        ghosts.some(g => g.row === r && g.col === c);
+        (ghosts ?? []).some(g => g.row === r && g.col === c);
 
     if (isOccupied(entrance.row, entrance.col) || isOccupied(exit.row, exit.col)) return state;
 
