@@ -1500,7 +1500,25 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                         </feMerge>
                       </filter>
                     </defs>
-                    {ghostTowerPath ? (
+                    <path
+                        d={pathD}
+                        fill="none"
+                        stroke="hsl(140 90% 50%)"
+                        strokeWidth="3"
+                        strokeDasharray="10 5"
+                        strokeLinecap="round"
+                        filter="url(#pathGlow)"
+                        className="opacity-70"
+                    >
+                      <animate
+                        attributeName="stroke-dashoffset"
+                        from="15"
+                        to="0"
+                        dur="0.5s"
+                        repeatCount="indefinite"
+                      />
+                    </path>
+                    {ghostTowerPath && (
                         <path
                             d={ghostTowerPath === 'invalid' ? '' : ghostTowerPath}
                             fill="none"
@@ -1509,25 +1527,6 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
                             strokeDasharray="8 8"
                             strokeLinecap="round"
                         />
-                    ) : (
-                        <path
-                            d={pathD}
-                            fill="none"
-                            stroke="hsl(140 90% 50%)"
-                            strokeWidth="3"
-                            strokeDasharray="10 5"
-                            strokeLinecap="round"
-                            filter="url(#pathGlow)"
-                            className="opacity-70"
-                        >
-                          <animate
-                            attributeName="stroke-dashoffset"
-                            from="15"
-                            to="0"
-                            dur="0.5s"
-                            repeatCount="indefinite"
-                          />
-                        </path>
                     )}
                   </svg>
                 </div>
@@ -1830,3 +1829,4 @@ export default GameBoard;
 
     
     
+
