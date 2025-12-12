@@ -88,7 +88,7 @@ interface DesktopLayoutProps {
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
   isPlacingPortalEntrance?: boolean;
-  onSendEnemy: (payload: VersusEnemyToSend) => void; // Added for versus
+  onSendEnemy: (payload: any) => void; // Adjusted type for simplicity
   gameMode: 'coop' | 'versus';
 }
 
@@ -238,7 +238,6 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
         <div id="tutorial-wave-tracker">
             <WaveTracker currentWave={currentWave} totalWaves={totalWaves} />
             {showNextWaveButton && <div id="tutorial-start-wave-button" className="mt-4"><WaveStartTimer countdown={waveStartCountdown} totalTime={intermissionTime} onStartWave={handleStartNextWaveNow} canStartWave={canStartWave}/></div>}
-            <WavePreview currentWave={currentWave} waves={waves} />
         </div>
         <GameStatsTracker 
           spawnedThisWave={spawnedThisWave}
@@ -344,3 +343,4 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
     </div>
   );
 });
+
