@@ -106,7 +106,7 @@ export default function VersusGameLoader() {
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
   
-  const onHostAction = useCallback((actionType: string, payload: any) => {
+    const onHostAction = useCallback((actionType: string, payload: any) => {
     const { playerId, row, col, towerId, upgradeId, type: enemyType, cost, incomeBonus } = payload;
     if (!playerId || !gameConfig) return;
 
@@ -167,7 +167,11 @@ export default function VersusGameLoader() {
 
   }, [gameConfig]);
 
+  const onHostActionRef = useRef(onHostAction);
+  useEffect(() => { onHostActionRef.current = onHostAction; }, [onHostAction]);
 
+  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
+  
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -200,22 +204,18 @@ export default function VersusGameLoader() {
         }
     }
   }, [isGameHost]);
-  
-  const onHostActionRef = useRef(onHostAction);
-  useEffect(() => { onHostActionRef.current = onHostAction; }, [onHostAction]);
 
   const handleActionData = useCallback((msg: any) => {
-    if (!isGameHost) return;
-    const { type, payload } = msg;
+      if (!isGameHost) return;
 
-    if (type === 'CLIENT_READY') {
-        pendingSnapshotRef.current = true;
-        return;
-    }
+      if (msg.type === 'CLIENT_READY') {
+          pendingSnapshotRef.current = true;
+          return;
+      }
 
-    onHostActionRef.current(type, payload);
+      onHostActionRef.current(msg.type, msg.payload);
   }, [isGameHost]);
-
+  
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
     isGameHost, 
@@ -225,11 +225,14 @@ export default function VersusGameLoader() {
     handleActionData
   );
 
+  sendGameDataRef.current = sendGameData;
+
   useEffect(() => {
     if (!isGameHost || !isConnected || !pendingSnapshotRef.current) return;
     
     const ps = playerStatesRef.current;
     const pls = playersRef.current;
+    
     if (!ps.player1 || !ps.player2 || pls.length < 2) {
         console.warn("Host received CLIENT_READY, but state is not fully initialized yet. Waiting for state update.");
         return;
@@ -245,7 +248,6 @@ export default function VersusGameLoader() {
     pendingSnapshotRef.current = false;
     
   }, [isGameHost, isConnected, sendGameData, players, playerStates]);
-
 
   useEffect(() => {
       if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -330,12 +332,8 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            if (data.playerStates) {
-                 setPlayerStates(data.playerStates);
-            }
-            if (data.versusState) {
-                setVersusState(data.versusState);
-            }
+            if (data.playerStates) setPlayerStates(data.playerStates);
+            if (data.versusState) setVersusState(data.versusState);
             
             setLoading(false);
         });
@@ -369,25 +367,24 @@ export default function VersusGameLoader() {
           frameCountRef.current = 0;
           lastFpsUpdateRef.current = epochNow;
       }
-  
-      if (gameStatusRef.current !== 'playing') {
-        // Send frequent state updates even when not "playing" to keep clients in sync
+      
+      const currentStatus = gameStatusRef.current;
+      if (currentStatus !== 'playing') {
         if (epochNow - lastDeltaSentRef.current > 1000) {
             deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { currentWave: currentWaveRef.current, gameStatus: gameStatusRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown: waveStartCountdownRef.current, lives: 0 }]);
         }
       } else {
-         // Full game logic only when playing
          setPlayerStates(currentStates => {
             let p1State = currentStates.player1;
             let p2State = currentStates.player2;
 
             if (p1State) {
-                const tickResult = tickWorkers({ players: playersRef.current, playerStates: {player1: p1State, player2: p2State!}, gameMode: 'versus' } as GameSessionState, delta, epochNow, gameConfig.towers);
+                const tickResult = tickWorkers({ players: playersRef.current, playerStates: {player1: p1State, player2: p2State!} as any, gameMode: 'versus' } as GameSessionState, delta, epochNow, gameConfig.towers);
                 p1State = { ...p1State, workers: tickResult.workers.filter(w => w.id === 'worker-1'), ghosts: tickResult.ghosts.filter(g => g.id.startsWith('p1-')), towersByCell: tickResult.towersByCell };
             }
 
              if (p2State) {
-                const tickResult = tickWorkers({ players: playersRef.current, playerStates: {player1: p1State!, player2: p2State}, gameMode: 'versus' } as GameSessionState, delta, epochNow, gameConfig.towers);
+                const tickResult = tickWorkers({ players: playersRef.current, playerStates: {player1: p1State!, player2: p2State} as any, gameMode: 'versus' } as GameSessionState, delta, epochNow, gameConfig.towers);
                 p2State = { ...p2State, workers: tickResult.workers.filter(w => w.id === 'worker-2'), ghosts: tickResult.ghosts.filter(g => g.id.startsWith('p2-')), towersByCell: tickResult.towersByCell };
             }
 
@@ -401,7 +398,7 @@ export default function VersusGameLoader() {
         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
         const deltasToSend = [...deltaQueueRef.current];
         if (deltasToSend.length > 0) {
-           sendGameData('deltas', deltasToSend);
+           sendGameDataRef.current('deltas', deltasToSend);
         }
         deltaQueueRef.current = [];
         lastDeltaSentRef.current = epochNow;
@@ -412,7 +409,7 @@ export default function VersusGameLoader() {
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   
-  }, [isGameHost, configLoading, gameConfig, sendGameData]);
+  }, [isGameHost, configLoading, gameConfig]);
 
 
   if (loading || configLoading || !localPlayer) {
