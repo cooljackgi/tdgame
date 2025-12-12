@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -145,74 +144,97 @@ export default function VersusGameLoader() {
 
     const playerStateKey = playerId as 'player1' | 'player2';
     
-    // Use refs to get latest state inside callback
-    const currentPlayers = playersRef.current;
-    const currentPlayerStates = playerStatesRef.current;
-    const currentVersusState = versusStateRef.current;
+    // Use a function for state updates to get the latest state
+    setPlayers(currentPlayers => {
+        const playerIndex = currentPlayers.findIndex(p => p.id === playerId);
+        if (playerIndex === -1) return currentPlayers;
+        
+        let newPlayers = JSON.parse(JSON.stringify(currentPlayers));
+        let player = newPlayers[playerIndex];
 
-    const playerIndex = currentPlayers.findIndex(p => p.id === playerId);
-    const playerState = currentPlayerStates[playerStateKey];
-
-    if (playerIndex === -1 || !playerState) return;
-
-    const player = currentPlayers[playerIndex];
-    let newPlayerState: PlayerGameState = JSON.parse(JSON.stringify(playerState));
-    let newPlayers = [...currentPlayers];
-    let newVersusState = JSON.parse(JSON.stringify(currentVersusState));
-
-    switch(actionType) {
-        case 'BUILD_TOWER_REQUEST': {
-            const towerSpec = gameConfig.towers.find(t => t.id === towerId);
-            if (!towerSpec) break;
-
-            if (player.resources < towerSpec.cost) break;
-            const isOccupied = Object.values(newPlayerState.towersByCell).some(t => t.position.row === row && t.position.col === col) || newPlayerState.ghosts.some(g => g.row === row && g.col === col);
-            if (isOccupied) break;
-
-            const newBlocked = [...Object.values(newPlayerState.towersByCell).map(t => t.position), {row, col}];
-            if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
-
-            player.resources -= towerSpec.cost;
-
-            const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
-            const ghostId = `ghost-${row}-${col}-${Date.now()}`;
-            newPlayerState.ghosts.push({
-                id: ghostId,
-                row: row,
-                col: col,
-                towerId: towerId,
-                startedAt: 0,
-                buildTimeMs: buildTimeMs,
-                progress: 0,
-            });
-            break;
-        }
-         case 'SEND_ENEMY_REQUEST': {
-            if (player.resources < cost) break;
-            player.resources -= cost;
-            player.incomePerSecond += incomeBonus;
+        setPlayerStates(currentPlayerStates => {
+            const playerState = currentPlayerStates[playerStateKey];
+            if (!playerState) return currentPlayerStates;
             
-            const opponentId = playerId === 'player1' ? 'player2' : 'player1';
-            newVersusState[opponentId].spawnQueue.push({ type: enemyType, count: 1 });
-            break;
-        }
-    }
-    
-    setPlayers(newPlayers);
-    setPlayerStates(prev => ({ ...prev, [playerStateKey]: newPlayerState }));
-    setVersusState(newVersusState);
+            let newPlayerState: PlayerGameState = JSON.parse(JSON.stringify(playerState));
+
+            switch(actionType) {
+                case 'BUILD_TOWER_REQUEST': {
+                    const towerSpec = gameConfig.towers.find(t => t.id === towerId);
+                    if (!towerSpec) break;
+
+                    if (player.resources < towerSpec.cost) break;
+                    
+                    const isOccupied = Object.values(newPlayerState.towersByCell).some(t => t.position.row === row && t.position.col === col) || newPlayerState.ghosts.some(g => g.row === row && g.col === col);
+                    if (isOccupied) break;
+
+                    const newBlocked = [...Object.values(newPlayerState.towersByCell).map(t => t.position), {row, col}];
+                    if (!findPath({row:1,col:1}, {row:GRID_ROWS,col:GRID_COLS}, newBlocked, GRID_ROWS, GRID_COLS)) break;
+
+                    player.resources -= towerSpec.cost;
+
+                    const buildTimeMs = towerSpec.buildTimeMs ?? 2000;
+                    const ghostId = `ghost-${row}-${col}-${Date.now()}`;
+                    newPlayerState.ghosts.push({
+                        id: ghostId,
+                        row: row,
+                        col: col,
+                        towerId: towerId,
+                        startedAt: Date.now(),
+                        buildTimeMs: buildTimeMs,
+                        progress: 0,
+                    });
+                    break;
+                }
+                 case 'SEND_ENEMY_REQUEST': {
+                    if (player.resources < cost) break;
+                    player.resources -= cost;
+                    player.incomePerSecond += incomeBonus;
+                    
+                    setVersusState(currentVersusState => {
+                        let newVersusState = JSON.parse(JSON.stringify(currentVersusState));
+                        const opponentId = playerId === 'player1' ? 'player2' : 'player1';
+                        newVersusState[opponentId].spawnQueue.push({ type: enemyType, count: 1 });
+                        return newVersusState;
+                    });
+                    break;
+                }
+            }
+            
+            return { ...currentPlayerStates, [playerStateKey]: newPlayerState };
+        });
+
+        return newPlayers;
+    });
 
   }, [gameConfig]);
   
   const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
+    
     if (msg.type === 'CLIENT_READY') {
-      // Client is ready, send full state snapshot
-      // This is now handled by the useEffect below
-    } else {
-       onHostAction(msg.type, msg.payload);
+      const ps = playerStatesRef.current;
+      const pls = playersRef.current;
+      if (!ps.player1 || !ps.player2 || pls.length < 2) return;
+
+      const fullState: GameSessionState = {
+        gameMode: 'versus',
+        players: pls,
+        playerStates: ps,
+        currentWave: currentWaveRef.current,
+        difficulty: difficultyRef.current,
+        gameStatus: gameStatusRef.current,
+        waveStartCountdown: waveStartCountdownRef.current,
+        isIntermission: isIntermissionRef.current,
+        versusState: versusStateRef.current
+      };
+
+      sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
+      return;
     }
-  }, [isGameHost, onHostAction]);
+
+    onHostAction(msg.type, msg.payload);
+  }, [isGameHost, onHostAction, sendGameData]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
@@ -222,25 +244,6 @@ export default function VersusGameLoader() {
     handleGameData,
     handleActionData
   );
-
-  // Correct: Host sends snapshot when connected.
-  useEffect(() => {
-    if (!isGameHost || !isConnected) return;
-  
-    const fullState: GameSessionState = {
-      gameMode: 'versus',
-      players: playersRef.current,
-      playerStates: playerStatesRef.current,
-      currentWave: currentWaveRef.current,
-      difficulty: difficultyRef.current,
-      gameStatus: gameStatusRef.current,
-      waveStartCountdown: waveStartCountdownRef.current,
-      isIntermission: isIntermissionRef.current,
-      versusState: versusStateRef.current
-    };
-  
-    sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
-  }, [isGameHost, isConnected, sendGameData]);
 
   // Client sends ready message once connected
   useEffect(() => {
@@ -326,8 +329,7 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            // Correct: Initialize state for both players if it's not set yet.
-            if ((role === 'player1' && !playerStatesRef.current.player1) || (role === 'player2' && !playerStatesRef.current.player2)) {
+            if (!playerStatesRef.current.player1 || (normalized.length > 1 && !playerStatesRef.current.player2)) {
                  setPlayerStates(data.playerStates);
                  setVersusState(data.versusState || { player1: { spawnQueue: [] }, player2: { spawnQueue: [] } });
             }
