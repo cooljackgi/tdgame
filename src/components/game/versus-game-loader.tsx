@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -206,44 +207,33 @@ export default function VersusGameLoader() {
 
   }, [gameConfig]);
   
-  const handleActionDataRef = useRef(handleActionData);
-  const onHostActionRef = useRef(onHostAction);
-  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
-
-  useEffect(() => {
-    handleActionDataRef.current = handleActionData;
-  }, [handleActionData]);
-
-  useEffect(() => {
-    onHostActionRef.current = onHostAction;
-  }, [onHostAction]);
-
-  const memoizedHandleActionData = useCallback((msg: any) => {
+  const handleActionData = useCallback((msg: any) => {
+    const ps = playerStatesRef.current;
+    const pls = playersRef.current;
     if (!isGameHost) return;
 
     if (msg.type === 'CLIENT_READY') {
-      const ps = playerStatesRef.current;
-      const pls = playersRef.current;
-      if (!ps.player1 || !ps.player2 || pls.length < 2) return;
-
+      if (!ps.player1 || !ps.player2 || pls.length < 2) {
+        console.warn("Host received CLIENT_READY, but state is not fully initialized yet. Waiting.");
+        return;
+      }
       const fullState: GameSessionState = {
-        gameMode: 'versus',
-        players: pls,
-        playerStates: ps,
-        currentWave: currentWaveRef.current,
-        difficulty: difficultyRef.current,
-        gameStatus: gameStatusRef.current,
-        waveStartCountdown: waveStartCountdownRef.current,
-        isIntermission: isIntermissionRef.current,
-        versusState: versusStateRef.current,
+          gameMode: 'versus',
+          players: pls,
+          playerStates: ps,
+          currentWave: currentWaveRef.current,
+          difficulty: difficultyRef.current,
+          gameStatus: gameStatusRef.current,
+          waveStartCountdown: waveStartCountdownRef.current,
+          isIntermission: isIntermissionRef.current,
+          versusState: versusStateRef.current,
       };
-
       sendGameDataRef.current('deltas', [[DeltaType.SNAPSHOT, fullState]]);
       return;
     }
-
-    onHostActionRef.current(msg.type, msg.payload);
-  }, [isGameHost]);
+    
+    onHostAction(msg.type, msg.payload);
+  }, [isGameHost, onHostAction]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
@@ -251,9 +241,10 @@ export default function VersusGameLoader() {
     user, 
     false,
     handleGameData,
-    memoizedHandleActionData
+    handleActionData
   );
 
+  const sendGameDataRef = useRef(sendGameData);
   useEffect(() => {
     sendGameDataRef.current = sendGameData;
   }, [sendGameData]);
