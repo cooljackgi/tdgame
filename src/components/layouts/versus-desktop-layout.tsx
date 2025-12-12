@@ -14,7 +14,7 @@ import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal, VersusEnemyToSend } from '@/lib/game-data/types';
+import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal, VersusEnemyToSend, PlayerGameState } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
@@ -24,8 +24,9 @@ type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-eleme
 interface DesktopLayoutProps {
   players: Player[];
   setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
-  gameState: GameState;
+  gameState: PlayerGameState; // Changed for versus
   localPlayer: Player;
+  opponentPlayerState: PlayerGameState | null; // Added for versus
   currentWave: number;
   totalWaves: number;
   difficulty: Difficulty;
@@ -93,7 +94,7 @@ interface DesktopLayoutProps {
 
 export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props: DesktopLayoutProps) {
   const {
-    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
+    players, setPlayers, gameState, localPlayer, opponentPlayerState, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
     resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, portals, damageNumbers, splashRings,
     persistentClouds,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
@@ -211,10 +212,10 @@ export const VersusDesktopLayout = React.memo(function VersusDesktopLayout(props
               isLocalPlayer={true}
               isCoop={isCoop}
             />
-            {opponent && (
+            {opponent && opponentPlayerState && (
                 <PlayerStats
                     player={opponent}
-                    lives={gameState.lives} // This will need to be opponent's lives
+                    lives={opponentPlayerState.lives}
                     maxLives={maxLives}
                     isLocalPlayer={false}
                     isCoop={isCoop}

@@ -391,7 +391,7 @@ export type VersusEnemyToSend = {
 };
 
 export type VersusState = {
-  nextWaveTimestamp: number;
+  nextWaveTimestamp: any;
   player1: {
     spawnQueue: { type: EnemyType; count: number }[];
   };

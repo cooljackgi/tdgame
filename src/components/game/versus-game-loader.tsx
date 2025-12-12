@@ -10,7 +10,7 @@ import { doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent } from '@/lib/game-data/types';
+import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent, VersusState } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -103,6 +103,12 @@ export default function VersusGameLoader() {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
+  
+  const opponentPlayerState = useMemo(() => {
+    if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
+    const opponentId = localPlayerId === 'player1' ? 'player2' : 'player1';
+    return playerStates[opponentId];
+  }, [localPlayerId, playerStates]);
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
@@ -110,6 +116,21 @@ export default function VersusGameLoader() {
   const onHostAction = useCallback((actionType: string, payload: any) => {
     const { playerId, row, col, towerId, upgradeId, type: enemyType, cost, incomeBonus } = payload;
     if (!playerId || !gameConfig) return;
+    
+     if (actionType === 'START_WAVE_NOW_REQUEST') {
+        if (gameStatusRef.current === 'waiting') {
+            setGameStatus('playing');
+            setIsIntermission(true);
+            setWaveStartCountdown(INTERMISSION_TIME);
+        } else if (isIntermissionRef.current) {
+            setIsIntermission(false);
+            setWaveStartCountdown(0);
+            setCurrentWave(w => w + 1);
+            setVersusState((v: any) => ({ ...v, nextWaveTimestamp: Date.now() }));
+        }
+        return;
+    }
+
 
     setPlayerStates(currentPlayerStates => {
         const playerStateKey = playerId as 'player1' | 'player2';
@@ -150,14 +171,6 @@ export default function VersusGameLoader() {
                     });
                     break;
                 }
-                case 'START_WAVE_NOW_REQUEST': {
-                    if (gameStatusRef.current === 'waiting') {
-                        setGameStatus('playing');
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                    }
-                    break;
-                }
             }
             
             return newPlayers;
@@ -167,11 +180,6 @@ export default function VersusGameLoader() {
     });
 
   }, [gameConfig]);
-
-  const onHostActionRef = useRef(onHostAction);
-  useEffect(() => { onHostActionRef.current = onHostAction; }, [onHostAction]);
-
-  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
   
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
@@ -212,8 +220,8 @@ export default function VersusGameLoader() {
           pendingSnapshotRef.current = true;
           return;
       }
-      onHostActionRef.current(msg.type, msg.payload);
-  }, [isGameHost]);
+      onHostAction(msg.type, msg.payload);
+  }, [isGameHost, onHostAction]);
   
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
     localPlayerId ? gameId : null, 
@@ -223,8 +231,6 @@ export default function VersusGameLoader() {
     handleGameData,
     handleActionData
   );
-
-  sendGameDataRef.current = sendGameData;
 
   useEffect(() => {
     if (!isGameHost || !isConnected || !pendingSnapshotRef.current) return;
@@ -332,7 +338,12 @@ export default function VersusGameLoader() {
             setCurrentWave(data.currentWave || 0);
 
             if (data.playerStates) {
-                setPlayerStates(data.playerStates);
+                const ps = data.playerStates;
+                if(ps.player1 && ps.player2) {
+                  if(!playerStatesRef.current.player1 || !playerStatesRef.current.player2) {
+                     setPlayerStates(ps);
+                  }
+                }
             }
             if (data.versusState) setVersusState(data.versusState);
             
@@ -361,10 +372,8 @@ export default function VersusGameLoader() {
       if (delta === 0) return;
       lastTickRef.current = now;
 
-      // This logic should ONLY run on the host.
       if (!isGameHost) return;
       
-      // Robust check to ensure all necessary data is loaded before proceeding.
       const ps = playerStatesRef.current;
       if (!gameConfig || !ps.player1 || !ps.player2 || gameStatusRef.current !== 'playing') {
           return;
@@ -380,30 +389,27 @@ export default function VersusGameLoader() {
       }
       
       setPlayerStates(currentStates => {
-          let p1State = currentStates.player1!;
-          let p2State = currentStates.player2!;
+          if(!currentStates.player1 || !currentStates.player2) return currentStates;
+          
+          let p1State = { ...currentStates.player1 };
+          let p2State = { ...currentStates.player2 };
 
           const fullSessionState: GameSessionState = {
               players: playersRef.current,
               playerStates: currentStates as any,
               gameMode: 'versus',
-              // Dummy properties to satisfy the type
-              currentWave: 0,
-              difficulty: 'Normal',
-              gameStatus: 'playing',
-              isIntermission: false,
-              waveStartCountdown: 0,
+              currentWave: 0, difficulty: 'Normal', gameStatus: 'playing', waveStartCountdown: 0, isIntermission: false
           };
       
           const tickResultP1 = tickWorkers({ ...fullSessionState, workers: p1State.workers, ghosts: p1State.ghosts, towersByCell: p1State.towersByCell }, delta, epochNow, gameConfig.towers);
-          p1State.workers = tickResultP1.workers;
-          p1State.ghosts = tickResultP1.ghosts;
-          p1State.towersByCell = tickResultP1.towersByCell;
+          p1State.workers = tickResultP1.playerStates!.player1.workers;
+          p1State.ghosts = tickResultP1.playerStates!.player1.ghosts;
+          p1State.towersByCell = tickResultP1.playerStates!.player1.towersByCell;
           
-          const tickResultP2 = tickWorkers({ ...fullSessionState, workers: p2State.workers, ghosts: p2State.ghosts, towersByCell: p2State.towersByCell }, delta, epochNow, gameConfig.towers);
-          p2State.workers = tickResultP2.workers;
-          p2State.ghosts = tickResultP2.ghosts;
-          p2State.towersByCell = tickResultP2.towersByCell;
+          const tickResultP2 = tickWorkers({ ...fullSessionState, players: tickResultP1.players, playerStates: {player1: p1State, player2: p2State} }, delta, epochNow, gameConfig.towers);
+          p2State.workers = tickResultP2.playerStates!.player2.workers;
+          p2State.ghosts = tickResultP2.playerStates!.player2.ghosts;
+          p2State.towersByCell = tickResultP2.playerStates!.player2.towersByCell;
       
           return { player1: p1State, player2: p2State };
       });
@@ -413,9 +419,17 @@ export default function VersusGameLoader() {
         deltaQueueRef.current.push([DeltaType.PLAYER_STATES_UPDATE, playerStatesRef.current]);
         deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, versusStateRef.current]);
         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
+        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
+          lives: 0, // Placeholder, lives are per-player
+          currentWave: currentWaveRef.current,
+          gameStatus: gameStatusRef.current,
+          isIntermission: isIntermissionRef.current,
+          waveStartCountdown: waveStartCountdownRef.current,
+        }]);
+        
         const deltasToSend = [...deltaQueueRef.current];
         if (deltasToSend.length > 0) {
-           sendGameDataRef.current('deltas', deltasToSend);
+           sendGameData('deltas', deltasToSend);
         }
         deltaQueueRef.current = [];
         lastDeltaSentRef.current = epochNow;
@@ -426,8 +440,18 @@ export default function VersusGameLoader() {
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { stopped = true; if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   
-  }, [isGameHost, configLoading, gameConfig]);
+  }, [isGameHost, configLoading, gameConfig, sendGameData]);
 
+    const handleGameControl = useCallback(() => {
+        if (!isGameHost) return;
+
+        setGameStatus(prev => {
+            if (prev === 'waiting') return 'playing';
+            if (prev === 'playing') return 'paused';
+            if (prev === 'paused') return 'playing';
+            return prev;
+        });
+    }, [isGameHost]);
 
   if (loading || configLoading || !localPlayer) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
@@ -451,7 +475,7 @@ export default function VersusGameLoader() {
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
           difficulty={difficulty}
-          handleGameControl={() => {}}
+          handleGameControl={handleGameControl}
           gameStatus={gameStatus}
           resetGame={onExit}
           towers={gameConfig?.towers ?? []}
@@ -500,8 +524,10 @@ export default function VersusGameLoader() {
           isPlacingPortalEntrance={portalPhase !== 'idle'}
           onSendEnemy={(payload) => dispatchAction('SEND_ENEMY_REQUEST', payload as any)}
           gameMode="versus"
+          opponentPlayerState={opponentPlayerState}
         />
       </div>
     </div>
   );
 }
+
