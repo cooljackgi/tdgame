@@ -27,6 +27,7 @@ import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 import { audioManager } from '@/lib/audio/audio-manager';
 
+const VERSUS_WAVE_INTERVAL = 60; // 60 seconds
 
 export default function VersusGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -49,7 +50,7 @@ export default function VersusGameLoader() {
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
-  const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
+  const [waveStartCountdown, setWaveStartCountdown] = useState(VERSUS_WAVE_INTERVAL);
   const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
   const [versusState, setVersusState] = useState<VersusState>({ nextWaveTimestamp: 0, player1: { spawnQueue: [] }, player2: { spawnQueue: [] }});
   
@@ -508,6 +509,20 @@ export default function VersusGameLoader() {
       // --- 3. Process each player's game state ---
       if (gameStatusRef.current !== 'playing') return;
 
+      if(isIntermissionRef.current) {
+          setWaveStartCountdown(prev => {
+              const newTime = prev - delta / 1000;
+              if (newTime <= 0) {
+                  setIsIntermission(false);
+                  setWaveStartCountdown(0);
+                  setCurrentWave(w => w + 1);
+                  startWave();
+                  return 0;
+              }
+              return newTime;
+          });
+      }
+
       const playerIds: ('player1' | 'player2')[] = ['player1', 'player2'];
       let nextPlayerStates = JSON.parse(JSON.stringify(playerStatesRef.current));
       const allNewDamageNumbers: DamageNumber[] = [];
@@ -596,6 +611,17 @@ export default function VersusGameLoader() {
       }
       setPlayerStates(nextPlayerStates);
 
+       // Wave completion check
+        const p1Enemies = nextPlayerStates.player1.enemies;
+        const p2Enemies = nextPlayerStates.player2.enemies;
+        const p1QueueEmpty = p1SpawnQueueRef.current.length === 0;
+        const p2QueueEmpty = p2SpawnQueueRef.current.length === 0;
+
+        if (!isIntermissionRef.current && p1QueueEmpty && p2QueueEmpty && p1Enemies.every(e => e.deathTimestamp) && p2Enemies.every(e => e.deathTimestamp)) {
+            setIsIntermission(true);
+            setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+        }
+
       if (allNewDamageNumbers.length > 0) {
           gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
           deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, allNewDamageNumbers]);
@@ -627,7 +653,7 @@ export default function VersusGameLoader() {
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { stopped = true; if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   
-  }, [isGameHost, configLoading, gameConfig, sendGameData, onHostAction]);
+  }, [isGameHost, configLoading, gameConfig, sendGameData, onHostAction, startWave]);
 
   const handleGameControl = useCallback(() => {
     if (!isGameHost) return;
@@ -699,8 +725,8 @@ export default function VersusGameLoader() {
           totalKilled={0}
           totalLeaked={0}
           isIntermission={isIntermission}
-          waveStartCountdown={waveStartCountdown}
-          intermissionTime={INTERMISSION_TIME}
+          waveStartCountdown={Math.ceil(waveStartCountdown)}
+          intermissionTime={VERSUS_WAVE_INTERVAL}
           handleStartNextWaveNow={handleStartNextWaveNow}
           lastUpgradedTowerId={lastUpgradedTowerId}
           isCoop={false}
@@ -721,3 +747,4 @@ export default function VersusGameLoader() {
     </div>
   );
 }
+
