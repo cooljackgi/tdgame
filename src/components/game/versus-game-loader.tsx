@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -117,6 +115,19 @@ export default function VersusGameLoader() {
     const opponentId = localPlayerId === 'player1' ? 'player2' : 'player1';
     return playerStates[opponentId];
   }, [localPlayerId, playerStates]);
+
+  useEffect(() => {
+    if (!isGameHost || !playerStates.player1.towersByCell) return;
+    const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(playerStates.player1.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+    setPlayerStates(current => ({ ...current, player1: { ...current.player1, currentPath: newPath }}));
+  }, [isGameHost, playerStates.player1.towersByCell]);
+
+  useEffect(() => {
+      if (!isGameHost || !playerStates.player2.towersByCell) return;
+      const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(playerStates.player2.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+      setPlayerStates(current => ({ ...current, player2: { ...current.player2, currentPath: newPath }}));
+  }, [isGameHost, playerStates.player2.towersByCell]);
+
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
@@ -460,7 +471,7 @@ export default function VersusGameLoader() {
         deltaQueueRef.current.push([DeltaType.PLAYER_STATES_UPDATE, playerStatesRef.current]);
         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
         deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
-          lives: 0,
+          lives: 0, // Not used in versus, just to satisfy type
           currentWave: currentWaveRef.current,
           gameStatus: gameStatusRef.current,
           isIntermission: isIntermissionRef.current,
@@ -560,7 +571,7 @@ export default function VersusGameLoader() {
           playerRole={localPlayerId}
           handleLoadTestLayout={() => {}}
           handleLoadAllTowersLayout={() => {}}
-          isCheating={false}
+          isCheating={isCheating}
           cheat_unlockAll={() => {}}
           firingTowerIds={new Set()}
           allTowers={gameConfig?.towers ?? []}
