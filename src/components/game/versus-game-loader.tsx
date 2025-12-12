@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -23,7 +24,7 @@ import { loadGameConfig, type GameConfig } from '@/lib/game-config-loader';
 import { DeltaType } from '@/lib/game-data/types';
 import { findPath } from '@/lib/pathfinding';
 import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
-import { processAttack, tickDots } from '@/lib/game-logic';
+import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 
 
 export default function VersusGameLoader() {
@@ -116,7 +117,7 @@ export default function VersusGameLoader() {
             switch(deltaType) {
                 case DeltaType.SNAPSHOT:
                   const state = deltaPayload as GameSessionState;
-                  setPlayers(state.players);
+                  setPlayers(state.players!);
                   setPlayerStates(state.playerStates!);
                   setCurrentWave(state.currentWave);
                   setIsIntermission(state.isIntermission);
@@ -180,7 +181,7 @@ export default function VersusGameLoader() {
                 row: row,
                 col: col,
                 towerId: towerId,
-                startedAt: Date.now(),
+                startedAt: 0,
                 buildTimeMs: buildTimeMs,
                 progress: 0,
             });
@@ -205,7 +206,12 @@ export default function VersusGameLoader() {
   
   const handleActionData = useCallback((msg: any) => {
     if (!isGameHost) return;
-    onHostAction(msg.type, msg.payload);
+    if (msg.type === 'CLIENT_READY') {
+      // Client is ready, send full state snapshot
+      // This is now handled by the useEffect below
+    } else {
+       onHostAction(msg.type, msg.payload);
+    }
   }, [isGameHost, onHostAction]);
 
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
@@ -217,22 +223,31 @@ export default function VersusGameLoader() {
     handleActionData
   );
 
+  // Correct: Host sends snapshot when connected.
   useEffect(() => {
-    if (isConnected && !isGameHost && localPlayerId === 'player2') {
-        const fullState = {
-            gameMode: 'versus',
-            players: playersRef.current,
-            playerStates: playerStatesRef.current,
-            currentWave: currentWaveRef.current,
-            difficulty: difficultyRef.current,
-            gameStatus: gameStatusRef.current,
-            waveStartCountdown: waveStartCountdownRef.current,
-            isIntermission: isIntermissionRef.current,
-            versusState: versusStateRef.current
-        };
-        sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
-    }
-  }, [isConnected, isGameHost, localPlayerId, sendGameData]);
+    if (!isGameHost || !isConnected) return;
+  
+    const fullState: GameSessionState = {
+      gameMode: 'versus',
+      players: playersRef.current,
+      playerStates: playerStatesRef.current,
+      currentWave: currentWaveRef.current,
+      difficulty: difficultyRef.current,
+      gameStatus: gameStatusRef.current,
+      waveStartCountdown: waveStartCountdownRef.current,
+      isIntermission: isIntermissionRef.current,
+      versusState: versusStateRef.current
+    };
+  
+    sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
+  }, [isGameHost, isConnected, sendGameData]);
+
+  // Client sends ready message once connected
+  useEffect(() => {
+      if (isConnected && !isGameHost && localPlayerId === 'player2') {
+          sendAction('CLIENT_READY', {});
+      }
+  }, [isConnected, isGameHost, localPlayerId, sendAction]);
 
   const dispatchAction = useCallback((actionType: string, payload: any) => {
     if (isSpectator) return;
@@ -311,7 +326,8 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            if (role === 'player1' && !playerStatesRef.current.player1) {
+            // Correct: Initialize state for both players if it's not set yet.
+            if ((role === 'player1' && !playerStatesRef.current.player1) || (role === 'player2' && !playerStatesRef.current.player2)) {
                  setPlayerStates(data.playerStates);
                  setVersusState(data.versusState || { player1: { spawnQueue: [] }, player2: { spawnQueue: [] } });
             }
@@ -442,5 +458,7 @@ export default function VersusGameLoader() {
     </div>
   );
 }
+
+    
 
     
