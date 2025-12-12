@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -321,29 +322,62 @@ export default function VersusGameLoader() {
   
   const startWave = useCallback(() => {
     if (!gameConfig) return;
-    const waveData = gameConfig.waves[currentWaveRef.current];
-    if (!waveData) return;
 
     audioManager.play({ kind: 'sfx', name: 'wave_start' });
     const difficultyMod = difficultyModifiers[difficultyRef.current];
-    
-    const createEnemiesForWave = (ownerId: Player['id']) => {
-        return Array.from({ length: waveData.enemies.count }).map((_, i) => {
-            const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
-            return {
-                id: `enemy-${ownerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
-                owner: ownerId, type: waveData.enemies.type,
-                health, maxHealth: health, armor: waveData.enemies.armor, speed: waveData.enemies.speed, damage: waveData.enemies.damage, bounty: waveData.enemies.bounty,
-                path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
-                lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
-                _spawnTime: i * waveData.enemies.spawnDelay,
-            };
-        });
-    }
 
-    p1SpawnQueueRef.current = createEnemiesForWave('player1');
-    p2SpawnQueueRef.current = createEnemiesForWave('player2');
+    const createEnemiesForPlayer = (targetPlayerId: 'player1' | 'player2') => {
+        const sendingPlayerId = targetPlayerId === 'player1' ? 'player2' : 'player1';
+        const spawnQueue = versusStateRef.current[sendingPlayerId].spawnQueue;
+        let enemiesToSpawn: any[] = [];
+        
+        if (spawnQueue.length > 0) {
+            spawnQueue.forEach(item => {
+                const baseEnemy = gameConfig.waves.find(w => w.enemies.type === item.type)?.enemies;
+                if(baseEnemy) {
+                    for(let i = 0; i < item.count; i++) {
+                         const health = Math.round(baseEnemy.health * difficultyMod.enemyHealth);
+                         enemiesToSpawn.push({
+                            id: `enemy-${targetPlayerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                            owner: targetPlayerId, type: item.type,
+                            health, maxHealth: health, armor: baseEnemy.armor, speed: baseEnemy.speed, damage: baseEnemy.damage, bounty: baseEnemy.bounty,
+                            path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+                            lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+                            _spawnTime: enemiesToSpawn.length * 500, // Stagger spawns
+                         });
+                    }
+                }
+            });
+        } else {
+            // Default wave if nothing was sent
+            const baseEnemy = gameConfig.waves.find(w => w.enemies.type === 'standard')?.enemies;
+            if (baseEnemy) {
+                for(let i = 0; i < 5; i++) {
+                     const health = Math.round(baseEnemy.health * difficultyMod.enemyHealth);
+                     enemiesToSpawn.push({
+                        id: `enemy-${targetPlayerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                        owner: targetPlayerId, type: 'standard',
+                        health, maxHealth: health, armor: baseEnemy.armor, speed: baseEnemy.speed, damage: baseEnemy.damage, bounty: baseEnemy.bounty,
+                        path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+                        lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+                        _spawnTime: i * 800,
+                     });
+                }
+            }
+        }
+        return enemiesToSpawn;
+    };
     
+    p1SpawnQueueRef.current = createEnemiesForPlayer('player1');
+    p2SpawnQueueRef.current = createEnemiesForPlayer('player2');
+    
+    // Clear the queues after processing them
+    setVersusState(v => ({
+      ...v,
+      player1: { ...v.player1, spawnQueue: [] },
+      player2: { ...v.player2, spawnQueue: [] },
+    }));
+
     waveStartTimeRef.current = Date.now();
   }, [gameConfig]);
   
@@ -402,8 +436,9 @@ export default function VersusGameLoader() {
                         player.incomePerSecond += incomeBonus;
                         
                         setVersusState(v => {
-                            const newQueue = [...(v[player.id as 'player1'|'player2'].spawnQueue || []), {type: enemyType, count: 1}];
-                            return {...v, [player.id]: { spawnQueue: newQueue }};
+                            const queueKey = player.id as 'player1' | 'player2';
+                            const newQueue = [...(v[queueKey].spawnQueue || []), {type: enemyType, count: 1}];
+                            return {...v, [queueKey]: { spawnQueue: newQueue }};
                         });
                     }
                     break;
@@ -475,11 +510,11 @@ export default function VersusGameLoader() {
 
       const playerIds: ('player1' | 'player2')[] = ['player1', 'player2'];
       let nextPlayerStates = JSON.parse(JSON.stringify(playerStatesRef.current));
-      const newFiringTowerIds = new Set<string>();
       const allNewDamageNumbers: DamageNumber[] = [];
       
       for (const pId of playerIds) {
-          const pState = nextPlayerStates[pId];
+          const pState = nextPlayerStates[pId] as PlayerGameState;
+          if (!pState) continue;
           
           // Spawn procedural enemies
           if (!isIntermissionRef.current) {
@@ -496,6 +531,7 @@ export default function VersusGameLoader() {
           }
           
           // Tower attack logic
+          const newFiringTowerIds = new Set<string>();
           Object.values(pState.towersByCell).forEach((tower: PlacedTower) => {
               if (epochNow - tower.lastAttack >= tower.attackSpeed) {
                   let targets: Enemy[] = [];
@@ -521,6 +557,7 @@ export default function VersusGameLoader() {
                   }
               }
           });
+          setFiringTowerIds(newFiringTowerIds);
 
           // Enemy movement and DoT logic
           const stillAlive: Enemy[] = [];
@@ -558,7 +595,6 @@ export default function VersusGameLoader() {
           pState.enemies = stillAlive;
       }
       setPlayerStates(nextPlayerStates);
-      setFiringTowerIds(newFiringTowerIds);
 
       if (allNewDamageNumbers.length > 0) {
           gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
