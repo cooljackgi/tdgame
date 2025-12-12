@@ -319,42 +319,48 @@ import type {
   export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
     const newState = { ...state };
   
-    // Determine which workers to tick based on game mode
     if (newState.gameMode === 'versus' && newState.playerStates) {
-      // For versus, tick workers for each player individually
-      const p1Result = tickPlayerWorkers({ ...newState, ...newState.playerStates.player1 }, dtMs, now, allTowers, 'player1');
-      const p2Result = tickPlayerWorkers({ ...newState, ...newState.playerStates.player2 }, dtMs, now, allTowers, 'player2');
-      
-      newState.playerStates.player1 = { ...newState.playerStates.player1, ...p1Result };
-      newState.playerStates.player2 = { ...newState.playerStates.player2, ...p2Result };
+      const p1Result = tickPlayerWorkers(newState, 'player1', dtMs, now, allTowers);
+      const p2Result = tickPlayerWorkers(p1Result, 'player2', dtMs, now, allTowers);
+      return p2Result;
       
     } else if (newState.gameMode === 'coop' && newState.workers) {
-      // For coop, tick the shared worker array
-      const coopResult = tickPlayerWorkers(newState as PlayerGameState & { players: Player[] }, dtMs, now, allTowers);
-      newState.workers = coopResult.workers;
-      newState.ghosts = coopResult.ghosts;
-      newState.towersByCell = coopResult.towersByCell;
-      newState.portals = coopResult.portals;
+        const playerState: PlayerGameState = {
+            lives: newState.gameState!.lives,
+            towersByCell: newState.towersByCell!,
+            enemies: newState.enemies!,
+            workers: newState.workers!,
+            ghosts: newState.ghosts!,
+            portals: newState.portals!,
+            currentPath: newState.currentPath!,
+        };
+        const tempSessionState: GameSessionState = {...newState, playerStates: {player1: playerState, player2: playerState}};
+        
+        const p1Result = tickPlayerWorkers(tempSessionState, 'player1', dtMs, now, allTowers);
+        const p2Result = tickPlayerWorkers(p1Result, 'player2', dtMs, now, allTowers);
+
+        const combinedWorkers = [...p2Result.playerStates!.player1.workers, ...p2Result.playerStates!.player2.workers].filter((w, i, self) => i === self.findIndex(t => t.id === w.id));
+
+        return { ...p2Result, workers: combinedWorkers };
     }
   
     return newState;
   }
 
-  // Helper function to process workers for a single player's state
-  function tickPlayerWorkers(playerState: PlayerGameState & { players: Player[] }, dtMs: number, now: number, allTowers: Tower[], forPlayerId?: 'player1' | 'player2') {
-    
-    if (!playerState.workers) {
-      return { workers: [], ghosts: playerState.ghosts ?? [], towersByCell: playerState.towersByCell ?? {}, portals: playerState.portals ?? [] };
+  function tickPlayerWorkers(state: GameSessionState, playerId: 'player1' | 'player2', dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
+    if (!state.playerStates || !state.playerStates[playerId] || !state.playerStates[playerId].workers) {
+        return state;
     }
-
+    const playerState = { ...state.playerStates[playerId] };
+    
     const updatedWorkers = playerState.workers.map(w => {
       let newWorker: Worker = JSON.parse(JSON.stringify(w));
   
       if (newWorker.state === "idle" && newWorker.queue.length > 0 && !newWorker.current) {
-        startNextOrder({ ...playerState, gameMode: 'coop' }, newWorker); // Pass a compatible state
+        startNextOrder(state, newWorker);
       }
   
-      if (newWorker.state === "moving") {
+      if (newWorker.state === "moving" && (newWorker.moveTarget || newWorker.current)) {
         const targetX = newWorker.moveTarget ? newWorker.moveTarget.x : newWorker.current!.targetX;
         const targetY = newWorker.moveTarget ? newWorker.moveTarget.y : newWorker.current!.targetY;
         
@@ -399,34 +405,27 @@ import type {
   
         if (progress >= 1) {
             if (order.type === 'build_tower') {
-                playerState = completeConstruction({ ...playerState, gameMode: 'coop' }, newWorker, allTowers);
+                completeConstruction(playerState, newWorker, allTowers, playerId);
             } else if (order.type === 'place_portal') {
-                playerState = completePlacePortalPhase({ ...playerState, gameMode: 'coop' }, newWorker);
+                completePlacePortalPhase(playerState, newWorker, state.currentWave);
             }
-            startNextOrder({ ...playerState, gameMode: 'coop' }, newWorker);
+            startNextOrder(state, newWorker);
         }
       }
       return newWorker;
     });
-  
-    return {
-      workers: updatedWorkers,
-      ghosts: playerState.ghosts,
-      towersByCell: playerState.towersByCell,
-      portals: playerState.portals,
-    };
+
+    return { ...state, playerStates: { ...state.playerStates, [playerId]: { ...playerState, workers: updatedWorkers }}};
   }
   
-  function completeConstruction(state: PlayerGameState & { players: Player[] }, w: Worker, allTowers: Tower[]): PlayerGameState {
-    if (!w.current || w.current.order.type !== 'build_tower') return state;
+  function completeConstruction(playerState: PlayerGameState, w: Worker, allTowers: Tower[], ownerId: 'player1'|'player2'): void {
+    if (!w.current || w.current.order.type !== 'build_tower') return;
     const { order } = w.current;
     
-    state.ghosts = state.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
+    playerState.ghosts = playerState.ghosts.filter(g => !(g.row === order.row && g.col === order.col));
   
     const towerSpec = allTowers.find(t => t.id === order.towerId)!;
     
-    const owner = state.players.find(p => p.id === (w.id.includes('1') ? 'player1' : 'player2'));
-  
     const newTower: PlacedTower = {
       ...towerSpec,
       id: `tower-${order.row}-${order.col}-${Date.now()}`,
@@ -434,40 +433,38 @@ import type {
       position: { row: order.row, col: order.col },
       lastAttack: 0,
       health: towerSpec.maxHealth,
-      ownerId: owner ? owner.id : 'player1',
+      ownerId: ownerId,
     };
   
     const cellKey = `${order.row}_${order.col}`;
-    state.towersByCell = { ...state.towersByCell, [cellKey]: newTower };
+    playerState.towersByCell = { ...playerState.towersByCell, [cellKey]: newTower };
   
     audioManager.play({kind: 'sfx', name: 'build_tower'});
   
     w.current = undefined;
-    
-    return state;
   }
   
-  function completePlacePortalPhase(state: PlayerGameState & { players: Player[] }, w: Worker): PlayerGameState {
-      if (!w.current || w.current.order.type !== 'place_portal') return state;
+  function completePlacePortalPhase(playerState: PlayerGameState, w: Worker, currentWave: number): void {
+      if (!w.current || w.current.order.type !== 'place_portal') return;
       const order = w.current.order as PlacePortalOrder;
       const now = Date.now();
       const ownerId = w.id.includes('1') ? 'player1' : 'player2';
   
       if (order.phase === 'entrance') {
-          state.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
+          playerState.ghosts.push({ id: `ghost-portal-entrance-${now}`, row: order.entrance.row, col: order.entrance.col, towerId: 'portal_entrance', startedAt: now, buildTimeMs: 0, progress: 1, });
           order.phase = 'exit';
           const { x, y } = centerOf(order.exit.row, order.exit.col);
           w.current.targetX = x;
           w.current.targetY = y;
           w.state = 'moving';
-          w.current.startedAt = now; // Reset timer for next phase
+          w.current.startedAt = now;
           w.current.eta = now + order.buildTimeMsExit;
-          return state;
       } else { // Phase is 'exit'
-          state.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
+          playerState.ghosts.push({ id: `ghost-portal-exit-${now}`, row: order.exit.row, col: order.exit.col, towerId: 'portal_exit', startedAt: now, buildTimeMs: 0, progress: 1, });
           
-          const newPortals = state.portals ? [...state.portals] : [];
-          newPortals.push({
+          if(!playerState.portals) playerState.portals = [];
+          
+          playerState.portals.push({
               id: `portal-${order.createdAt}`,
               ownerId: ownerId,
               entrance: order.entrance,
@@ -475,12 +472,9 @@ import type {
               active: true,
               usesLeft: Infinity,
               perEnemyCooldownMs: 5000,
-              expiresAt: 0, // Will be set at end of wave
+              expiresAt: 0, 
           });
-          state.portals = newPortals;
   
           w.current = undefined;
-          
-          return state;
       }
   }
