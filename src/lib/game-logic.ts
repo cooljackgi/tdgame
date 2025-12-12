@@ -378,42 +378,41 @@ import type {
 }
 
 export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-    if (state.gameMode === 'versus' && state.playerStates) {
-        let p1State = { ...state.playerStates.player1 };
-        p1State.workers = (p1State.workers || []).map(w => tickSingleWorker(w, dtMs, now, p1State, allTowers, state.currentWave));
+    const newState = JSON.parse(JSON.stringify(state)); // Deep copy to avoid mutation issues
 
-        let p2State = { ...state.playerStates.player2 };
-        p2State.workers = (p2State.workers || []).map(w => tickSingleWorker(w, dtMs, now, p2State, allTowers, state.currentWave));
+    if (newState.gameMode === 'versus' && newState.playerStates) {
+        const p1State = newState.playerStates.player1;
+        if (p1State.workers) {
+            p1State.workers = p1State.workers.map(w => tickSingleWorker(w, dtMs, now, p1State, allTowers, newState.currentWave));
+        }
 
-        return {
-            ...state,
-            playerStates: {
-                player1: p1State,
-                player2: p2State,
-            },
-        };
+        const p2State = newState.playerStates.player2;
+        if (p2State.workers) {
+            p2State.workers = p2State.workers.map(w => tickSingleWorker(w, dtMs, now, p2State, allTowers, newState.currentWave));
+        }
     } else { // Coop mode
         const coopPlayerState: PlayerGameState = {
-            lives: state.gameState?.lives ?? 0,
-            towersByCell: state.towersByCell ?? {},
-            enemies: state.enemies ?? [],
-            workers: state.workers ?? [],
-            ghosts: state.ghosts ?? [],
-            portals: state.portals ?? [],
-            currentPath: state.currentPath ?? [],
+            lives: newState.gameState?.lives ?? 0,
+            towersByCell: newState.towersByCell ?? {},
+            enemies: newState.enemies ?? [],
+            workers: newState.workers ?? [],
+            ghosts: newState.ghosts ?? [],
+            portals: newState.portals ?? [],
+            currentPath: newState.currentPath ?? [],
         };
         
-        const updatedWorkers = (coopPlayerState.workers || []).map(w => tickSingleWorker(w, dtMs, now, coopPlayerState, allTowers, state.currentWave));
-
-        return {
-            ...state,
-            workers: updatedWorkers,
-            ghosts: coopPlayerState.ghosts,
-            towersByCell: coopPlayerState.towersByCell,
-            portals: coopPlayerState.portals,
-        };
+        const updatedWorkers = (coopPlayerState.workers || []).map(w => tickSingleWorker(w, dtMs, now, coopPlayerState, allTowers, newState.currentWave));
+        
+        // Write back the mutated state
+        newState.workers = updatedWorkers;
+        newState.ghosts = coopPlayerState.ghosts;
+        newState.towersByCell = coopPlayerState.towersByCell;
+        newState.portals = coopPlayerState.portals;
     }
+    
+    return newState;
 }
+
   
 function completeConstruction(playerState: PlayerGameState, w: Worker, allTowers: Tower[]): void {
     if (!w.current || w.current.order.type !== 'build_tower') return;
@@ -476,4 +475,5 @@ function completePlacePortalPhase(playerState: PlayerGameState, w: Worker, curre
           w.current = undefined;
       }
   }
+
 
