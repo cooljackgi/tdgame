@@ -114,7 +114,15 @@ export default function Home() {
                   portals: [], 
                   currentPath: [] 
               },
-              player2: null, // Player 2 state is initialized on join
+              player2: { 
+                lives: difficultyMod.startLives,
+                towersByCell: {},
+                enemies: [],
+                workers: [{ id: "worker-2", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }],
+                ghosts: [],
+                portals: [],
+                currentPath: []
+              },
           };
           newGameData.versusState = {
               nextWaveTimestamp: serverTimestamp(),

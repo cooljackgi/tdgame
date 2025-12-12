@@ -267,6 +267,7 @@ export enum DeltaType {
     PORTAL_UPDATE,       // payload: Portal[]
     STATS_UPDATE,        // payload: { totalKilled, totalLeaked }
     VERSUS_STATE_UPDATE, // New: for versus mode state
+    PLAYER_STATES_UPDATE,
 }
 
 
@@ -279,6 +280,10 @@ export type GameDelta =
         gameStatus: GameStatus;
         isIntermission: boolean;
         waveStartCountdown: number;
+    }]
+    | [type: DeltaType.PLAYER_STATES_UPDATE, payload: {
+      player1: PlayerGameState;
+      player2: PlayerGameState;
     }]
     | [type: DeltaType.PLAYER_UPDATE, payload: Player[]]
     | [type: DeltaType.TOWERS_UPDATE, payload: Record<string, PlacedTower>]
