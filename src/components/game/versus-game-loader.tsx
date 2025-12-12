@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -82,6 +83,8 @@ export default function VersusGameLoader() {
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const isSpectator = useMemo(() => localPlayerId === 'spectator', [localPlayerId]);
+  const isCheating = useMemo(() => difficulty === 'Chaos', [difficulty]);
+
 
   // Refs for stable access in callbacks
   const playersRef = useRef(players);
@@ -495,13 +498,12 @@ export default function VersusGameLoader() {
   const handleGameControl = useCallback(() => {
     if (!isGameHost) return;
 
-    if (gameStatusRef.current === 'waiting') {
-        setGameStatus('playing');
-        setIsIntermission(true);
-        setWaveStartCountdown(INTERMISSION_TIME);
-    } else {
-        setGameStatus(prev => (prev === 'playing' ? 'paused' : 'playing'));
-    }
+    setGameStatus(prev => {
+        if (prev === 'waiting') return 'playing';
+        if (prev === 'playing') return 'paused';
+        if (prev === 'paused') return 'playing';
+        return prev;
+    });
   }, [isGameHost]);
 
   const handleStartNextWaveNow = useCallback(() => {
