@@ -87,7 +87,7 @@ export const joinGame = functions.https.onCall(async (data, context) => {
             lives: startLives,
             towersByCell: {},
             enemies: [],
-            workers: [{ id: "worker-2", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }],
+            workers: [{ id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }],
             ghosts: [],
             portals: [],
             currentPath: []

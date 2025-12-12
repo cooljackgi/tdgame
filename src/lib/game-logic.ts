@@ -1,3 +1,4 @@
+
 // src/lib/game-logic.ts
 import type {
     Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
@@ -316,44 +317,49 @@ import type {
   }
   
   
-  export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-    const newState = { ...state };
-  
-    if (newState.gameMode === 'versus' && newState.playerStates) {
-      const p1Result = tickPlayerWorkers(newState, 'player1', dtMs, now, allTowers);
-      const p2Result = tickPlayerWorkers(p1Result, 'player2', dtMs, now, allTowers);
-      return p2Result;
-      
-    } else if (newState.gameMode === 'coop' && newState.workers) {
+export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
+    if (state.gameMode === 'versus' && state.playerStates) {
+        const p1Result = tickPlayerWorkers(state, 'player1', dtMs, now, allTowers);
+        const p2Result = tickPlayerWorkers(p1Result, 'player2', dtMs, now, allTowers);
+        return p2Result;
+    } else if (state.gameMode === 'coop') {
         const playerState: PlayerGameState = {
-            lives: newState.gameState!.lives,
-            towersByCell: newState.towersByCell!,
-            enemies: newState.enemies!,
-            workers: newState.workers!,
-            ghosts: newState.ghosts!,
-            portals: newState.portals!,
-            currentPath: newState.currentPath!,
+            lives: state.gameState!.lives,
+            towersByCell: state.towersByCell!,
+            enemies: state.enemies!,
+            workers: state.workers!,
+            ghosts: state.ghosts!,
+            portals: state.portals!,
+            currentPath: state.currentPath!,
         };
-        const tempSessionState: GameSessionState = {...newState, playerStates: {player1: playerState, player2: playerState}};
+        const tempSessionState: GameSessionState = { ...state, playerStates: { player1: playerState, player2: playerState } };
         
         const p1Result = tickPlayerWorkers(tempSessionState, 'player1', dtMs, now, allTowers);
         const p2Result = tickPlayerWorkers(p1Result, 'player2', dtMs, now, allTowers);
 
-        const combinedWorkers = [...p2Result.playerStates!.player1.workers, ...p2Result.playerStates!.player2.workers].filter((w, i, self) => i === self.findIndex(t => t.id === w.id));
+        const combinedWorkers = [
+            ...(p2Result.playerStates!.player1.workers || []),
+            ...(p2Result.playerStates!.player2.workers || [])
+        ].filter((w, i, self) => i === self.findIndex(t => t.id === w.id));
 
         return { ...p2Result, workers: combinedWorkers };
     }
-  
-    return newState;
-  }
+    return state;
+}
 
   function tickPlayerWorkers(state: GameSessionState, playerId: 'player1' | 'player2', dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-    if (!state.playerStates || !state.playerStates[playerId] || !state.playerStates[playerId].workers) {
+    if (!state.playerStates || !state.playerStates[playerId]) {
         return state;
     }
     const playerState = { ...state.playerStates[playerId] };
     
-    const updatedWorkers = playerState.workers.map(w => {
+    // Defensive coding: ensure arrays exist
+    const safeWorkers = Array.isArray(playerState.workers) ? playerState.workers : [];
+    if (safeWorkers.length === 0) return state;
+
+    playerState.ghosts = Array.isArray(playerState.ghosts) ? playerState.ghosts : [];
+
+    const updatedWorkers = safeWorkers.map(w => {
       let newWorker: Worker = JSON.parse(JSON.stringify(w));
   
       if (newWorker.state === "idle" && newWorker.queue.length > 0 && !newWorker.current) {
