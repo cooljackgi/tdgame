@@ -41,6 +41,7 @@ export default function VersusGameLoader() {
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Lade Spiel...');
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
+  const [gameDataLoaded, setGameDataLoaded] = useState(false);
 
   // --- Core Game State ---
   const [players, setPlayers] = useState<Player[]>([]);
@@ -278,17 +279,21 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            if (data.playerStates) {
-                setPlayerStates(current => {
-                    const newStates = { ...current };
-                    if (data.playerStates.player1 && !newStates.player1.workers) newStates.player1 = data.playerStates.player1;
-                    if (data.playerStates.player2 && !newStates.player2.workers) newStates.player2 = data.playerStates.player2;
-                    return newStates;
-                });
-            }
             if (data.versusState) setVersusState(data.versusState);
-            
-            setLoading(false);
+
+            // HOST: Load initial state ONCE
+            if (role === 'player1' && !gameDataLoaded) {
+                 if (data.playerStates) setPlayerStates(data.playerStates);
+                 setGameDataLoaded(true);
+                 setLoading(false);
+            } else if (role !== 'player1') {
+                // CLIENT: Let the host dictate state via WebRTC.
+                // We only use Firestore for player info here.
+                if (!gameDataLoaded) {
+                    setGameDataLoaded(true);
+                    setLoading(false);
+                }
+            }
         });
     };
 
@@ -299,7 +304,7 @@ export default function VersusGameLoader() {
     });
 
     return () => unsub?.();
-  }, [user, gameId, router, toast, configLoading]);
+  }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
   
   const startWave = useCallback(() => {
     if (!gameConfig) return;
