@@ -1,7 +1,7 @@
 // src/lib/game-logic.ts
 import type {
     Enemy, Attack, Element, AuraBuffs, DoTEffect, DamageApplicationResult, PlacedTower, ProcessAttackResult, SplashRing, DamageNumber, LifeGainVfx, PersistentCloud, GravityWell, SoundEvent,
-    Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node, Portal, Player
+    Worker, WorkerOrder, PlacePortalOrder, GhostFoundation, GameSessionState, Node, Portal, Player, PlayerGameState
   } from './game-data/types';
   import { audioManager } from './audio/audio-manager';
   import { elementProjectileColors, GRID_COLS, GRID_ROWS } from './game-data/constants';
@@ -317,13 +317,41 @@ import type {
   
   
   export function tickWorkers(state: GameSessionState, dtMs: number, now: number, allTowers: Tower[]): GameSessionState {
-    let newState = { ...state };
+    const newState = { ...state };
   
-    newState.workers = newState.workers.map(w => {
+    // Determine which workers to tick based on game mode
+    if (newState.gameMode === 'versus' && newState.playerStates) {
+      // For versus, tick workers for each player individually
+      const p1Result = tickPlayerWorkers({ ...newState, ...newState.playerStates.player1 }, dtMs, now, allTowers, 'player1');
+      const p2Result = tickPlayerWorkers({ ...newState, ...newState.playerStates.player2 }, dtMs, now, allTowers, 'player2');
+      
+      newState.playerStates.player1 = { ...newState.playerStates.player1, ...p1Result };
+      newState.playerStates.player2 = { ...newState.playerStates.player2, ...p2Result };
+      
+    } else if (newState.gameMode === 'coop' && newState.workers) {
+      // For coop, tick the shared worker array
+      const coopResult = tickPlayerWorkers(newState as PlayerGameState & { players: Player[] }, dtMs, now, allTowers);
+      newState.workers = coopResult.workers;
+      newState.ghosts = coopResult.ghosts;
+      newState.towersByCell = coopResult.towersByCell;
+      newState.portals = coopResult.portals;
+    }
+  
+    return newState;
+  }
+
+  // Helper function to process workers for a single player's state
+  function tickPlayerWorkers(playerState: PlayerGameState & { players: Player[] }, dtMs: number, now: number, allTowers: Tower[], forPlayerId?: 'player1' | 'player2') {
+    
+    if (!playerState.workers) {
+      return { workers: [], ghosts: playerState.ghosts ?? [], towersByCell: playerState.towersByCell ?? {}, portals: playerState.portals ?? [] };
+    }
+
+    const updatedWorkers = playerState.workers.map(w => {
       let newWorker: Worker = JSON.parse(JSON.stringify(w));
   
       if (newWorker.state === "idle" && newWorker.queue.length > 0 && !newWorker.current) {
-        startNextOrder(newState, newWorker);
+        startNextOrder({ ...playerState, gameMode: 'coop' }, newWorker); // Pass a compatible state
       }
   
       if (newWorker.state === "moving") {
@@ -364,28 +392,32 @@ import type {
         const progress = Math.min(1, elapsed / buildTime);
   
         if (order.type === 'build_tower') {
-          newState.ghosts = newState.ghosts.map(g =>
+          playerState.ghosts = playerState.ghosts.map(g =>
             g.row === order.row && g.col === order.col ? { ...g, progress: progress } : g
           );
         }
   
         if (progress >= 1) {
             if (order.type === 'build_tower') {
-                newState = completeConstruction(newState, newWorker, allTowers);
+                playerState = completeConstruction({ ...playerState, gameMode: 'coop' }, newWorker, allTowers);
             } else if (order.type === 'place_portal') {
-                newState = completePlacePortalPhase(newState, newWorker);
+                playerState = completePlacePortalPhase({ ...playerState, gameMode: 'coop' }, newWorker);
             }
-            // After completing, start the next order immediately if available
-            startNextOrder(newState, newWorker);
+            startNextOrder({ ...playerState, gameMode: 'coop' }, newWorker);
         }
       }
       return newWorker;
     });
   
-    return newState;
+    return {
+      workers: updatedWorkers,
+      ghosts: playerState.ghosts,
+      towersByCell: playerState.towersByCell,
+      portals: playerState.portals,
+    };
   }
   
-  function completeConstruction(state: GameSessionState, w: Worker, allTowers: Tower[]): GameSessionState {
+  function completeConstruction(state: PlayerGameState & { players: Player[] }, w: Worker, allTowers: Tower[]): PlayerGameState {
     if (!w.current || w.current.order.type !== 'build_tower') return state;
     const { order } = w.current;
     
@@ -415,7 +447,7 @@ import type {
     return state;
   }
   
-  function completePlacePortalPhase(state: GameSessionState, w: Worker): GameSessionState {
+  function completePlacePortalPhase(state: PlayerGameState & { players: Player[] }, w: Worker): PlayerGameState {
       if (!w.current || w.current.order.type !== 'place_portal') return state;
       const order = w.current.order as PlacePortalOrder;
       const now = Date.now();
@@ -451,4 +483,4 @@ import type {
           
           return state;
       }
-  }  
+  }
