@@ -9,7 +9,7 @@ import { doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent, VersusState, Enemy } from '@/lib/game-data/types';
+import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent, VersusState, Enemy, ProcessAttackResult } from '@/lib/game-data/types';
 import { INTERMISSION_TIME, difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
@@ -63,6 +63,7 @@ export default function VersusGameLoader() {
   const gameBoardRef = useRef<GameBoardHandle>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
   // Game Loop refs
   const gameLoopRef = useRef<number>();
@@ -163,6 +164,7 @@ export default function VersusGameLoader() {
                     setIsIntermission(deltaPayload.isIntermission);
                     setWaveStartCountdown(deltaPayload.waveStartCountdown);
                     break;
+                 case DeltaType.VFX_DAMAGE: gameBoardRef.current?.queueDamageNumbers(deltaPayload); break;
             }
         }
     }
@@ -295,14 +297,11 @@ export default function VersusGameLoader() {
 
             if (data.versusState) setVersusState(data.versusState);
 
-            // HOST: Load initial state ONCE
             if (role === 'player1' && !gameDataLoaded) {
                  if (data.playerStates) setPlayerStates(data.playerStates);
                  setGameDataLoaded(true);
                  setLoading(false);
             } else if (role !== 'player1') {
-                // CLIENT: Let the host dictate state via WebRTC.
-                // We only use Firestore for player info here.
                 if (!gameDataLoaded) {
                     setGameDataLoaded(true);
                     setLoading(false);
@@ -476,6 +475,8 @@ export default function VersusGameLoader() {
 
       const playerIds: ('player1' | 'player2')[] = ['player1', 'player2'];
       let nextPlayerStates = JSON.parse(JSON.stringify(playerStatesRef.current));
+      const newFiringTowerIds = new Set<string>();
+      const allNewDamageNumbers: DamageNumber[] = [];
       
       for (const pId of playerIds) {
           const pState = nextPlayerStates[pId];
@@ -509,7 +510,14 @@ export default function VersusGameLoader() {
                   
                   if (targets.length > 0) {
                       tower.lastAttack = epochNow;
-                      // processAttack would be called here. Simplified for now.
+                      newFiringTowerIds.add(tower.id);
+                      
+                      for (const target of targets) {
+                          const result = processAttack(tower, target, pState.enemies, epochNow, false);
+                          pState.enemies = result.updatedEnemies;
+                          allNewDamageNumbers.push(...result.damageNumbers);
+                          // TODO: Process other VFX and sound events
+                      }
                   }
               }
           });
@@ -521,6 +529,9 @@ export default function VersusGameLoader() {
               if (enemy.deathTimestamp) { stillAlive.push(enemy); continue; }
 
               const dotResult = tickDots(enemy, delta);
+               if (dotResult.totalDamage > 0) {
+                    allNewDamageNumbers.push({ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316' });
+                }
               if(dotResult.killed) { enemy.deathTimestamp = epochNow; stillAlive.push(enemy); continue; }
 
               const stunEffect = enemy.effects.find(e => e.type === 'stun' && e.expires > epochNow);
@@ -537,7 +548,6 @@ export default function VersusGameLoader() {
                   enemy.lastMove += stepMs;
                 } else {
                   pState.lives = Math.max(0, pState.lives - 1);
-                  // Mark enemy for removal instead of direct mutation
                   enemy.health = 0;
                   enemy.deathTimestamp = epochNow; 
                   break;
@@ -548,6 +558,12 @@ export default function VersusGameLoader() {
           pState.enemies = stillAlive;
       }
       setPlayerStates(nextPlayerStates);
+      setFiringTowerIds(newFiringTowerIds);
+
+      if (allNewDamageNumbers.length > 0) {
+          gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+          deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, allNewDamageNumbers]);
+      }
 
 
       // --- 4. Sync State ---
@@ -657,7 +673,7 @@ export default function VersusGameLoader() {
           handleLoadAllTowersLayout={() => {}}
           isCheating={isCheating}
           cheat_unlockAll={() => {}}
-          firingTowerIds={new Set()}
+          firingTowerIds={firingTowerIds}
           allTowers={gameConfig?.towers ?? []}
           isWsConnected={isConnected}
           onPing={() => {}}
