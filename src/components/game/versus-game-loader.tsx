@@ -44,7 +44,7 @@ export default function VersusGameLoader() {
 
   // --- Core Game State ---
   const [players, setPlayers] = useState<Player[]>([]);
-  const [playerStates, setPlayerStates] = useState<{ player1: PlayerGameState | null, player2: PlayerGameState | null }>({ player1: null, player2: null });
+  const [playerStates, setPlayerStates] = useState<{ player1: PlayerGameState, player2: PlayerGameState }>({ player1: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] }, player2: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] } });
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
@@ -73,6 +73,10 @@ export default function VersusGameLoader() {
   const lastFpsUpdateRef = useRef(Date.now());
   const pendingSnapshotRef = useRef(false);
   const enemyIdCounter = useRef(0);
+  const waveStartTimeRef = useRef<number>(0);
+  
+  const p1SpawnQueueRef = useRef<any[]>([]);
+  const p2SpawnQueueRef = useRef<any[]>([]);
   
   const actionQueueRef = useRef<{type: string, payload: any}[]>([]);
 
@@ -155,7 +159,6 @@ export default function VersusGameLoader() {
           pendingSnapshotRef.current = true;
           return;
       }
-      // Enqueue action instead of processing immediately
       actionQueueRef.current.push({ type: msg.type, payload: msg.payload });
   }, [isGameHost]);
   
@@ -277,12 +280,10 @@ export default function VersusGameLoader() {
 
             if (data.playerStates) {
                 setPlayerStates(current => {
-                    // Only seed initial state, don't overwrite runtime state from host
-                    const p1Exists = !!current.player1;
-                    const p2Exists = !!current.player2;
-                    if (!p1Exists && data.playerStates.player1) current.player1 = data.playerStates.player1;
-                    if (!p2Exists && data.playerStates.player2) current.player2 = data.playerStates.player2;
-                    return {...current};
+                    const newStates = { ...current };
+                    if (data.playerStates.player1 && !newStates.player1.workers) newStates.player1 = data.playerStates.player1;
+                    if (data.playerStates.player2 && !newStates.player2.workers) newStates.player2 = data.playerStates.player2;
+                    return newStates;
                 });
             }
             if (data.versusState) setVersusState(data.versusState);
@@ -300,6 +301,89 @@ export default function VersusGameLoader() {
     return () => unsub?.();
   }, [user, gameId, router, toast, configLoading]);
   
+  const startWave = useCallback(() => {
+    if (!gameConfig) return;
+    const waveData = gameConfig.waves[currentWaveRef.current];
+    if (!waveData) return;
+
+    audioManager.play({ kind: 'sfx', name: 'wave_start' });
+    const difficultyMod = difficultyModifiers[difficultyRef.current];
+    
+    const createEnemiesForWave = (ownerId: Player['id']) => {
+        return Array.from({ length: waveData.enemies.count }).map((_, i) => {
+            const health = Math.round(waveData.enemies.health * difficultyMod.enemyHealth);
+            return {
+                id: `enemy-${ownerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                owner: ownerId, type: waveData.enemies.type,
+                health, maxHealth: health, armor: waveData.enemies.armor, speed: waveData.enemies.speed, damage: waveData.enemies.damage, bounty: waveData.enemies.bounty,
+                path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+                lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+                _spawnTime: i * waveData.enemies.spawnDelay,
+            };
+        });
+    }
+
+    p1SpawnQueueRef.current = createEnemiesForWave('player1');
+    p2SpawnQueueRef.current = createEnemiesForWave('player2');
+    
+    waveStartTimeRef.current = Date.now();
+  }, [gameConfig]);
+  
+  const onHostAction = useCallback((type: string, payload: any) => {
+    const { playerId, row, col, towerId, cost, incomeBonus, type: enemyType } = payload;
+          
+    let updatedPlayers = [...playersRef.current];
+    const playerIndex = updatedPlayers.findIndex(p => p.id === playerId);
+    if (playerIndex === -1) return;
+
+    let player = {...updatedPlayers[playerIndex]};
+    
+    let updatedPlayerStates = {...playerStatesRef.current};
+    const playerStateKey = playerId as keyof typeof updatedPlayerStates;
+    let playerState = updatedPlayerStates[playerStateKey] ? {...updatedPlayerStates[playerStateKey]!} : null;
+    if (!playerState) return;
+
+    if (type === 'BUILD_TOWER_REQUEST') {
+        const buildResult = enqueueBuildOrder(
+            { gameMode: 'versus', players: updatedPlayers, playerStates: updatedPlayerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 },
+            player.id.includes('1') ? 'worker-1' : 'worker-2',
+            row, col, towerId, Date.now()
+        );
+        player = buildResult.players[playerIndex];
+        playerState = buildResult.playerStates![playerStateKey];
+    } else if (type === 'SEND_ENEMY_REQUEST') {
+        if (player.resources >= cost) {
+            player.resources -= cost;
+            player.incomePerSecond += incomeBonus;
+            const opponentId = playerId === 'player1' ? 'player2' : 'player1';
+            
+            const waveData = gameConfig!.waves[0]; 
+            const health = Math.round((waveData.enemies.health * 0.8) + (currentWaveRef.current * 10));
+
+            const newEnemy: Enemy = {
+              id: `sent-${playerId}-${enemyIdCounter.current++}`, owner: playerId, type: enemyType,
+              health, maxHealth: health, armor: waveData.enemies.armor, speed: waveData.enemies.speed, damage: waveData.enemies.damage, bounty: 0,
+              path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+              lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+            };
+            
+            const opponentState = updatedPlayerStates[opponentId]!;
+            opponentState.enemies = [...opponentState.enemies, newEnemy];
+        }
+    } else if (type === 'START_WAVE_NOW_REQUEST') {
+        if (gameStatusRef.current === 'waiting') setGameStatus('playing');
+        
+        setIsIntermission(false);
+        setWaveStartCountdown(0);
+        setCurrentWave(w => w + 1);
+        startWave();
+    }
+    
+    updatedPlayers[playerIndex] = player;
+    updatedPlayerStates[playerStateKey] = playerState;
+    setPlayers(updatedPlayers);
+    setPlayerStates(updatedPlayerStates);
+  }, [gameConfig, startWave]);
   
   useEffect(() => {
     if (!isGameHost || !gameConfig) {
@@ -331,63 +415,40 @@ export default function VersusGameLoader() {
         lastFpsUpdateRef.current = epochNow;
       }
   
-      // --- Process Action Queue ---
       if (actionQueueRef.current.length > 0) {
         const currentActions = actionQueueRef.current.splice(0);
         for (const { type, payload } of currentActions) {
-          const { playerId, row, col, towerId, cost, incomeBonus, type: enemyType } = payload;
-          
-          let updatedPlayers = [...playersRef.current];
-          const playerIndex = updatedPlayers.findIndex(p => p.id === playerId);
-          if (playerIndex === -1) continue;
-
-          let player = {...updatedPlayers[playerIndex]};
-          
-          let updatedPlayerStates = {...playerStatesRef.current};
-          const playerStateKey = playerId as keyof typeof updatedPlayerStates;
-          let playerState = updatedPlayerStates[playerStateKey] ? {...updatedPlayerStates[playerStateKey]!} : null;
-          if (!playerState) continue;
-
-          if (type === 'BUILD_TOWER_REQUEST') {
-              const buildResult = enqueueBuildOrder(
-                  { gameMode: 'versus', players: updatedPlayers, playerStates: updatedPlayerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 },
-                  player.id.includes('1') ? 'worker-1' : 'worker-2',
-                  row, col, towerId, epochNow
-              );
-              player = buildResult.players[playerIndex];
-              playerState = buildResult.playerStates![playerStateKey];
-          } else if (type === 'SEND_ENEMY_REQUEST') {
-              if (player.resources >= cost) {
-                  player.resources -= cost;
-                  player.incomePerSecond += incomeBonus;
-                  const opponentId = playerId === 'player1' ? 'player2' : 'player1';
-                  
-                  const waveData = gameConfig.waves[0]; // Use base stats for sent enemies
-                  const health = Math.round((waveData.enemies.health * 0.8) + (currentWaveRef.current * 10));
-
-                  const newEnemy: Enemy = {
-                    id: `sent-${playerId}-${enemyIdCounter.current++}`, owner: playerId, type: enemyType,
-                    health, maxHealth: health, armor: waveData.enemies.armor, speed: waveData.enemies.speed, damage: waveData.enemies.damage, bounty: 0,
-                    path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
-                    lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
-                  };
-                  
-                  const opponentState = updatedPlayerStates[opponentId]!;
-                  opponentState.enemies = [...opponentState.enemies, newEnemy];
-              }
-          }
-          
-          updatedPlayers[playerIndex] = player;
-          updatedPlayerStates[playerStateKey] = playerState;
-          setPlayers(updatedPlayers);
-          setPlayerStates(updatedPlayerStates);
+          onHostAction(type, payload);
         }
       }
       
-      // --- Tick Game Logic ---
       const updatedStates = tickWorkers({ gameMode: 'versus', players: playersRef.current, playerStates: playerStatesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, delta, epochNow, gameConfig.towers);
       setPlayers(updatedStates.players);
       setPlayerStates(updatedStates.playerStates!);
+
+      if (!isIntermissionRef.current) {
+          const timeSinceWaveStart = Date.now() - waveStartTimeRef.current;
+          let p1Enemies = [...playerStatesRef.current.player1.enemies];
+          let p2Enemies = [...playerStatesRef.current.player2.enemies];
+
+          const spawnEnemies = (queueRef: React.MutableRefObject<any[]>, path: Node[]) => {
+              const toSpawn = queueRef.current.filter(e => e._spawnTime <= timeSinceWaveStart);
+              if (toSpawn.length > 0) {
+                  queueRef.current = queueRef.current.filter(e => e._spawnTime > timeSinceWaveStart);
+                  return toSpawn.map(e => ({ ...e, lastMove: epochNow, path: path }));
+              }
+              return [];
+          }
+          
+          p1Enemies.push(...spawnEnemies(p1SpawnQueueRef, playerStatesRef.current.player1.currentPath));
+          p2Enemies.push(...spawnEnemies(p2SpawnQueueRef, playerStatesRef.current.player2.currentPath));
+
+          setPlayerStates(current => ({
+              ...current,
+              player1: { ...current.player1, enemies: p1Enemies },
+              player2: { ...current.player2, enemies: p2Enemies }
+          }));
+      }
 
       // --- Sync State ---
       if (epochNow - lastDeltaSentRef.current > 100) {
@@ -413,7 +474,7 @@ export default function VersusGameLoader() {
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { stopped = true; if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   
-  }, [isGameHost, configLoading, gameConfig, sendGameData]);
+  }, [isGameHost, configLoading, gameConfig, sendGameData, onHostAction]);
 
   const handleGameControl = useCallback(() => {
     if (!isGameHost) return;
@@ -431,7 +492,7 @@ export default function VersusGameLoader() {
       dispatchAction('START_WAVE_NOW_REQUEST', {});
   }, [dispatchAction]);
 
-  if (loading || configLoading || !localPlayer) {
+  if (loading || configLoading || !localPlayer || !localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
@@ -448,7 +509,7 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState!}
+          gameState={localPlayerState}
           localPlayer={localPlayer}
           opponentPlayerState={opponentPlayerState}
           currentWave={currentWave}
@@ -508,4 +569,3 @@ export default function VersusGameLoader() {
     </div>
   );
 }
-
