@@ -389,29 +389,28 @@ export default function VersusGameLoader() {
 
     const { playerId, row, col, towerId, cost, incomeBonus, type: enemyType, upgradeId, element } = payload;
     
-    // Direct ref mutation for synchronous update
     const players = playersRef.current;
     const playerStates = playerStatesRef.current;
     const versusState = versusStateRef.current;
 
-    const playerIndex = players.findIndex((p: Player) => p.id === playerId);
-    if (playerIndex === -1) return;
-    let player = players[playerIndex];
-
     switch (type) {
         case 'PICK_ELEMENT_REQUEST': {
-            player.unlockedElements = Array.from(new Set([...player.unlockedElements, element]));
-            
-            const allPlayersPicked = players.every((p: Player) => {
-                if (!p) return true;
-                const expectedElements = 1 + Math.floor((currentWaveRef.current + 1) / 5);
-                return (p.unlockedElements?.length ?? 0) >= expectedElements;
-            });
+            const playerToUpdate = players.find(p => p.id === playerId);
+            if (playerToUpdate) {
+                playerToUpdate.unlockedElements = Array.from(new Set([...playerToUpdate.unlockedElements, element]));
 
-            if (allPlayersPicked) {
-                setGameStatus('playing');
-                setIsIntermission(true);
-                setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+                const allPlayersPicked = players.every((p: Player) => {
+                    if (!p) return true;
+                    // Corrected logic for expected elements
+                    const expectedElements = 1 + Math.floor(currentWaveRef.current / 5);
+                    return (p.unlockedElements?.length ?? 0) >= expectedElements;
+                });
+
+                if (allPlayersPicked) {
+                    setGameStatus('playing');
+                    setIsIntermission(true);
+                    setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+                }
             }
             break;
         }
@@ -420,7 +419,8 @@ export default function VersusGameLoader() {
         case 'SELL_TOWER_REQUEST': {
             const playerStateKey = playerId as keyof typeof playerStates;
             let playerState = playerStates[playerStateKey];
-            if (!playerState) break;
+            let player = players.find(p => p.id === playerId);
+            if (!playerState || !player) break;
 
             if (type === 'BUILD_TOWER_REQUEST') {
                 const buildResult = enqueueBuildOrder({ gameMode: 'versus', players, playerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, player.id.includes('1') ? 'worker-1' : 'worker-2', row, col, towerId, Date.now());
@@ -448,7 +448,8 @@ export default function VersusGameLoader() {
         }
 
         case 'SEND_ENEMY_REQUEST': {
-            if (player.resources >= cost) {
+            const player = players.find(p => p.id === playerId);
+            if (player && player.resources >= cost) {
                 player.resources -= cost;
                 player.incomePerSecond += incomeBonus;
                 
@@ -531,15 +532,15 @@ export default function VersusGameLoader() {
         }
       }
       
-      const updatedPlayers = playersRef.current.map(p => ({
-          ...p,
-          resources: p.resources + (p.incomePerSecond * (delta / 1000)),
-      }));
-      playersRef.current = updatedPlayers;
+      playersRef.current.forEach(p => {
+          p.resources += (p.incomePerSecond * (delta / 1000));
+      });
+      setPlayers([...playersRef.current]);
 
       const updatedStates = tickWorkers({ gameMode: 'versus', players: playersRef.current, playerStates: playerStatesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, delta, epochNow, gameConfig.towers);
       playersRef.current = updatedStates.players;
       playerStatesRef.current = updatedStates.playerStates!;
+      setPlayerStates({...playerStatesRef.current});
       
       if (gameStatusRef.current !== 'playing') return;
 
@@ -675,10 +676,6 @@ export default function VersusGameLoader() {
         deltaQueueRef.current = [];
         lastDeltaSentRef.current = epochNow;
       }
-      
-      setPlayers([...playersRef.current]);
-      setPlayerStates({...playerStatesRef.current});
-
     };
   
     gameLoopRef.current = requestAnimationFrame(gameLoop);
@@ -778,7 +775,7 @@ export default function VersusGameLoader() {
       {players.map(p => {
             if (!p || p.id !== localPlayerId) return null;
             
-            const expectedElements = 1 + Math.floor((currentWave + 1) / 5);
+            const expectedElements = 1 + Math.floor(currentWave / 5);
             const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
 
             return (
