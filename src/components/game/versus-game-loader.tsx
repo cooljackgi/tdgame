@@ -389,9 +389,10 @@ export default function VersusGameLoader() {
 
     const { playerId, row, col, towerId, cost, incomeBonus, type: enemyType, upgradeId, element } = payload;
     
-    // Use refs for immediate synchronous updates within the game loop
+    // Direct ref mutation for synchronous update
     const players = playersRef.current;
     const playerStates = playerStatesRef.current;
+    const versusState = versusStateRef.current;
 
     const playerIndex = players.findIndex((p: Player) => p.id === playerId);
     if (playerIndex === -1) return;
@@ -414,7 +415,6 @@ export default function VersusGameLoader() {
             }
             break;
         }
-
         case 'BUILD_TOWER_REQUEST':
         case 'UPGRADE_TOWER_REQUEST':
         case 'SELL_TOWER_REQUEST': {
@@ -423,11 +423,7 @@ export default function VersusGameLoader() {
             if (!playerState) break;
 
             if (type === 'BUILD_TOWER_REQUEST') {
-                 const buildResult = enqueueBuildOrder(
-                    { gameMode: 'versus', players, playerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 },
-                    player.id.includes('1') ? 'worker-1' : 'worker-2',
-                    row, col, towerId, Date.now()
-                );
+                const buildResult = enqueueBuildOrder({ gameMode: 'versus', players, playerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, player.id.includes('1') ? 'worker-1' : 'worker-2', row, col, towerId, Date.now());
                 player = buildResult.players.find(p => p.id === playerId)!;
                 playerState = buildResult.playerStates![playerStateKey];
             } else if (type === 'UPGRADE_TOWER_REQUEST') {
@@ -456,17 +452,16 @@ export default function VersusGameLoader() {
                 player.resources -= cost;
                 player.incomePerSecond += incomeBonus;
                 
-                const currentVersusState = versusStateRef.current;
                 const queueKey = player.id as 'player1' | 'player2';
-                const existingEntryIndex = currentVersusState[queueKey].spawnQueue.findIndex(e => e.type === enemyType);
+                const existingEntryIndex = versusState[queueKey].spawnQueue.findIndex(e => e.type === enemyType);
                 let newQueue;
                 if (existingEntryIndex > -1) {
-                    newQueue = [...currentVersusState[queueKey].spawnQueue];
+                    newQueue = [...versusState[queueKey].spawnQueue];
                     newQueue[existingEntryIndex] = { ...newQueue[existingEntryIndex], count: newQueue[existingEntryIndex].count + 1 };
                 } else {
-                    newQueue = [...currentVersusState[queueKey].spawnQueue, { type: enemyType, count: 1 }];
+                    newQueue = [...versusState[queueKey].spawnQueue, { type: enemyType, count: 1 }];
                 }
-                versusStateRef.current = {...currentVersusState, [queueKey]: { spawnQueue: newQueue }};
+                versusState[queueKey] = { spawnQueue: newQueue };
             }
             break;
         }
@@ -481,10 +476,9 @@ export default function VersusGameLoader() {
         }
     }
     
-    // Update React state after synchronous ref mutations to trigger re-render
     setPlayers([...players]);
     setPlayerStates({...playerStates});
-    setVersusState({...versusStateRef.current});
+    setVersusState({...versusState});
 
   }, [gameConfig, startWave]);
 
@@ -530,7 +524,6 @@ export default function VersusGameLoader() {
         lastFpsUpdateRef.current = epochNow;
       }
 
-      // --- 1. Process Queued Actions ---
       if (actionQueueRef.current.length > 0) {
         const currentActions = actionQueueRef.current.splice(0);
         for (const { type, payload } of currentActions) {
@@ -538,15 +531,16 @@ export default function VersusGameLoader() {
         }
       }
       
-      // --- 2. Update Game Logic (Workers, Income) ---
+      const updatedPlayers = playersRef.current.map(p => ({
+          ...p,
+          resources: p.resources + (p.incomePerSecond * (delta / 1000)),
+      }));
+      playersRef.current = updatedPlayers;
+
       const updatedStates = tickWorkers({ gameMode: 'versus', players: playersRef.current, playerStates: playerStatesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, delta, epochNow, gameConfig.towers);
       playersRef.current = updatedStates.players;
       playerStatesRef.current = updatedStates.playerStates!;
-      setPlayers(updatedStates.players); // Keep React state in sync
-      setPlayerStates(updatedStates.playerStates!);
-
-
-      // --- 3. Process each player's game state ---
+      
       if (gameStatusRef.current !== 'playing') return;
 
       if(isIntermissionRef.current) {
@@ -562,16 +556,15 @@ export default function VersusGameLoader() {
               return newTime;
           });
       } else {
-          // Inside an active wave
           const playerIds: ('player1' | 'player2')[] = ['player1', 'player2'];
-          let nextPlayerStates = playerStatesRef.current;
           const allNewDamageNumbers: DamageNumber[] = [];
           
           for (const pId of playerIds) {
-              const pState = nextPlayerStates[pId] as PlayerGameState;
+              const pState = playerStatesRef.current[pId] as PlayerGameState;
+              const player = playersRef.current.find(p => p.id === pId)!;
+
               if (!pState) continue;
               
-              // Spawn procedural enemies
               const spawnQueue = pId === 'player1' ? p1SpawnQueueRef : p2SpawnQueueRef;
               const path = pState.currentPath;
               if (spawnQueue.current.length > 0) {
@@ -583,7 +576,6 @@ export default function VersusGameLoader() {
                   }
               }
               
-              // Tower attack logic
               const newFiringTowerIds = new Set<string>();
               Object.values(pState.towersByCell).forEach((tower: PlacedTower) => {
                   if (epochNow - tower.lastAttack >= tower.attackSpeed) {
@@ -605,14 +597,16 @@ export default function VersusGameLoader() {
                               const result = processAttack(tower, target, pState.enemies, epochNow, false);
                               pState.enemies = result.updatedEnemies;
                               allNewDamageNumbers.push(...result.damageNumbers);
-                              // TODO: Process other VFX and sound events
+
+                              if (result.killed > 0) {
+                                  player.resources += target.bounty;
+                              }
                           }
                       }
                   }
               });
               setFiringTowerIds(newFiringTowerIds);
 
-              // Enemy movement and DoT logic
               const stillAlive: Enemy[] = [];
               for (const enemy of pState.enemies) {
                   if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
@@ -622,7 +616,12 @@ export default function VersusGameLoader() {
                    if (dotResult.totalDamage > 0) {
                         allNewDamageNumbers.push({ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316' });
                     }
-                  if(dotResult.killed) { enemy.deathTimestamp = epochNow; stillAlive.push(enemy); continue; }
+                  if(dotResult.killed) { 
+                      enemy.deathTimestamp = epochNow; 
+                      stillAlive.push(enemy);
+                      player.resources += enemy.bounty;
+                      continue; 
+                  }
 
                   const stunEffect = enemy.effects.find(e => e.type === 'stun' && e.expires > epochNow);
                   if (stunEffect) { stillAlive.push(enemy); continue; }
@@ -648,11 +647,8 @@ export default function VersusGameLoader() {
               pState.enemies = stillAlive;
           }
 
-          setPlayerStates(nextPlayerStates);
-
-           // Wave completion check
-            const p1Enemies = nextPlayerStates.player1.enemies;
-            const p2Enemies = nextPlayerStates.player2.enemies;
+            const p1Enemies = playerStatesRef.current.player1.enemies;
+            const p2Enemies = playerStatesRef.current.player2.enemies;
             const p1QueueEmpty = p1SpawnQueueRef.current.length === 0;
             const p2QueueEmpty = p2SpawnQueueRef.current.length === 0;
 
@@ -666,18 +662,10 @@ export default function VersusGameLoader() {
           }
       }
 
-
-      // --- 4. Sync State ---
       if (epochNow - lastDeltaSentRef.current > 100) {
         deltaQueueRef.current.push([DeltaType.PLAYER_STATES_UPDATE, playerStatesRef.current]);
         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
-        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
-          lives: 0, // Not used in versus, just to satisfy type
-          currentWave: currentWaveRef.current,
-          gameStatus: gameStatusRef.current,
-          isIntermission: isIntermissionRef.current,
-          waveStartCountdown: waveStartCountdownRef.current,
-        }]);
+        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { lives: 0, currentWave: currentWaveRef.current, gameStatus: gameStatusRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown: waveStartCountdownRef.current, }]);
         deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, versusStateRef.current]);
         
         const deltasToSend = [...deltaQueueRef.current];
@@ -687,6 +675,10 @@ export default function VersusGameLoader() {
         deltaQueueRef.current = [];
         lastDeltaSentRef.current = epochNow;
       }
+      
+      setPlayers([...playersRef.current]);
+      setPlayerStates({...playerStatesRef.current});
+
     };
   
     gameLoopRef.current = requestAnimationFrame(gameLoop);
