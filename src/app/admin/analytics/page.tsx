@@ -19,6 +19,28 @@ interface GameLog {
   logLength: number;
 }
 
+function deriveAnalyticsStatus(gameStatus: unknown, logCount: number, currentWave: number): string {
+  const normalizedStatus = typeof gameStatus === 'string' ? gameStatus.toLowerCase() : 'unbekannt';
+
+  if (normalizedStatus === 'gameover' || normalizedStatus === 'finished') {
+    return 'beendet';
+  }
+  if (normalizedStatus === 'playing' || normalizedStatus === 'paused' || normalizedStatus === 'archived') {
+    return normalizedStatus;
+  }
+
+  // Some matches never persist gameStatus updates to Firestore.
+  if (currentWave > 0 || logCount > 0) {
+    return 'gespielt';
+  }
+
+  if (normalizedStatus === 'waiting') {
+    return 'waiting';
+  }
+
+  return normalizedStatus;
+}
+
 export default function AnalyticsPage() {
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +56,7 @@ export default function AnalyticsPage() {
         const fetchedLogsPromises: Promise<GameLog>[] = querySnapshot.docs.map(async (doc) => {
           const data = doc.data();
           const createdAt = (data.createdAt as Timestamp)?.toDate() || new Date();
+          const currentWave = typeof data.currentWave === 'number' ? data.currentWave : 0;
           
           // Get count of logs from the subcollection
           const logCollRef = collection(db, `games/${doc.id}/game_logs`);
@@ -44,7 +67,7 @@ export default function AnalyticsPage() {
             id: doc.id,
             gameId: data.gameName || doc.id,
             createdAt: createdAt,
-            status: data.gameStatus || 'unbekannt',
+            status: deriveAnalyticsStatus(data.gameStatus, logCount, currentWave),
             logLength: logCount,
           };
         });

@@ -28,6 +28,28 @@ interface GameData {
   currentWave: number;
 }
 
+function deriveAnalyticsStatus(gameStatus: unknown, logCount: number, currentWave: number): string {
+  const normalizedStatus = typeof gameStatus === 'string' ? gameStatus.toLowerCase() : 'unbekannt';
+
+  if (normalizedStatus === 'gameover' || normalizedStatus === 'finished') {
+    return 'beendet';
+  }
+  if (normalizedStatus === 'playing' || normalizedStatus === 'paused' || normalizedStatus === 'archived') {
+    return normalizedStatus;
+  }
+
+  // Some matches never persist gameStatus updates to Firestore.
+  if (currentWave > 0 || logCount > 0) {
+    return 'gespielt';
+  }
+
+  if (normalizedStatus === 'waiting') {
+    return 'waiting';
+  }
+
+  return normalizedStatus;
+}
+
 const LiveMonitor = ({ gameId }: { gameId: string }) => {
     // Monitor tritt als normaler Client bei, aber isHost=false und isMonitor=true (für Logging)
     const { 
@@ -144,6 +166,11 @@ export default function GameAnalyticsDetailPage() {
     return [...(gameLog ?? [])].sort((a,b) => (a.timestamp?.toMillis() || a.clientTs || 0) - (b.timestamp?.toMillis() || b.clientTs || 0))
   }, [gameLog]);
 
+  const displayStatus = useMemo(() => {
+    if (!gameData) return 'unbekannt';
+    return deriveAnalyticsStatus(gameData.status, gameLog.length, gameData.currentWave);
+  }, [gameData, gameLog.length]);
+
   useEffect(() => {
     if (!gameId) return;
 
@@ -232,7 +259,7 @@ export default function GameAnalyticsDetailPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm w-full md:w-auto">
             <div className="p-3 rounded-lg bg-card border text-center">
                 <div className="text-muted-foreground">Status</div>
-                <div className="font-bold text-lg">{gameData.status}</div>
+              <div className="font-bold text-lg">{displayStatus}</div>
             </div>
             <div className="p-3 rounded-lg bg-card border text-center">
                 <div className="text-muted-foreground">Schwierigkeit</div>
@@ -266,7 +293,7 @@ export default function GameAnalyticsDetailPage() {
           </CardContent>
         </Card>
       
-      {gameData.status === 'playing' && <LiveMonitor gameId={gameId} />}
+      {displayStatus === 'playing' && <LiveMonitor gameId={gameId} />}
 
       <Card>
         <CardHeader>
