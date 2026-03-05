@@ -19,8 +19,8 @@ import { Progress } from '../ui/progress';
 const CELL_SIZE = 64;
 const ENABLE_TOOLTIPS = false;
 const NETWORK_INTERP_LAG_MS = 120;
-const LERP_FACTOR = 0.22; // 1.0 = hard jump, < 1.0 = smooth
-const SNAP_THRESHOLD = 2.0 * CELL_SIZE;
+const LERP_FACTOR = 0.5; // 1.0 = hard jump, < 1.0 = smooth. 0.5 = responsive but smooth
+const SNAP_THRESHOLD = 1.5 * CELL_SIZE; // Snap to target if very far (teleport/huge jump)
 
 
 export type GameBoardHandle = {
