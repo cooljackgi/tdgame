@@ -1500,13 +1500,30 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
               style={{ width: boardDimensions.boardWidth, height: boardDimensions.boardHeight }}
             >
               <div className="absolute inset-0" style={{
-                  backgroundColor: '#0b1220',
+                  background: 'radial-gradient(120% 80% at 20% 15%, rgba(34,211,238,0.14) 0%, rgba(34,211,238,0) 55%), radial-gradient(85% 65% at 85% 80%, rgba(59,130,246,0.12) 0%, rgba(59,130,246,0) 55%), linear-gradient(180deg, #0b1220 0%, #08101d 100%)',
+              }} />
+              <div className="absolute inset-0" style={{
                   backgroundImage: `
-                    linear-gradient(to right, rgba(148,163,184,0.1) 1px, transparent 1px),
-                    linear-gradient(to bottom, rgba(148,163,184,0.1) 1px, transparent 1px)
+                    linear-gradient(to right, rgba(148,163,184,0.12) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(148,163,184,0.12) 1px, transparent 1px)
                   `,
                   backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`,
+                  opacity: 0.9,
               }} />
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.02) 0 2px, rgba(255,255,255,0) 2px 8px)',
+                  mixBlendMode: 'screen',
+                  opacity: 0.35,
+                }}
+              />
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  boxShadow: 'inset 0 0 120px rgba(5,10,18,0.9), inset 0 0 24px rgba(15,23,42,0.8)',
+                }}
+              />
               <div className="absolute inset-0 pointer-events-none">
                   <svg width="100%" height="100%" className="overflow-visible">
                     <defs>

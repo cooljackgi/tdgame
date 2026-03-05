@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "firestore:read": "node scripts/firestore-read.mjs"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "1.20.0",
