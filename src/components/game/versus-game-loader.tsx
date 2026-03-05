@@ -407,9 +407,20 @@ export default function VersusGameLoader() {
                 });
 
                 if (allPlayersPicked) {
+                    gameStatusRef.current = 'playing';
+                    isIntermissionRef.current = true;
+                    waveStartCountdownRef.current = VERSUS_WAVE_INTERVAL;
                     setGameStatus('playing');
                     setIsIntermission(true);
                     setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+                    
+                    // CRITICAL: Send game state update to client so they know intermission started
+                    deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
+                        currentWave: currentWaveRef.current,
+                        gameStatus: 'playing',
+                        isIntermission: true,
+                        waveStartCountdown: VERSUS_WAVE_INTERVAL
+                    }]);
                 }
             }
             break;
