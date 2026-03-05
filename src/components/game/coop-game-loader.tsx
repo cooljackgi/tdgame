@@ -1174,7 +1174,7 @@ export default function CoopGameLoader() {
                     isWsConnected={isConnected} 
                     onPing={sendPing}
                     hostPacketsPerSecond={stats.sentPacketsPerSecond} 
-                    hostBytesSentPerSecond={stats.sentBytesSentPerSecond}
+                    hostBytesSentPerSecond={stats.sentBytesPerSecond}
                     clientPacketsPerSecond={stats.packetsPerSecond}
                     clientBytesReceivedPerSecond={stats.bytesPerSecond}
                     averagePacketSize={stats.averagePacketSize}

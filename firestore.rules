@@ -10,7 +10,8 @@ service cloud.firestore {
     
     match /games/{gameId} {
       allow read: if request.auth != null; // Allow any authenticated user to read game data
-      allow write: if request.auth.uid in resource.data.members; // Corrected: Check against the data being written
+      allow create: if request.auth != null && request.auth.uid in request.resource.data.members;
+      allow update, delete: if request.auth.uid in resource.data.members;
       
       // Log sub-collections
       match /webrtc_logs/{logId} {

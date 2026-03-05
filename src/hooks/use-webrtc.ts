@@ -99,6 +99,9 @@ export function useWebRTC(
     const ppsRef = useRef(0);
     const bpsRef = useRef(0);
     const avgRef = useRef(0);
+    const sentPpsRef = useRef(0);
+    const sentBpsRef = useRef(0);
+    const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
     
     // Stable send functions that use refs
     const sendGameData = useCallback((type: string, payload: any) => {
@@ -118,6 +121,19 @@ export function useWebRTC(
             channel.send(msgStr);
             sentPacketCountRef.current++;
             sentByteCountRef.current += msgStr.length;
+        }
+    }, []);
+
+    const flushPendingIceCandidates = useCallback(() => {
+        const pc = peerConnectionRef.current;
+        if (!pc || !pc.remoteDescription) return;
+        const candidates = pendingIceCandidatesRef.current.splice(0);
+        for (const cand of candidates) {
+            try {
+                pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.warn('Flushed ICE add failed', e));
+            } catch (e) {
+                console.warn('Flushed ICE candidate error', e);
+            }
         }
     }, []);
 
@@ -302,6 +318,9 @@ export function useWebRTC(
                       peerConnectionRef.current = createPeerConnection(gameId, currentRole);
                     }
                     const pc = peerConnectionRef.current!;
+                    if (pc.signalingState !== 'stable' || (pc.connectionState === 'connected' && gameDataChannelRef.current?.readyState === 'open')) {
+                      return;
+                    }
                     if (!gameDataChannelRef.current || gameDataChannelRef.current.readyState !== 'open') {
                       const gdc = pc.createDataChannel('game_data', { ordered: false, maxRetransmits: 0 });
                       setupDataChannelEvents(gdc);
@@ -337,6 +356,7 @@ export function useWebRTC(
                 try {
                     if (msg.type === 'offer' && !isHost) {
                         await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+                        flushPendingIceCandidates();
                         const answer = await pc.createAnswer();
                         await pc.setLocalDescription(answer);
                         if (ws.readyState === WebSocket.OPEN) {
@@ -346,10 +366,15 @@ export function useWebRTC(
                     
                     } else if (msg.type === 'answer' && isHost) {
                          await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+                         flushPendingIceCandidates();
                     
                     } else if (msg.type === 'ice-candidate') {
                         const cand = msg.payload;
-                        if (!pc.remoteDescription || !cand || (!cand.candidate && cand.candidate !== '')) return;
+                        if (!cand || (!cand.candidate && cand.candidate !== '')) return;
+                        if (!pc.remoteDescription) {
+                            pendingIceCandidatesRef.current.push(cand);
+                            return;
+                        }
                         try {
                            await pc.addIceCandidate(new RTCIceCandidate(cand));
                         } catch (e) {
@@ -395,6 +420,8 @@ export function useWebRTC(
                 ppsRef.current = pps;
                 bpsRef.current = bps;
                 avgRef.current = avg;
+                sentPpsRef.current = sentPps;
+                sentBpsRef.current = sentBps;
 
                 packetCountRef.current = 0;
                 byteCountRef.current = 0;
@@ -412,6 +439,10 @@ export function useWebRTC(
                         pps: ppsRef.current,
                         bps: bpsRef.current,
                         avg: avgRef.current,
+                        txPps: isHost ? sentPpsRef.current : undefined,
+                        txBps: isHost ? sentBpsRef.current : undefined,
+                        rxPps: !isHost ? ppsRef.current : undefined,
+                        rxBps: !isHost ? bpsRef.current : undefined,
                     });
                 }
             }, 5000);

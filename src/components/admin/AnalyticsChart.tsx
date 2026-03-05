@@ -81,11 +81,11 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
 
         if (entry.type === 'NET_TICK' && entry.details) {
             if (entry.role === 'host') {
-                currentEntry.hostPacketsPerSecond = entry.details.pps || 0;
-                currentEntry.hostBytesSentPerSecond = entry.details.bps || 0;
+                currentEntry.hostPacketsPerSecond = entry.details.txPps ?? entry.details.pps ?? 0;
+                currentEntry.hostBytesSentPerSecond = entry.details.txBps ?? entry.details.bps ?? 0;
             } else if (entry.role === 'client') {
-                currentEntry.clientPacketsPerSecond = entry.details.pps || 0;
-                currentEntry.clientBytesReceivedPerSecond = entry.details.bps || 0;
+                currentEntry.clientPacketsPerSecond = entry.details.rxPps ?? entry.details.pps ?? 0;
+                currentEntry.clientBytesReceivedPerSecond = entry.details.rxBps ?? entry.details.bps ?? 0;
             }
         }
     });

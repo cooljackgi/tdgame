@@ -344,10 +344,23 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   
   const pingsRef = useRef<Map<string, PingPayload>>(new Map());
   const requestsRef = useRef<Map<string, RequestPayload>>(new Map());
+  const pingTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const [hoveredCell, setHoveredCell] = useState<Node|null>(null);
 
   const towerCooldownsRef = useRef(new Map<string, number>());
+
+  const queuePing = useCallback((cell: Node) => {
+    const pingId = `${cell.x}-${cell.y}`;
+    const existingTimeout = pingTimeoutsRef.current.get(pingId);
+    if (existingTimeout) clearTimeout(existingTimeout);
+    pingsRef.current.set(pingId, { x: cell.x, y: cell.y });
+    const timeoutId = setTimeout(() => {
+      pingsRef.current.delete(pingId);
+      pingTimeoutsRef.current.delete(pingId);
+    }, 3000);
+    pingTimeoutsRef.current.set(pingId, timeoutId);
+  }, []);
   
   const boardDimensions = useMemo(() => {
     const boardWidth = GRID_COLS * CELL_SIZE;
@@ -417,7 +430,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     queueSplashRings: (splashRingsToQueue) => {
         incomingRingsRef.current.push(...splashRingsToQueue);
     },
-    queuePing: (p) => { pingsRef.current.set(p.id, p); setTimeout(() => pingsRef.current.delete(p.id), p.ttl ?? 4000); },
+    queuePing,
     queueRequest: (r) => { requestsRef.current.set(r.id, r); },
     resolveRequest: (res) => { requestsRef.current.delete(res.id); /* optional: kleinen „✔/✖“-Pop zeigen */ },
     queueLifeGainVfx: (vfx) => { incomingLifeGainRef.current.push(...vfx); },
@@ -426,7 +439,12 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   useEffect(() => {
     internalResetView();
     window.addEventListener('resize', internalResetView);
-    return () => window.removeEventListener('resize', internalResetView);
+    return () => {
+      window.removeEventListener('resize', internalResetView);
+      // Cleanup ping timeouts on unmount
+      pingTimeoutsRef.current.forEach(timeoutId => clearTimeout(timeoutId));
+      pingTimeoutsRef.current.clear();
+    };
   }, [internalResetView]);
 
   useEffect(() => {
