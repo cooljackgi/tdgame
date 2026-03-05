@@ -17,3 +17,5 @@ run:
   env:
     - variable: NODE_ENV
       value: production
+    - variable: FIRESTORE_READ_API_KEY
+      value: meinSuperLangerGeheimerKeyundnochmehrtext
