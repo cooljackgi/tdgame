@@ -21,7 +21,7 @@ import { Separator } from '../ui/separator';
 import type {
   Tower, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
-  Worker, GhostFoundation, Portal, VersusEnemyToSend
+  Worker, GhostFoundation, Portal, VersusEnemyToSend, PlayerGameState
 } from '@/lib/game-data/types';
 import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
@@ -31,8 +31,9 @@ type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-eleme
 interface MobileLayoutProps {
   players: Player[];
   setPlayers: React.Dispatch<React.SetStateAction<Player[]>>;
-  gameState: GameState;
+  gameState: PlayerGameState; // Adjusted for versus
   localPlayer: Player;
+  opponentPlayerState: PlayerGameState | null; // Added
   currentWave: number;
   totalWaves: number;
   difficulty: Difficulty;
@@ -94,7 +95,7 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
-  onSendEnemy: (payload: VersusEnemyToSend) => void;
+  onSendEnemy: (payload: any) => void; // Adjusted
   gameMode: 'coop' | 'versus';
 }
 
@@ -104,7 +105,7 @@ const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Elemen
 
 export const VersusMobileLayout = memo(function VersusMobileLayout(props: MobileLayoutProps) {
   const {
-    players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, placedTowers, enemies,
+    players, setPlayers, gameState, localPlayer, opponentPlayerState, currentWave, totalWaves, difficulty, placedTowers, enemies,
     workers, ghosts, portals,
     damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     portalEntrance, focusedTower, gameBoardRef, interactionPrompt,
@@ -273,10 +274,10 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
                 isCoop={isCoop}
               />
             
-            {opponent && (
+            {opponent && opponentPlayerState && (
                 <PlayerStats
                   player={opponent}
-                  lives={gameState.lives} // This will need to be opponent's lives
+                  lives={opponentPlayerState.lives}
                   maxLives={maxLives}
                   isCompact
                   isLocalPlayer={false}
@@ -470,14 +471,7 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
                           </Button>
                           <Separator />
                           <WaveTracker currentWave={currentWave} totalWaves={totalWaves} isCompact />
-                          <WavePreview currentWave={currentWave} waves={waves} isCompact />
-                          <GameStatsTracker
-                            spawnedThisWave={spawnedThisWave}
-                            totalEnemiesInWave={totalEnemiesInWave}
-                            totalKilled={totalKilled}
-                            totalLeaked={totalLeaked}
-                            isCompact
-                          />
+                          <Separator />
                           <Button onClick={resetGame} variant="destructive" size="lg" className="w-full h-12">
                             <LogOut className="mr-2" />
                             <span>{isSpectator ? 'Lobby verlassen' : 'Spiel verlassen'}</span>
@@ -518,3 +512,4 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
     </div>
   );
 });
+

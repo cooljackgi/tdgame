@@ -82,12 +82,13 @@ export const joinGame = functions.https.onCall(async (data, context) => {
 
       // Correctly initialize player 2 state for versus mode
       if (gameData?.gameMode === 'versus') {
-        const startLives = gameData?.playerStates?.player1?.lives || 20; // Default to 20 if p1 state is missing
+        // SAFE FALLBACK: If p1 state doesn't exist yet, default to 20 lives.
+        const startLives = gameData?.playerStates?.player1?.lives ?? 20;
         const player2State: PlayerGameState = {
             lives: startLives,
             towersByCell: {},
             enemies: [],
-            workers: [{ id: "worker-2", x: 64, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }],
+            workers: [{ id: "worker-2", x: 64 * 2, y: 64, speed: 260, state: "idle", queue: [], moveTarget: null }],
             ghosts: [],
             portals: [],
             currentPath: []

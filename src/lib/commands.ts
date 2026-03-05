@@ -17,7 +17,8 @@ export function enqueueMoveOrder(state: GameSessionState, workerId: string, row:
     const playerStateKey = workerId.includes('1') ? 'player1' : 'player2';
 
     const workersSource = isVersus ? state.playerStates![playerStateKey].workers : state.workers!;
-    const worker = workersSource.find(w => w.id === workerId);
+    const workers = Array.isArray(workersSource) ? workersSource : [];
+    const worker = workers.find(w => w.id === workerId);
     if (!worker) return state;
 
     if (worker.state === 'idle' && worker.queue.length === 0) {
@@ -53,13 +54,12 @@ export function enqueueBuildOrder(
       playerState = state as unknown as PlayerGameState;
   }
 
-  // Defensive check to ensure playerState and its properties exist
-  if (!playerState || !Array.isArray(playerState.workers) || !Array.isArray(playerState.ghosts) || typeof playerState.towersByCell !== 'object') {
-    return state;
-  }
-
-  const { workers, ghosts, towersByCell } = playerState;
-
+  // Defensive checks to ensure playerState and its properties are valid
+  if (!playerState) return state;
+  const workers = Array.isArray(playerState.workers) ? playerState.workers : [];
+  const ghosts = Array.isArray(playerState.ghosts) ? playerState.ghosts : [];
+  const towersByCell = playerState.towersByCell || {};
+  
   const worker = workers.find(w => w.id === workerId);
   if (!worker) return state;
   
@@ -131,7 +131,10 @@ export function enqueuePlacePortalOrder(
       playerState = state as unknown as PlayerGameState;
     }
     
-    const { workers, ghosts, towersByCell } = playerState;
+    const workers = Array.isArray(playerState.workers) ? playerState.workers : [];
+    const ghosts = Array.isArray(playerState.ghosts) ? playerState.ghosts : [];
+    const towersByCell = playerState.towersByCell || {};
+
     const worker = workers.find(w => w.id === workerId);
     if(!worker) return state;
 

@@ -10,8 +10,8 @@ import { doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import { db, functions } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePlayers } from '@/lib/player-utils';
-import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent } from '@/lib/game-data/types';
-import { INTERMISSION_TIME, difficultyModifiers, GRID_COLS, GRID_ROWS } from '@/lib/game-data/constants';
+import type { Player, PlayerGameState, GameStatus, Tower, Difficulty, Node, PlacedTower, VersusEnemyToSend, GameSessionState, GameDelta, Worker, GhostFoundation, Attack, DamageNumber, SplashRing, PersistentCloud, LifeGainVfx, GravityWell, SoundEvent, VersusState, Enemy, ProcessAttackResult, Element } from '@/lib/game-data/types';
+import { INTERMISSION_TIME, difficultyModifiers, GRID_COLS, GRID_ROWS, ALL_PICKABLE_ELEMENTS } from '@/lib/game-data/constants';
 import { httpsCallable } from 'firebase/functions';
 import { Loader2 } from 'lucide-react';
 import { useWebRTC } from '@/hooks/use-webrtc';
@@ -26,7 +26,9 @@ import { findPath } from '@/lib/pathfinding';
 import { enqueueBuildOrder, enqueueMoveOrder } from '@/lib/commands';
 import { processAttack, tickDots, tickWorkers } from '@/lib/game-logic';
 import { audioManager } from '@/lib/audio/audio-manager';
+import { ElementPickDialog } from './element-pick-dialog';
 
+const VERSUS_WAVE_INTERVAL = 60; // 60 seconds
 
 export default function VersusGameLoader() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -41,16 +43,17 @@ export default function VersusGameLoader() {
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Lade Spiel...');
   const [localPlayerId, setLocalPlayerId] = useState<'player1' | 'player2' | 'spectator' | null>(null);
+  const [gameDataLoaded, setGameDataLoaded] = useState(false);
 
   // --- Core Game State ---
   const [players, setPlayers] = useState<Player[]>([]);
-  const [playerStates, setPlayerStates] = useState<{ player1: PlayerGameState | null, player2: PlayerGameState | null }>({ player1: null, player2: null });
+  const [playerStates, setPlayerStates] = useState<{ player1: PlayerGameState, player2: PlayerGameState }>({ player1: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] }, player2: { lives: 20, towersByCell: {}, enemies: [], workers: [], ghosts: [], portals: [], currentPath: [] } });
   const [currentWave, setCurrentWave] = useState(0);
   const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [isIntermission, setIsIntermission] = useState(true);
-  const [waveStartCountdown, setWaveStartCountdown] = useState(INTERMISSION_TIME);
+  const [waveStartCountdown, setWaveStartCountdown] = useState(VERSUS_WAVE_INTERVAL);
   const [difficulty, setDifficulty] = useState<Difficulty>('Normal');
-  const [versusState, setVersusState] = useState<any>({ player1: { spawnQueue: [] }, player2: { spawnQueue: [] }});
+  const [versusState, setVersusState] = useState<VersusState>({ nextWaveTimestamp: 0, player1: { spawnQueue: [] }, player2: { spawnQueue: [] }});
   
   const [fps, setFps] = useState(0);
 
@@ -63,6 +66,7 @@ export default function VersusGameLoader() {
   const gameBoardRef = useRef<GameBoardHandle>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [firingTowerIds, setFiringTowerIds] = useState<Set<string>>(new Set());
   
   // Game Loop refs
   const gameLoopRef = useRef<number>();
@@ -72,10 +76,19 @@ export default function VersusGameLoader() {
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
   const pendingSnapshotRef = useRef(false);
+  const enemyIdCounter = useRef(0);
+  const waveStartTimeRef = useRef<number>(0);
+  
+  const p1SpawnQueueRef = useRef<any[]>([]);
+  const p2SpawnQueueRef = useRef<any[]>([]);
+  
+  const actionQueueRef = useRef<{type: string, payload: any}[]>([]);
 
 
   const isGameHost = useMemo(() => localPlayerId === 'player1', [localPlayerId]);
   const isSpectator = useMemo(() => localPlayerId === 'spectator', [localPlayerId]);
+  const isCheating = useMemo(() => difficulty === 'Chaos', [difficulty]);
+
 
   // Refs for stable access in callbacks
   const playersRef = useRef(players);
@@ -103,76 +116,29 @@ export default function VersusGameLoader() {
     if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
     return playerStates[localPlayerId as 'player1' | 'player2'];
   }, [localPlayerId, playerStates]);
+  
+  const opponentPlayerState = useMemo(() => {
+    if (!localPlayerId || localPlayerId === 'spectator' || !playerStates) return null;
+    const opponentId = localPlayerId === 'player1' ? 'player2' : 'player1';
+    return playerStates[opponentId];
+  }, [localPlayerId, playerStates]);
+
+  useEffect(() => {
+    if (!isGameHost || !playerStates.player1?.towersByCell) return;
+    const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(playerStates.player1.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+    setPlayerStates(current => ({ ...current, player1: { ...current.player1, currentPath: newPath }}));
+  }, [isGameHost, playerStates.player1.towersByCell]);
+
+  useEffect(() => {
+      if (!isGameHost || !playerStates.player2?.towersByCell) return;
+      const newPath = findPath({row:1,col:1},{row:GRID_ROWS,col:GRID_COLS}, Object.values(playerStates.player2.towersByCell).map(t => t.position), GRID_ROWS, GRID_COLS) ?? [];
+      setPlayerStates(current => ({ ...current, player2: { ...current.player2, currentPath: newPath }}));
+  }, [isGameHost, playerStates.player2.towersByCell]);
+
 
   const onExit = () => router.push('/');
   const cancelInteractions = useCallback(() => { setSelectedTowerToBuild(null); setFocusedTower(null); }, []);
 
-  const onHostAction = useCallback((actionType: string, payload: any) => {
-    const { playerId, row, col, towerId, upgradeId, type: enemyType, cost, incomeBonus } = payload;
-    if (!playerId || !gameConfig) return;
-
-    setPlayerStates(currentPlayerStates => {
-        const playerStateKey = playerId as 'player1' | 'player2';
-        const playerState = currentPlayerStates[playerStateKey];
-        if (!playerState) return currentPlayerStates;
-
-        let newPlayerState: PlayerGameState = JSON.parse(JSON.stringify(playerState));
-
-        setPlayers(currentPlayers => {
-            const playerIndex = currentPlayers.findIndex(p => p.id === playerId);
-            if (playerIndex === -1) return currentPlayers;
-            
-            let newPlayers = JSON.parse(JSON.stringify(currentPlayers));
-            let player = newPlayers[playerIndex];
-
-            const tempSessionState: GameSessionState = {
-                gameMode: 'versus', players: newPlayers, playerStates: { [playerStateKey]: newPlayerState } as any,
-                currentWave: 0, difficulty: 'Normal', gameStatus: 'playing', waveStartCountdown: 0, isIntermission: false
-            };
-
-            switch(actionType) {
-                case 'BUILD_TOWER_REQUEST': {
-                    const tempResult = enqueueBuildOrder(tempSessionState, player.id.includes('1') ? 'worker-1' : 'worker-2', row, col, towerId, Date.now());
-                    newPlayerState.ghosts = tempResult.ghosts;
-                    newPlayerState.workers = tempResult.workers;
-                    newPlayers = tempResult.players;
-                    break;
-                }
-                case 'SEND_ENEMY_REQUEST': {
-                    if (player.resources < cost) break;
-                    player.resources -= cost;
-                    player.incomePerSecond += incomeBonus;
-                    setVersusState(currentVersusState => {
-                        let newVersusState = JSON.parse(JSON.stringify(currentVersusState));
-                        const opponentId = playerId === 'player1' ? 'player2' : 'player1';
-                        newVersusState[opponentId].spawnQueue.push({ type: enemyType, count: 1 });
-                        return newVersusState;
-                    });
-                    break;
-                }
-                case 'START_WAVE_NOW_REQUEST': {
-                    if (gameStatusRef.current === 'waiting') {
-                        setGameStatus('playing');
-                        setIsIntermission(true);
-                        setWaveStartCountdown(INTERMISSION_TIME);
-                    }
-                    break;
-                }
-            }
-            
-            return newPlayers;
-        });
-
-        return { ...currentPlayerStates, [playerStateKey]: newPlayerState };
-    });
-
-  }, [gameConfig]);
-
-  const onHostActionRef = useRef(onHostAction);
-  useEffect(() => { onHostActionRef.current = onHostAction; }, [onHostAction]);
-
-  const sendGameDataRef = useRef<(type: string, payload: any) => void>(() => {});
-  
   const handleGameData = useCallback((msg: any) => {
     if (isGameHost) return;
     if (msg.type === 'deltas') {
@@ -201,6 +167,7 @@ export default function VersusGameLoader() {
                     setIsIntermission(deltaPayload.isIntermission);
                     setWaveStartCountdown(deltaPayload.waveStartCountdown);
                     break;
+                 case DeltaType.VFX_DAMAGE: gameBoardRef.current?.queueDamageNumbers(deltaPayload); break;
             }
         }
     }
@@ -212,7 +179,7 @@ export default function VersusGameLoader() {
           pendingSnapshotRef.current = true;
           return;
       }
-      onHostActionRef.current(msg.type, msg.payload);
+      actionQueueRef.current.push({ type: msg.type, payload: msg.payload });
   }, [isGameHost]);
   
   const { sendAction, sendGameData, isConnected, ...stats } = useWebRTC(
@@ -224,29 +191,29 @@ export default function VersusGameLoader() {
     handleActionData
   );
 
-  sendGameDataRef.current = sendGameData;
-
   useEffect(() => {
-    if (!isGameHost || !isConnected || !pendingSnapshotRef.current) return;
+    if (!isGameHost || !isConnected) return;
     
-    const ps = playerStatesRef.current;
-    const pls = playersRef.current;
-    
-    if (!ps.player1 || !ps.player2 || pls.length < 2) {
-        console.warn("Host received CLIENT_READY, but state is not fully initialized yet. Waiting for state update.");
-        return;
+    if (pendingSnapshotRef.current) {
+        const ps = playerStatesRef.current;
+        const pls = playersRef.current;
+        
+        if (!ps.player1 || !ps.player2 || pls.length < 2) {
+            console.warn("Host received CLIENT_READY, but state is not fully initialized yet. Waiting for state update.");
+            return;
+        }
+        
+        const fullState: GameSessionState = {
+            gameMode: 'versus', players: pls, playerStates: ps,
+            currentWave: currentWaveRef.current, difficulty: difficultyRef.current,
+            gameStatus: gameStatusRef.current, waveStartCountdown: waveStartCountdownRef.current,
+            isIntermission: isIntermissionRef.current, versusState: versusStateRef.current,
+        };
+        sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
+        pendingSnapshotRef.current = false;
     }
     
-    const fullState: GameSessionState = {
-        gameMode: 'versus', players: pls, playerStates: ps,
-        currentWave: currentWaveRef.current, difficulty: difficultyRef.current,
-        gameStatus: gameStatusRef.current, waveStartCountdown: waveStartCountdownRef.current,
-        isIntermission: isIntermissionRef.current, versusState: versusStateRef.current,
-    };
-    sendGameData('deltas', [[DeltaType.SNAPSHOT, fullState]]);
-    pendingSnapshotRef.current = false;
-    
-  }, [isGameHost, isConnected, sendGameData, playerStates, players]);
+  }, [isGameHost, isConnected, sendGameData, playerStates, players, gameStatus, currentWave, isIntermission, waveStartCountdown, versusState, difficulty]);
 
   useEffect(() => {
       if (isConnected && !isGameHost && localPlayerId === 'player2') {
@@ -259,11 +226,11 @@ export default function VersusGameLoader() {
     const finalPayload = { ...payload, playerId: payload.playerId ?? localPlayerId };
     
     if (isGameHost) {
-      onHostAction(actionType, finalPayload);
+      actionQueueRef.current.push({ type: actionType, payload: finalPayload });
     } else {
       sendAction(actionType, finalPayload);
     }
-  }, [isGameHost, onHostAction, sendAction, localPlayerId, isSpectator]);
+  }, [isGameHost, sendAction, localPlayerId, isSpectator]);
 
   useEffect(() => {
     if (!gameId) return;
@@ -284,7 +251,7 @@ export default function VersusGameLoader() {
             const config = await loadGameConfig();
             setGameConfig(config);
         } catch (error) {
-            console.error("Failed to load game config:", error);
+            console.error("Failed to load game config, using defaults:", error);
             toast({ title: 'Fehler beim Laden der Konfiguration', variant: 'destructive' });
         } finally {
             setConfigLoading(false);
@@ -331,12 +298,20 @@ export default function VersusGameLoader() {
             setIsIntermission(data.isIntermission ?? true);
             setCurrentWave(data.currentWave || 0);
 
-            if (data.playerStates) {
-                setPlayerStates(data.playerStates);
-            }
             if (data.versusState) setVersusState(data.versusState);
-            
-            setLoading(false);
+
+            if (role === 'player1' && !gameDataLoaded) {
+                 if (data.playerStates) {
+                    setPlayerStates(data.playerStates);
+                 }
+                 setGameDataLoaded(true);
+                 setLoading(false);
+            } else if (role !== 'player1') {
+                if (!gameDataLoaded) {
+                    setGameDataLoaded(true);
+                    setLoading(false);
+                }
+            }
         });
     };
 
@@ -347,89 +322,383 @@ export default function VersusGameLoader() {
     });
 
     return () => unsub?.();
-  }, [user, gameId, router, toast, configLoading]);
+  }, [user, gameId, router, toast, configLoading, gameDataLoaded]);
   
+  const startWave = useCallback(() => {
+    if (!gameConfig) return;
+
+    audioManager.play({ kind: 'sfx', name: 'wave_start' });
+    const difficultyMod = difficultyModifiers[difficultyRef.current];
+
+    const createEnemiesForPlayer = (targetPlayerId: 'player1' | 'player2') => {
+        const sendingPlayerId = targetPlayerId === 'player1' ? 'player2' : 'player1';
+        const spawnQueue = versusStateRef.current[sendingPlayerId]?.spawnQueue || [];
+        let enemiesToSpawn: any[] = [];
+        
+        if (spawnQueue.length > 0) {
+            spawnQueue.forEach(item => {
+                const baseEnemy = gameConfig.waves.find(w => w.enemies.type === item.type)?.enemies;
+                if(baseEnemy) {
+                    for(let i = 0; i < item.count; i++) {
+                         const health = Math.round(baseEnemy.health * difficultyMod.enemyHealth);
+                         enemiesToSpawn.push({
+                            id: `enemy-${targetPlayerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                            owner: targetPlayerId, type: item.type,
+                            health, maxHealth: health, armor: baseEnemy.armor, speed: baseEnemy.speed, damage: baseEnemy.damage, bounty: baseEnemy.bounty,
+                            path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+                            lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+                            _spawnTime: enemiesToSpawn.length * 500, // Stagger spawns
+                         });
+                    }
+                }
+            });
+        } else {
+            // Default wave if nothing was sent
+            const baseEnemy = gameConfig.waves.find(w => w.enemies.type === 'standard')?.enemies;
+            if (baseEnemy) {
+                for(let i = 0; i < 5; i++) {
+                     const health = Math.round(baseEnemy.health * difficultyMod.enemyHealth);
+                     enemiesToSpawn.push({
+                        id: `enemy-${targetPlayerId}-${currentWaveRef.current}-${enemyIdCounter.current++}`,
+                        owner: targetPlayerId, type: 'standard',
+                        health, maxHealth: health, armor: baseEnemy.armor, speed: baseEnemy.speed, damage: baseEnemy.damage, bounty: baseEnemy.bounty,
+                        path: [], pathIndex: 0, position: { row: 1, col: 1 }, isBlocked: false, effects: [],
+                        lastMove: 0, wasHit: false, targetNode: { row: GRID_ROWS, col: GRID_COLS }, movementPattern: 'wobble', vx: 0, vy: 0,
+                        _spawnTime: i * 800,
+                     });
+                }
+            }
+        }
+        return enemiesToSpawn;
+    };
+    
+    p1SpawnQueueRef.current = createEnemiesForPlayer('player1');
+    p2SpawnQueueRef.current = createEnemiesForPlayer('player2');
+    
+    setVersusState(v => ({
+      ...v,
+      player1: { ...v.player1, spawnQueue: [] },
+      player2: { ...v.player2, spawnQueue: [] },
+    }));
+
+    waveStartTimeRef.current = Date.now();
+  }, [gameConfig]);
   
+  const onHostAction = useCallback((type: string, payload: any) => {
+    if (!gameConfig) return;
+
+    const { playerId, row, col, towerId, cost, incomeBonus, type: enemyType, upgradeId, element } = payload;
+    
+    const players = playersRef.current;
+    const playerStates = playerStatesRef.current;
+    const versusState = versusStateRef.current;
+
+    switch (type) {
+        case 'PICK_ELEMENT_REQUEST': {
+            const playerToUpdate = players.find(p => p.id === playerId);
+            if (playerToUpdate) {
+                playerToUpdate.unlockedElements = Array.from(new Set([...playerToUpdate.unlockedElements, element]));
+
+                const allPlayersPicked = players.every((p: Player) => {
+                    if (!p) return true;
+                    // Corrected logic for expected elements
+                    const expectedElements = 1 + Math.floor(currentWaveRef.current / 5);
+                    return (p.unlockedElements?.length ?? 0) >= expectedElements;
+                });
+
+                if (allPlayersPicked) {
+                    setGameStatus('playing');
+                    setIsIntermission(true);
+                    setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+                }
+            }
+            break;
+        }
+        case 'BUILD_TOWER_REQUEST':
+        case 'UPGRADE_TOWER_REQUEST':
+        case 'SELL_TOWER_REQUEST': {
+            const playerStateKey = playerId as keyof typeof playerStates;
+            let playerState = playerStates[playerStateKey];
+            let player = players.find(p => p.id === playerId);
+            if (!playerState || !player) break;
+
+            if (type === 'BUILD_TOWER_REQUEST') {
+                const buildResult = enqueueBuildOrder({ gameMode: 'versus', players, playerStates, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, player.id.includes('1') ? 'worker-1' : 'worker-2', row, col, towerId, Date.now());
+                player = buildResult.players.find(p => p.id === playerId)!;
+                playerState = buildResult.playerStates![playerStateKey];
+            } else if (type === 'UPGRADE_TOWER_REQUEST') {
+                const key = `${row}_${col}`;
+                const existingTower = playerState.towersByCell[key];
+                if (!existingTower || existingTower.ownerId !== player.id) break;
+                const upgradeSpec = gameConfig!.towers.find(t => t.id === upgradeId);
+                if(!upgradeSpec) break;
+                const upgradeCost = upgradeSpec.cost - Math.floor(existingTower.cost * 0.75);
+                if (player.resources < upgradeCost) break;
+
+                player.resources -= upgradeCost;
+                playerState.towersByCell[key] = { ...existingTower, ...upgradeSpec, specId: upgradeSpec.id, health: upgradeSpec.maxHealth, id: existingTower.id };
+            } else if (type === 'SELL_TOWER_REQUEST') {
+                const key = `${row}_${col}`;
+                const towerToSell = playerState.towersByCell[key];
+                if (!towerToSell || towerToSell.ownerId !== player.id) break;
+                player.resources += Math.round(towerToSell.cost * 0.75);
+                delete playerState.towersByCell[key];
+            }
+            break;
+        }
+
+        case 'SEND_ENEMY_REQUEST': {
+            const player = players.find(p => p.id === playerId);
+            if (player && player.resources >= cost) {
+                player.resources -= cost;
+                player.incomePerSecond += incomeBonus;
+                
+                const queueKey = player.id as 'player1' | 'player2';
+                const existingEntryIndex = versusState[queueKey].spawnQueue.findIndex(e => e.type === enemyType);
+                let newQueue;
+                if (existingEntryIndex > -1) {
+                    newQueue = [...versusState[queueKey].spawnQueue];
+                    newQueue[existingEntryIndex] = { ...newQueue[existingEntryIndex], count: newQueue[existingEntryIndex].count + 1 };
+                } else {
+                    newQueue = [...versusState[queueKey].spawnQueue, { type: enemyType, count: 1 }];
+                }
+                versusState[queueKey] = { spawnQueue: newQueue };
+            }
+            break;
+        }
+        
+        case 'START_WAVE_NOW_REQUEST': {
+            if (gameStatusRef.current === 'waiting') setGameStatus('playing');
+            setIsIntermission(false);
+            setWaveStartCountdown(0);
+            setCurrentWave(w => w + 1);
+            startWave();
+            break;
+        }
+    }
+    
+    setPlayers([...players]);
+    setPlayerStates({...playerStates});
+    setVersusState({...versusState});
+
+  }, [gameConfig, startWave]);
+
+  const handleEndOfWave = useCallback(() => {
+    if (!isGameHost) return;
+
+    const nextWaveIndex = currentWaveRef.current + 1;
+    if (nextWaveIndex % 5 === 0) {
+        setGameStatus('picking-element');
+    } else {
+        setIsIntermission(true);
+        setWaveStartCountdown(VERSUS_WAVE_INTERVAL);
+    }
+  }, [isGameHost]);
+
   useEffect(() => {
+    if (!isGameHost || !gameConfig) {
+      if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      return;
+    }
+  
     let stopped = false;
+  
     const gameLoop = () => {
       if (stopped) return;
       gameLoopRef.current = requestAnimationFrame(gameLoop);
-      
+  
       const now = performance.now();
       const delta = now - lastTickRef.current;
       if (delta === 0) return;
       lastTickRef.current = now;
-
-      // This logic should ONLY run on the host.
-      if (!isGameHost) return;
       
-      // Robust check to ensure all necessary data is loaded before proceeding.
       const ps = playerStatesRef.current;
-      if (!gameConfig || !ps.player1 || !ps.player2 || gameStatusRef.current !== 'playing') {
+      if (!ps.player1 || !ps.player2) {
           return;
       }
-
-      const epochNow = Date.now();
       
+      const epochNow = Date.now();
       frameCountRef.current++;
       if (epochNow - lastFpsUpdateRef.current >= 1000) {
-          setFps(frameCountRef.current);
-          frameCountRef.current = 0;
-          lastFpsUpdateRef.current = epochNow;
+        setFps(frameCountRef.current);
+        frameCountRef.current = 0;
+        lastFpsUpdateRef.current = epochNow;
+      }
+
+      if (actionQueueRef.current.length > 0) {
+        const currentActions = actionQueueRef.current.splice(0);
+        for (const { type, payload } of currentActions) {
+          onHostAction(type, payload);
+        }
       }
       
-      setPlayerStates(currentStates => {
-          let p1State = currentStates.player1!;
-          let p2State = currentStates.player2!;
-
-          const fullSessionState: GameSessionState = {
-              players: playersRef.current,
-              playerStates: currentStates as any,
-              gameMode: 'versus',
-              // Dummy properties to satisfy the type
-              currentWave: 0,
-              difficulty: 'Normal',
-              gameStatus: 'playing',
-              isIntermission: false,
-              waveStartCountdown: 0,
-          };
-      
-          const tickResultP1 = tickWorkers({ ...fullSessionState, workers: p1State.workers, ghosts: p1State.ghosts, towersByCell: p1State.towersByCell }, delta, epochNow, gameConfig.towers);
-          p1State.workers = tickResultP1.workers;
-          p1State.ghosts = tickResultP1.ghosts;
-          p1State.towersByCell = tickResultP1.towersByCell;
-          
-          const tickResultP2 = tickWorkers({ ...fullSessionState, workers: p2State.workers, ghosts: p2State.ghosts, towersByCell: p2State.towersByCell }, delta, epochNow, gameConfig.towers);
-          p2State.workers = tickResultP2.workers;
-          p2State.ghosts = tickResultP2.ghosts;
-          p2State.towersByCell = tickResultP2.towersByCell;
-      
-          return { player1: p1State, player2: p2State };
+      playersRef.current.forEach(p => {
+          p.resources += (p.incomePerSecond * (delta / 1000));
       });
+      setPlayers([...playersRef.current]);
+
+      const updatedStates = tickWorkers({ gameMode: 'versus', players: playersRef.current, playerStates: playerStatesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }, delta, epochNow, gameConfig.towers);
+      playersRef.current = updatedStates.players;
+      playerStatesRef.current = updatedStates.playerStates!;
+      setPlayerStates({...playerStatesRef.current});
       
+      if (gameStatusRef.current !== 'playing') return;
+
+      if(isIntermissionRef.current) {
+          setWaveStartCountdown(prev => {
+              const newTime = prev - delta / 1000;
+              if (newTime <= 0) {
+                  setIsIntermission(false);
+                  setWaveStartCountdown(0);
+                  setCurrentWave(w => w + 1);
+                  startWave();
+                  return 0;
+              }
+              return newTime;
+          });
+      } else {
+          const playerIds: ('player1' | 'player2')[] = ['player1', 'player2'];
+          const allNewDamageNumbers: DamageNumber[] = [];
+          
+          for (const pId of playerIds) {
+              const pState = playerStatesRef.current[pId] as PlayerGameState;
+              const player = playersRef.current.find(p => p.id === pId)!;
+
+              if (!pState) continue;
+              
+              const spawnQueue = pId === 'player1' ? p1SpawnQueueRef : p2SpawnQueueRef;
+              const path = pState.currentPath;
+              if (spawnQueue.current.length > 0) {
+                  const timeSinceWaveStart = epochNow - waveStartTimeRef.current;
+                  const toSpawn = spawnQueue.current.filter((e:any) => e._spawnTime <= timeSinceWaveStart);
+                  if (toSpawn.length > 0) {
+                      spawnQueue.current = spawnQueue.current.filter((e:any) => e._spawnTime > timeSinceWaveStart);
+                      pState.enemies.push(...toSpawn.map((e: any) => ({ ...e, lastMove: epochNow, path })));
+                  }
+              }
+              
+              const newFiringTowerIds = new Set<string>();
+              Object.values(pState.towersByCell).forEach((tower: PlacedTower) => {
+                  if (epochNow - tower.lastAttack >= tower.attackSpeed) {
+                      let targets: Enemy[] = [];
+                      const potentialTargets = pState.enemies.filter((e: Enemy) => {
+                          if (e.deathTimestamp) return false;
+                          const distSq = (tower.position.col - e.position.col) ** 2 + (tower.position.row - e.position.row) ** 2;
+                          return distSq <= tower.range * tower.range;
+                      });
+                      if (potentialTargets.length > 0) {
+                          targets.push(potentialTargets.sort((a,b) => b.pathIndex - a.pathIndex)[0]);
+                      }
+                      
+                      if (targets.length > 0) {
+                          tower.lastAttack = epochNow;
+                          newFiringTowerIds.add(tower.id);
+                          
+                          for (const target of targets) {
+                              const result = processAttack(tower, target, pState.enemies, epochNow, false);
+                              pState.enemies = result.updatedEnemies;
+                              allNewDamageNumbers.push(...result.damageNumbers);
+
+                              if (result.killed > 0) {
+                                  player.resources += target.bounty;
+                              }
+                          }
+                      }
+                  }
+              });
+              setFiringTowerIds(newFiringTowerIds);
+
+              const stillAlive: Enemy[] = [];
+              for (const enemy of pState.enemies) {
+                  if (enemy.deathTimestamp && epochNow - enemy.deathTimestamp > 2500) continue;
+                  if (enemy.deathTimestamp) { stillAlive.push(enemy); continue; }
+
+                  const dotResult = tickDots(enemy, delta);
+                   if (dotResult.totalDamage > 0) {
+                        allNewDamageNumbers.push({ id: crypto.randomUUID(), amount: dotResult.totalDamage, targetId: enemy.id, color: '#f97316' });
+                    }
+                  if(dotResult.killed) { 
+                      enemy.deathTimestamp = epochNow; 
+                      stillAlive.push(enemy);
+                      player.resources += enemy.bounty;
+                      continue; 
+                  }
+
+                  const stunEffect = enemy.effects.find(e => e.type === 'stun' && e.expires > epochNow);
+                  if (stunEffect) { stillAlive.push(enemy); continue; }
+
+                  let timeToMove = epochNow - enemy.lastMove;
+                  const stepMs = 1000 / Math.max(0.01, enemy.speed);
+                  
+                  while (timeToMove >= stepMs) {
+                    if (enemy.pathIndex < enemy.path.length - 1) {
+                      enemy.pathIndex++;
+                      enemy.position = enemy.path[enemy.pathIndex];
+                      timeToMove -= stepMs;
+                      enemy.lastMove += stepMs;
+                    } else {
+                      pState.lives = Math.max(0, pState.lives - 1);
+                      enemy.health = 0;
+                      enemy.deathTimestamp = epochNow; 
+                      break;
+                    }
+                  }
+                  if (!enemy.deathTimestamp) stillAlive.push(enemy);
+              }
+              pState.enemies = stillAlive;
+          }
+
+            const p1Enemies = playerStatesRef.current.player1.enemies;
+            const p2Enemies = playerStatesRef.current.player2.enemies;
+            const p1QueueEmpty = p1SpawnQueueRef.current.length === 0;
+            const p2QueueEmpty = p2SpawnQueueRef.current.length === 0;
+
+            if (p1QueueEmpty && p2QueueEmpty && p1Enemies.every(e => e.deathTimestamp) && p2Enemies.every(e => e.deathTimestamp)) {
+                handleEndOfWave();
+            }
+
+          if (allNewDamageNumbers.length > 0) {
+              gameBoardRef.current?.queueDamageNumbers(allNewDamageNumbers);
+              deltaQueueRef.current.push([DeltaType.VFX_DAMAGE, allNewDamageNumbers]);
+          }
+      }
 
       if (epochNow - lastDeltaSentRef.current > 100) {
         deltaQueueRef.current.push([DeltaType.PLAYER_STATES_UPDATE, playerStatesRef.current]);
-        deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, versusStateRef.current]);
         deltaQueueRef.current.push([DeltaType.PLAYER_UPDATE, playersRef.current]);
+        deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, { lives: 0, currentWave: currentWaveRef.current, gameStatus: gameStatusRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown: waveStartCountdownRef.current, }]);
+        deltaQueueRef.current.push([DeltaType.VERSUS_STATE_UPDATE, versusStateRef.current]);
+        
         const deltasToSend = [...deltaQueueRef.current];
         if (deltasToSend.length > 0) {
-           sendGameDataRef.current('deltas', deltasToSend);
+           sendGameData('deltas', deltasToSend);
         }
         deltaQueueRef.current = [];
         lastDeltaSentRef.current = epochNow;
       }
-  
     };
   
     gameLoopRef.current = requestAnimationFrame(gameLoop);
     return () => { stopped = true; if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   
-  }, [isGameHost, configLoading, gameConfig]);
+  }, [isGameHost, configLoading, gameConfig, sendGameData, onHostAction, startWave, handleEndOfWave]);
 
+  const handleGameControl = useCallback(() => {
+    if (!isGameHost) return;
+  
+    setGameStatus(prev => {
+      if (prev === 'waiting') return 'playing';
+      if (prev === 'playing') return 'paused';
+      if (prev === 'paused') return 'playing';
+      return prev;
+    });
+  }, [isGameHost]);
 
-  if (loading || configLoading || !localPlayer) {
+  const handleStartNextWaveNow = useCallback(() => {
+      dispatchAction('START_WAVE_NOW_REQUEST', {});
+  }, [dispatchAction]);
+
+  if (loading || configLoading || !localPlayer || !localPlayerState) {
     return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">{loadingMessage}</p></div>;
   }
   
@@ -446,12 +715,13 @@ export default function VersusGameLoader() {
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}
-          gameState={localPlayerState!}
+          gameState={localPlayerState}
           localPlayer={localPlayer}
+          opponentPlayerState={opponentPlayerState}
           currentWave={currentWave}
           totalWaves={gameConfig?.waves.length ?? 0}
           difficulty={difficulty}
-          handleGameControl={() => {}}
+          handleGameControl={handleGameControl}
           gameStatus={gameStatus}
           resetGame={onExit}
           towers={gameConfig?.towers ?? []}
@@ -483,17 +753,17 @@ export default function VersusGameLoader() {
           totalKilled={0}
           totalLeaked={0}
           isIntermission={isIntermission}
-          waveStartCountdown={waveStartCountdown}
-          intermissionTime={INTERMISSION_TIME}
-          handleStartNextWaveNow={() => dispatchAction('START_WAVE_NOW_REQUEST', {})}
+          waveStartCountdown={Math.ceil(waveStartCountdown)}
+          intermissionTime={VERSUS_WAVE_INTERVAL}
+          handleStartNextWaveNow={handleStartNextWaveNow}
           lastUpgradedTowerId={lastUpgradedTowerId}
           isCoop={false}
           playerRole={localPlayerId}
           handleLoadTestLayout={() => {}}
           handleLoadAllTowersLayout={() => {}}
-          isCheating={false}
+          isCheating={isCheating}
           cheat_unlockAll={() => {}}
-          firingTowerIds={new Set()}
+          firingTowerIds={firingTowerIds}
           allTowers={gameConfig?.towers ?? []}
           isWsConnected={isConnected}
           onPing={() => {}}
@@ -502,6 +772,23 @@ export default function VersusGameLoader() {
           gameMode="versus"
         />
       </div>
+      {players.map(p => {
+            if (!p || p.id !== localPlayerId) return null;
+            
+            const expectedElements = 1 + Math.floor(currentWave / 5);
+            const shouldPick = gameStatus === 'picking-element' && (p.unlockedElements?.length ?? 0) < expectedElements;
+
+            return (
+                <ElementPickDialog
+                    key={p.id}
+                    isOpen={shouldPick}
+                    onElementPick={(element) => dispatchAction('PICK_ELEMENT_REQUEST', { element })}
+                    playerName={p.name}
+                    currentWave={currentWave}
+                    unlockedElements={new Set(p.unlockedElements)}
+                />
+            );
+        })}
     </div>
   );
 }
