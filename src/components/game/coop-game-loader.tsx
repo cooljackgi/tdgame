@@ -149,6 +149,18 @@ export default function CoopGameLoader() {
     router.push('/');
   };
 
+    const persistGameOverview = useCallback(async (payload: Record<string, unknown>) => {
+        if (!isGameHost || !gameId) return;
+        try {
+            await updateDoc(doc(db, 'games', gameId), {
+                ...payload,
+                lastPlayedAt: serverTimestamp(),
+            });
+        } catch (error) {
+            console.error('Failed to persist game overview:', error);
+        }
+    }, [isGameHost, gameId]);
+
   const onSelectTowerToBuild = (tower: Tower | null) => {
     cancelInteractions();
     setSelectedTowerToBuild(tower);
@@ -295,7 +307,14 @@ export default function CoopGameLoader() {
         { lives: gameStateRef.current.lives, currentWave: waveIndex, gameStatus: 'playing', isIntermission: false, waveStartCountdown: 0 }
     ]);
 
-  }, [isGameHost, difficulty, gameConfig]);
+        void persistGameOverview({
+            currentWave: waveIndex,
+            gameStatus: 'playing',
+            isIntermission: false,
+            waveStartCountdown: 0,
+        });
+
+    }, [isGameHost, difficulty, gameConfig, persistGameOverview]);
 
   const onHostAction = useCallback((action:'build'|'upgrade'|'sell'|'pick_element'|'start_wave_now'|'move_worker'| 'place_portal', payload:any) => {
     if (!isGameHost || !gameConfig) return;
@@ -426,6 +445,12 @@ export default function CoopGameLoader() {
                     setWaveStartCountdown(INTERMISSION_TIME);
                     setGameStatus('playing');
                     setIsLogicPaused(false);
+                    void persistGameOverview({
+                      currentWave: currentWaveRef.current + 1,
+                      gameStatus: 'playing',
+                      isIntermission: true,
+                      waveStartCountdown: INTERMISSION_TIME,
+                    });
                 }
                 break;
             }
@@ -435,6 +460,11 @@ export default function CoopGameLoader() {
                     setGameStatus('playing');
                     setIsIntermission(true);
                     setWaveStartCountdown(INTERMISSION_TIME);
+                    void persistGameOverview({
+                      gameStatus: 'playing',
+                      isIntermission: true,
+                      waveStartCountdown: INTERMISSION_TIME,
+                    });
                 } else if (isIntermissionRef.current) {
                     startWave(currentWaveRef.current);
                 }
@@ -445,7 +475,7 @@ export default function CoopGameLoader() {
         return tempPlayers;
     });
 
-  }, [difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave]);
+    }, [difficulty, waveStartCountdown, isIntermission, gameConfig, localPlayerId, cancelInteractions, isMobile, startWave, persistGameOverview]);
     
     const handleActionData = useCallback((msg: any) => {
         if (!isGameHost) return;
@@ -692,7 +722,14 @@ export default function CoopGameLoader() {
     if(gameStatusRef.current === 'gameover') return;
     performGameEndActions(gameId, user, difficulty, currentWaveRef.current + 1, won, towersByCellRef.current);
     setGameStatus('gameover');
-  }, [gameId, user, difficulty]);
+        void persistGameOverview({
+            gameStatus: 'gameover',
+            isIntermission: false,
+            currentWave: currentWaveRef.current,
+            endedAt: serverTimestamp(),
+            result: won ? 'won' : 'lost',
+        });
+    }, [gameId, user, difficulty, persistGameOverview]);
 
   const handleEndOfWave = useCallback(() => {
     if (!isGameHost || !gameConfig) return;
@@ -730,6 +767,12 @@ export default function CoopGameLoader() {
             DeltaType.GAME_STATE_UPDATE,
             { lives: gameStateRef.current.lives, currentWave: currentWaveRef.current, gameStatus: 'picking-element', isIntermission: true, waveStartCountdown: waveStartCountdown }
         ]);
+        void persistGameOverview({
+          currentWave: currentWaveRef.current,
+          gameStatus: 'picking-element',
+          isIntermission: true,
+          waveStartCountdown,
+        });
         return; 
     }
     
@@ -739,7 +782,13 @@ export default function CoopGameLoader() {
     setWaveStartCountdown(INTERMISSION_TIME);
     setPortals(prev => prev.map(p => ({ ...p, expiresAt: Date.now() + 500 })));
     setIsLogicPaused(false);
-  }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown, gameId]);
+        void persistGameOverview({
+            currentWave: nextWaveIndex,
+            gameStatus: 'playing',
+            isIntermission: true,
+            waveStartCountdown: INTERMISSION_TIME,
+        });
+    }, [isGameHost, gameConfig, onGameEnd, waveStartCountdown, gameId, persistGameOverview]);
 
   useEffect(() => {
       if (!gameConfig || !isGameHost) {
