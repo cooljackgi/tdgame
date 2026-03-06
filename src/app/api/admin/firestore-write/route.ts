@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFirestore, doc, updateDoc } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import { app as adminApp } from '@/lib/firebase-admin';
 
 export const runtime = 'nodejs';
@@ -49,8 +49,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const firebaseDoc = doc(db, ...segments);
-    await updateDoc(firebaseDoc, data);
+    // Build reference: for "games/gameId", use db.collection('games').doc('gameId')
+    // for "games/gameId/logs/logId", use db.collection('games').doc('gameId').collection('logs').doc('logId')
+    let ref: any = db;
+    for (let i = 0; i < segments.length; i++) {
+      if (i % 2 === 0) {
+        // Even index = collection
+        ref = ref.collection(segments[i]);
+      } else {
+        // Odd index = document
+        ref = ref.doc(segments[i]);
+      }
+    }
+
+    await ref.update(data);
 
     return new NextResponse(JSON.stringify({ success: true, docPath }), {
       status: 200,
