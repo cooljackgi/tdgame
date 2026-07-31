@@ -278,8 +278,8 @@ export default function Home() {
                           </Button>
                         )}
                         <Separator className="my-2" />
-                         <Link href="/admin/analytics" className="w-full block">
-                            <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Analyse-Dashboard</Button>
+                         <Link href="/admin" className="w-full block">
+                            <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Admin Center</Button>
                         </Link>
                          <Link href="/balancing" className="w-full block">
                             <Button variant="outline" className="w-full"><BarChart2 className="mr-2"/> Turm-Dashboard</Button>

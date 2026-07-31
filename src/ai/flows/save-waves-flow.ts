@@ -8,6 +8,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { app } from '@/lib/firebase-admin'; // Admin app for server-side operations
+import { requireAdminSession } from '@/lib/admin-auth';
 
 const EnemyTypeSchema = z.enum(['standard', 'schnell', 'gepanzert', 'heilend', 'boss']);
 
@@ -39,6 +40,7 @@ export type SaveWavesOutput = z.infer<typeof SaveWavesOutputSchema>;
 
 
 export async function saveWaveData(input: WavesData): Promise<SaveWavesOutput> {
+  requireAdminSession();
   return saveWavesFlow(input);
 }
 

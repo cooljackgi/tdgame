@@ -111,7 +111,10 @@ export const archiveGame = functions.https.onCall(async (data, context) => {
 /**
  * A callable function to completely delete a test game.
  */
-export const deleteTestGame = functions.https.onCall(async (data) => {
+export const deleteTestGame = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "The function must be called while authenticated.");
+    }
     const validation = gameIdSchema.safeParse(data);
     if (!validation.success) throw new functions.https.HttpsError("invalid-argument", "Invalid gameId provided.");
     const { gameId } = validation.data;
@@ -122,6 +125,11 @@ export const deleteTestGame = functions.https.onCall(async (data) => {
         const gameData = gameDoc.data();
         if (gameData?.isTestGame !== true) {
             throw new functions.https.HttpsError("permission-denied", "This function can only delete test games.");
+        }
+        const uid = context.auth.uid;
+        const isMember = gameData?.player1Id === uid || gameData?.player2Id === uid || gameData?.members?.[uid] === true;
+        if (!isMember) {
+            throw new functions.https.HttpsError("permission-denied", "Only members can delete their test game.");
         }
         await gameRef.delete();
         return { success: true, message: `Test game ${gameId} deleted successfully.` };

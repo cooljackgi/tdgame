@@ -8,6 +8,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { getFirestore } from 'firebase-admin/firestore';
 import { app } from '@/lib/firebase-admin'; // Admin app for server-side operations
+import { requireAdminSession } from '@/lib/admin-auth';
 import type { Tower } from '@/lib/game-data/types';
 
 // Zod schemas remain the same to validate the input data structure.
@@ -54,6 +55,7 @@ export type SaveBalancingOutput = z.infer<typeof SaveBalancingOutputSchema>;
 
 
 export async function saveBalancingData(input: BalancingData): Promise<SaveBalancingOutput> {
+  requireAdminSession();
   return saveBalancingFlow(input);
 }
 

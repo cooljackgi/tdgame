@@ -24,6 +24,16 @@ type AnalyticsChartProps = {
   data: any[];
 };
 
+function getEntryTime(entry: any): number {
+  if (typeof entry?.timestamp?.toMillis === 'function') return entry.timestamp.toMillis();
+  if (typeof entry?.timestamp === 'string') {
+    const parsed = Date.parse(entry.timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (typeof entry?.timestamp === 'number') return entry.timestamp;
+  return typeof entry?.clientTs === 'number' ? entry.clientTs : 0;
+}
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -47,15 +57,15 @@ export default function AnalyticsChart({ data }: AnalyticsChartProps) {
     if (!data || data.length === 0) return [];
     
     // Sortiere die Daten zuerst, da sie aus verschiedenen Quellen kommen könnten
-    const sortedData = data.sort((a,b) => (a.timestamp?.toMillis() || a.clientTs) - (b.timestamp?.toMillis() || b.clientTs));
+    const sortedData = [...data].sort((a, b) => getEntryTime(a) - getEntryTime(b));
     
-    const startTime = sortedData[0]?.timestamp?.toMillis() || sortedData[0]?.clientTs;
+    const startTime = getEntryTime(sortedData[0]);
 
     // Reduziere und aggregiere die Daten
     const aggregatedData: Record<string, any> = {};
 
     sortedData.forEach(entry => {
-        const timeInSeconds = Math.round(((entry.timestamp?.toMillis() || entry.clientTs) - startTime) / 1000);
+        const timeInSeconds = Math.round((getEntryTime(entry) - startTime) / 1000);
         const key = String(timeInSeconds);
 
         if (!aggregatedData[key]) {

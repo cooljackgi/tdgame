@@ -17,13 +17,7 @@
   ],
   "emulators": {
     "hosting": {
-      "port": 9002,
-      "rewrites": [
-        {
-          "source": "/ws",
-          "function": "ws-relay"
-        }
-      ]
+      "port": 9002
     },
     "functions": {
       "port": 5001

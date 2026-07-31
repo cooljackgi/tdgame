@@ -4,8 +4,6 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { collection, onSnapshot, orderBy, query, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2, ArrowLeft, GitCommitHorizontal, Workflow, Users, CheckCircle2, XCircle, Zap, Info, Clock, BarChart } from 'lucide-react';
@@ -23,7 +21,7 @@ import {
 interface LogEntry {
   id: string;
   timestamp: Date;
-  role: 'host' | 'client';
+  role: 'host' | 'client' | 'monitor';
   event: string;
   details: any;
 }
@@ -68,36 +66,42 @@ export default function GameNetworkLogPage() {
 
   useEffect(() => {
     if (!gameId) return;
-
+    let cancelled = false;
     setLoading(true);
-    // Corrected to read from game_logs
-    const logsQuery = query(collection(db, `games/${gameId}/game_logs`), orderBy('timestamp', 'asc'));
-    
-    const unsubscribe = onSnapshot(logsQuery, (querySnapshot) => {
-      const fetchedLogs: LogEntry[] = querySnapshot.docs
-        .map(doc => {
-            const data = doc.data();
-            // The event name is now in the 'type' field due to consolidation
-            const eventName = data.type || data.event; 
+    const fetchLogs = async () => {
+      try {
+        const response = await fetch(`/api/admin/firestore-read?mode=logs&gameId=${encodeURIComponent(gameId)}&limit=500`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Netzwerk-Logs konnten nicht geladen werden.');
+        if (cancelled) return;
+        const fetchedLogs: LogEntry[] = result.logs
+          .map((data: any) => {
+            const eventName = data.type || data.event || '';
             return {
-                id: doc.id,
-                timestamp: (data.timestamp as Timestamp)?.toDate() || new Date(data.clientTs || Date.now()),
+                id: data.id,
+                timestamp: data.timestamp ? new Date(data.timestamp) : new Date(data.clientTs || Date.now()),
                 role: data.role,
                 event: eventName,
                 details: data.details,
             };
-        })
-        .filter(log => isNetworkEvent(log.event)); // Filter for network-related events
+          })
+          .filter((log: LogEntry) => isNetworkEvent(log.event))
+          .sort((a: LogEntry, b: LogEntry) => a.timestamp.getTime() - b.timestamp.getTime());
+        setLogs(fetchedLogs);
+        setError(null);
+      } catch (fetchError) {
+        if (!cancelled) setError(fetchError instanceof Error ? fetchError.message : 'Fehler beim Laden der Netzwerk-Logs.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-      setLogs(fetchedLogs);
-      setLoading(false);
-    }, (err: any) => {
-      console.error("Error fetching network logs:", err);
-      setError("Fehler beim Laden der Netzwerk-Logs.");
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    void fetchLogs();
+    const refreshInterval = window.setInterval(() => void fetchLogs(), 10000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshInterval);
+    };
   }, [gameId]);
   
   if (loading) {

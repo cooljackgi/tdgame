@@ -3,8 +3,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { doc, Timestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, ArrowLeft, Network, Users, Gamepad2, AlertCircle, Zap, Terminal, Wifi, WifiOff, Download, ArrowUp, ArrowDown } from 'lucide-react';
 import Link from 'next/link';
@@ -163,7 +162,11 @@ export default function GameAnalyticsDetailPage() {
   const [error, setError] = useState<string | null>(null);
   
   const combinedLog = useMemo(() => {
-    return [...(gameLog ?? [])].sort((a,b) => (a.timestamp?.toMillis() || a.clientTs || 0) - (b.timestamp?.toMillis() || b.clientTs || 0))
+    const toMillis = (entry: any) => {
+      if (typeof entry.timestamp === 'string') return Date.parse(entry.timestamp);
+      return entry.clientTs || 0;
+    };
+    return [...(gameLog ?? [])].sort((a, b) => toMillis(a) - toMillis(b));
   }, [gameLog]);
 
   const displayStatus = useMemo(() => {
@@ -173,53 +176,45 @@ export default function GameAnalyticsDetailPage() {
 
   useEffect(() => {
     if (!gameId) return;
+    let cancelled = false;
 
-    let unsubscribeGame: () => void;
-    let unsubscribeLogs: () => void;
-
-    const fetchGameData = async () => {
+    const fetchGameData = async (showLoader = false) => {
+      if (showLoader) setLoading(true);
       try {
-        const gameDocRef = doc(db, 'games', gameId);
-        unsubscribeGame = onSnapshot(gameDocRef, (docSnap) => {
-          if (!docSnap.exists()) {
-            setError("Spiel nicht gefunden.");
-            setLoading(false);
-            return;
-          }
+        const [gameResponse, logsResponse] = await Promise.all([
+          fetch(`/api/admin/firestore-read?mode=game&gameId=${encodeURIComponent(gameId)}`, { cache: 'no-store' }),
+          fetch(`/api/admin/firestore-read?mode=logs&gameId=${encodeURIComponent(gameId)}&limit=500`, { cache: 'no-store' }),
+        ]);
+        const [gameResult, logsResult] = await Promise.all([gameResponse.json(), logsResponse.json()]);
+        if (!gameResponse.ok) throw new Error(gameResult.error || 'Spiel nicht gefunden.');
+        if (!logsResponse.ok) throw new Error(logsResult.error || 'Logs konnten nicht geladen werden.');
+        if (cancelled) return;
 
-          const data = docSnap.data();
-          setGameData({
-            id: docSnap.id,
-            gameName: data.gameName || docSnap.id,
-            createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
-            status: data.gameStatus || 'unbekannt',
-            players: normalizePlayers(data.players),
-            difficulty: data.difficulty || 'Unbekannt',
-            currentWave: data.currentWave || 0,
-          });
-          setLoading(false);
+        const data = gameResult.data || {};
+        setGameData({
+          id: gameResult.id,
+          gameName: data.gameName || gameResult.id,
+          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+          status: data.gameStatus || 'unbekannt',
+          players: normalizePlayers(data.players),
+          difficulty: data.difficulty || 'Unbekannt',
+          currentWave: data.currentWave || 0,
         });
-
-        const logCollectionRef = collection(db, `games/${gameId}/game_logs`);
-        const logQuery = query(logCollectionRef, orderBy('timestamp', 'asc'));
-        unsubscribeLogs = onSnapshot(logQuery, (snapshot) => {
-          const logs = snapshot.docs.map(doc => doc.data());
-          setGameLog(logs);
-        });
-
-      } catch (err: any) {
-        console.error("Error fetching game data:", err);
-        setError("Fehler beim Laden der Spieldetails.");
-        setLoading(false);
+        setGameLog(logsResult.logs || []);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Fehler beim Laden der Spieldetails.');
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
-    fetchGameData();
-    
+    void fetchGameData(true);
+    const refreshInterval = window.setInterval(() => void fetchGameData(), 10000);
     return () => {
-        if (unsubscribeGame) unsubscribeGame();
-        if (unsubscribeLogs) unsubscribeLogs();
-    }
+      cancelled = true;
+      window.clearInterval(refreshInterval);
+    };
   }, [gameId]);
   
   if (loading) {

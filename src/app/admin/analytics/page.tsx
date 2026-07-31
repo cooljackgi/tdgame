@@ -1,148 +1,95 @@
-// src/app/admin/analytics/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy, Timestamp, getCountFromServer } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { AreaChart, Loader2, RefreshCw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, AreaChart, Home } from 'lucide-react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
 
 interface GameLog {
   id: string;
   gameId: string;
-  createdAt: Date;
+  createdAt: string;
   status: string;
   logLength: number;
+  currentWave: number;
 }
 
 function deriveAnalyticsStatus(gameStatus: unknown, logCount: number, currentWave: number): string {
   const normalizedStatus = typeof gameStatus === 'string' ? gameStatus.toLowerCase() : 'unbekannt';
-
-  if (normalizedStatus === 'gameover' || normalizedStatus === 'finished') {
-    return 'beendet';
-  }
-  if (normalizedStatus === 'playing' || normalizedStatus === 'paused' || normalizedStatus === 'archived') {
-    return normalizedStatus;
-  }
-
-  // Some matches never persist gameStatus updates to Firestore.
-  if (currentWave > 0 || logCount > 0) {
-    return 'gespielt';
-  }
-
-  if (normalizedStatus === 'waiting') {
-    return 'waiting';
-  }
-
+  if (normalizedStatus === 'gameover' || normalizedStatus === 'finished') return 'beendet';
+  if (['playing', 'paused', 'archived'].includes(normalizedStatus)) return normalizedStatus;
+  if (currentWave > 0 || logCount > 0) return 'gespielt';
   return normalizedStatus;
 }
 
 export default function AnalyticsPage() {
+  const router = useRouter();
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        const gamesQuery = query(collection(db, 'games'), orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(gamesQuery);
-        
-        const fetchedLogsPromises: Promise<GameLog>[] = querySnapshot.docs.map(async (doc) => {
-          const data = doc.data();
-          const createdAt = (data.createdAt as Timestamp)?.toDate() || new Date();
-          const currentWave = typeof data.currentWave === 'number' ? data.currentWave : 0;
-          
-          // Get count of logs from the subcollection
-          const logCollRef = collection(db, `games/${doc.id}/game_logs`);
-          const snapshot = await getCountFromServer(logCollRef);
-          const logCount = snapshot.data().count;
-
-          return {
-            id: doc.id,
-            gameId: data.gameName || doc.id,
-            createdAt: createdAt,
-            status: deriveAnalyticsStatus(data.gameStatus, logCount, currentWave),
-            logLength: logCount,
-          };
-        });
-
-        const fetchedLogs = await Promise.all(fetchedLogsPromises);
-        
-        setLogs(fetchedLogs);
-      } catch (err: any) {
-        console.error("Error fetching game logs:", err);
-        setError("Fehler beim Laden der Spieldaten. Prüfe die Konsolenausgabe.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLogs();
+  const fetchLogs = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/firestore-read?mode=games&limit=100', { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Spieldaten konnten nicht geladen werden.');
+      setLogs(result.games.map((game: any) => ({
+        id: game.id,
+        gameId: game.gameId,
+        createdAt: game.createdAt,
+        status: deriveAnalyticsStatus(game.gameStatus, game.logCount, game.currentWave),
+        logLength: game.logCount,
+        currentWave: game.currentWave,
+      })));
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : 'Spieldaten konnten nicht geladen werden.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { void fetchLogs(); }, [fetchLogs]);
+
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6 space-y-6">
+    <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Analyse-Dashboard</h1>
-          <p className="text-muted-foreground">Übersicht aller gespielten Koop-Spiele.</p>
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Spiel-Analyse</h1>
+          <p className="text-muted-foreground">Serverseitig geladene Sessions und Diagnose-Logs.</p>
         </div>
-        <Link href="/">
-          <Button variant="outline">
-            <Home className="mr-2 h-4 w-4" />
-            Zurück zum Menü
-          </Button>
-        </Link>
+        <Button variant="outline" onClick={() => void fetchLogs()} disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Aktualisieren
+        </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AreaChart className="text-primary" />
-            Gespielte Spiele
-          </CardTitle>
-          <CardDescription>
-            Wähle ein Spiel aus, um die detaillierte Netzwerkanalyse anzusehen.
-          </CardDescription>
+          <CardTitle className="flex items-center gap-2"><AreaChart className="text-primary" />Gespielte Spiele</CardTitle>
+          <CardDescription>Wähle ein Spiel für Performance- und Netzwerkanalyse.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-              <p>Lade Spieldaten aus Firestore...</p>
-            </div>
+            <div className="flex items-center justify-center py-12"><Loader2 className="mr-2 h-6 w-6 animate-spin" />Lade Spieldaten...</div>
           ) : error ? (
-            <p className="text-destructive text-center py-10">{error}</p>
+            <p className="py-10 text-center text-destructive">{error}</p>
           ) : logs.length === 0 ? (
-            <p className="text-muted-foreground text-center py-10">
-              Noch keine Spiele gefunden. Schließe ein Koop-Spiel ab, um Daten zu generieren.
-            </p>
+            <p className="py-10 text-center text-muted-foreground">Noch keine Spiele gefunden.</p>
           ) : (
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Spiel-Name</TableHead>
-                  <TableHead>Datum</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Log-Einträge</TableHead>
-                </TableRow>
-              </TableHeader>
+              <TableHeader><TableRow><TableHead>Spiel</TableHead><TableHead>Datum</TableHead><TableHead>Status</TableHead><TableHead>Welle</TableHead><TableHead className="text-right">Logs</TableHead></TableRow></TableHeader>
               <TableBody>
                 {logs.map((log) => (
-                  <TableRow 
-                    key={log.id} 
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => router.push(`/admin/analytics/${log.id}`)}
-                  >
-                    <TableCell className="font-mono text-xs">{log.gameId}</TableCell>
-                    <TableCell>{log.createdAt.toLocaleString('de-DE')}</TableCell>
-                    <TableCell>{log.status}</TableCell>
+                  <TableRow key={log.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/admin/analytics/${log.id}`)}>
+                    <TableCell><div className="font-medium">{log.gameId}</div><div className="font-mono text-[10px] text-muted-foreground">{log.id}</div></TableCell>
+                    <TableCell>{new Date(log.createdAt).toLocaleString('de-DE')}</TableCell>
+                    <TableCell><Badge variant="secondary">{log.status}</Badge></TableCell>
+                    <TableCell>{log.currentWave}</TableCell>
                     <TableCell className="text-right">{log.logLength}</TableCell>
                   </TableRow>
                 ))}
@@ -151,6 +98,7 @@ export default function AnalyticsPage() {
           )}
         </CardContent>
       </Card>
+      <Button asChild variant="ghost"><Link href="/admin">Zurück zum Systemstatus</Link></Button>
     </main>
   );
 }

@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore } from 'firebase-admin/firestore';
 import { app as adminApp } from '@/lib/firebase-admin';
+import { isAdminAuthorized } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function isAuthorized(req: NextRequest): boolean {
-  const requiredKey = process.env.FIRESTORE_READ_API_KEY;
-  if (!requiredKey) return false;
-
-  const keyFromHeader = req.headers.get('x-firedb-key');
-  const keyFromQuery = req.nextUrl.searchParams.get('key');
-  const providedKey = keyFromHeader || keyFromQuery;
-
-  return providedKey === requiredKey;
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isAuthorized(req)) {
+  if (!isAdminAuthorized(req)) {
     return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
@@ -42,9 +32,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       .split('/')
       .filter(Boolean);
 
-    if (segments.length === 0) {
+    if (segments.length === 0 || segments.length % 2 !== 0) {
       return new NextResponse(
-        JSON.stringify({ error: 'Invalid document path' }),
+        JSON.stringify({ error: 'Invalid document path: expected a document path.' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }

@@ -1,20 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore } from 'firebase-admin/firestore';
 import { app as adminApp } from '@/lib/firebase-admin';
+import { isAdminAuthorized } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function isAuthorized(req: NextRequest): boolean {
-  const requiredKey = process.env.FIRESTORE_READ_API_KEY;
-  if (!requiredKey) return false;
-
-  const keyFromHeader = req.headers.get('x-firedb-key');
-  const keyFromQuery = req.nextUrl.searchParams.get('key');
-  const providedKey = keyFromHeader || keyFromQuery;
-
-  return providedKey === requiredKey;
-}
 
 function parseLimit(rawValue: string | null, fallback = 100): number {
   const parsed = Number(rawValue);
@@ -34,8 +24,20 @@ function normalizeDocPath(path: string): string {
   return segments.join('/');
 }
 
+function serializeFirestoreValue(value: any): any {
+  if (value == null) return value;
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (Array.isArray(value)) return value.map(serializeFirestoreValue);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, serializeFirestoreValue(entry)])
+    );
+  }
+  return value;
+}
+
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!isAdminAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -70,7 +72,25 @@ export async function GET(req: NextRequest) {
       if (!snap.exists) {
         return NextResponse.json({ error: 'Game not found.' }, { status: 404 });
       }
-      return NextResponse.json({ id: snap.id, path: snap.ref.path, data: snap.data() });
+      return NextResponse.json({ id: snap.id, path: snap.ref.path, data: serializeFirestoreValue(snap.data()) });
+    }
+
+    if (mode === 'games') {
+      const limit = parseLimit(searchParams.get('limit'), 50);
+      const gamesSnap = await db.collection('games').orderBy('createdAt', 'desc').limit(limit).get();
+      const games = await Promise.all(gamesSnap.docs.map(async (doc) => {
+        const data = doc.data();
+        const logsCount = await doc.ref.collection('game_logs').count().get();
+        return {
+          id: doc.id,
+          gameId: data.gameName || doc.id,
+          createdAt: serializeFirestoreValue(data.createdAt) || new Date(0).toISOString(),
+          gameStatus: data.gameStatus || 'unbekannt',
+          currentWave: typeof data.currentWave === 'number' ? data.currentWave : 0,
+          logCount: logsCount.data().count,
+        };
+      }));
+      return NextResponse.json({ count: games.length, games });
     }
 
     if (mode === 'logs') {
@@ -87,7 +107,7 @@ export async function GET(req: NextRequest) {
         .limit(limit)
         .get();
 
-      const logs = logsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const logs = logsSnap.docs.map((doc) => ({ id: doc.id, ...serializeFirestoreValue(doc.data()) }));
       return NextResponse.json({ gameId, count: logs.length, logs });
     }
 
@@ -101,7 +121,7 @@ export async function GET(req: NextRequest) {
       if (!snap.exists) {
         return NextResponse.json({ error: 'Document not found.', path: docPath }, { status: 404 });
       }
-      return NextResponse.json({ id: snap.id, path: snap.ref.path, data: snap.data() });
+      return NextResponse.json({ id: snap.id, path: snap.ref.path, data: serializeFirestoreValue(snap.data()) });
     }
 
     return NextResponse.json({ error: `Unsupported mode: ${mode}` }, { status: 400 });
