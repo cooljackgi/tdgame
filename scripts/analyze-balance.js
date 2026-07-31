@@ -1,29 +1,4 @@
-const https = require('https');
-
-const API_KEY = 'meinSuperLangerGeheimerKeyundnochmehrtext';
-
-function fetchData(path) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'studio--studio-8208926735-5ea4c.us-central1.hosted.app',
-      path: path,
-      method: 'GET',
-      headers: { 'x-firedb-key': API_KEY }
-    };
-
-    https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }).on('error', reject).end();
-  });
-}
+const { fetchData } = require('./balance-api');
 
 async function analyzeBalance() {
   try {
@@ -37,8 +12,8 @@ async function analyzeBalance() {
       const w = wave.enemies || {};
       const totalHealthPerWave = (w.count || 0) * (w.health || 0);
       const armor = w.armor || 0;
-      const armorPercent = (armor * 100).toFixed(0);
-      console.log(`Wave ${idx + 1}: ${w.count || 0} x ${w.type || '?'} (${w.health || 0} HP, ${armorPercent}% ARM) = ${totalHealthPerWave} HP/Welle`);
+      const flatArmor = Number(armor).toFixed(0);
+      console.log(`Wave ${idx + 1}: ${w.count || 0} x ${w.type || '?'} (${w.health || 0} HP, ${flatArmor} ARM) = ${totalHealthPerWave} HP/Welle`);
     });
 
     console.log('\n================= TOWER DPS ANALYSE (TOP 10) =================\n');
@@ -83,6 +58,7 @@ async function analyzeBalance() {
 
   } catch (error) {
     console.error('❌ Error:', error.message);
+    process.exitCode = 1;
   }
 }
 

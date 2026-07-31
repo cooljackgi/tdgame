@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "firestore:read": "node scripts/firestore-read.mjs"
+    "firestore:read": "node scripts/firestore-read.mjs",
+    "balance:analyze": "node scripts/analyze-balance.js",
+    "balance:economy": "node scripts/economy-analysis.js",
+    "balance:verify": "node scripts/verify-balance.js"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "1.20.0",

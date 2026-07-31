@@ -1,29 +1,4 @@
-const https = require('https');
-
-const API_KEY = 'meinSuperLangerGeheimerKeyundnochmehrtext';
-
-function fetchData(path) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'studio--studio-8208926735-5ea4c.us-central1.hosted.app',
-      path: path,
-      method: 'GET',
-      headers: { 'x-firedb-key': API_KEY }
-    };
-
-    https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }).on('error', reject).end();
-  });
-}
+const { fetchData } = require('./balance-api');
 
 async function fullEconomyAnalysis() {
   try {
@@ -139,6 +114,7 @@ async function fullEconomyAnalysis() {
 
   } catch (error) {
     console.error('❌ Error:', error.message);
+    process.exitCode = 1;
   }
 }
 

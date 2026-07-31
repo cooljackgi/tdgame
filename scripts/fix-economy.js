@@ -1,35 +1,4 @@
-const https = require('https');
-
-const API_KEY = 'meinSuperLangerGeheimerKeyundnochmehrtext';
-
-function makeRequest(method, path, body = null) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'studio--studio-8208926735-5ea4c.us-central1.hosted.app',
-      path: path,
-      method: method,
-      headers: {
-        'x-firedb-key': API_KEY,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          resolve(data);
-        }
-      });
-    }).on('error', reject);
-
-    if (body) req.write(JSON.stringify(body));
-    req.end();
-  });
-}
+const { makeRequest } = require('./balance-api');
 
 async function fixEconomy() {
   try {
@@ -102,9 +71,11 @@ async function fixEconomy() {
       console.log('✅ Game sollte jetzt schaffbar sein!');
     } else {
       console.error('❌ Fehler:', result.error);
+      process.exitCode = 1;
     }
   } catch (error) {
     console.error('❌ Error:', error.message);
+    process.exitCode = 1;
   }
 }
 

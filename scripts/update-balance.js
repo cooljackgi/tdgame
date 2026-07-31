@@ -1,17 +1,14 @@
-const API_KEY = 'meinSuperLangerGeheimerKeyundnochmehrtext';
-const BASE_URL = 'https://studio--studio-8208926735-5ea4c.us-central1.hosted.app';
+const { fetchData, makeRequest } = require('./balance-api');
 
 async function main() {
   try {
     // Lese balancing data
     console.log('📖 Lese Balancing-Daten...');
-    const readRes = await fetch(`${BASE_URL}/api/admin/firestore-read?mode=balancing`, {
-      headers: { 'x-firedb-key': API_KEY }
-    });
-    const data = await readRes.json();
+    const data = await fetchData('/api/admin/firestore-read?mode=balancing');
     
     if (!data.data) {
       console.error('❌ Keine Daten erhalten:', data);
+      process.exitCode = 1;
       return;
     }
 
@@ -40,26 +37,20 @@ async function main() {
 
     // Schreibe zurück
     console.log('\n📝 Schreibe zu Firestore...');
-    const writeRes = await fetch(`${BASE_URL}/api/admin/firestore-write`, {
-      method: 'POST',
-      headers: {
-        'x-firedb-key': API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        docPath: 'game_config/balancing',
-        data: { towers }
-      })
+    const result = await makeRequest('POST', '/api/admin/firestore-write', {
+      docPath: 'game_config/balancing',
+      data: { towers }
     });
 
-    const result = await writeRes.json();
     if (result.success) {
       console.log('✅ Balance-Update erfolgreich!');
     } else {
       console.error('❌ Fehler:', result.error);
+      process.exitCode = 1;
     }
   } catch (error) {
     console.error('❌ Error:', error.message);
+    process.exitCode = 1;
   }
 }
 
