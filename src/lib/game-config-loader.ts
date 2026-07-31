@@ -1,6 +1,4 @@
 // src/lib/game-config-loader.ts
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import type { Tower, Wave } from '@/lib/game-data/types';
 
 // Import local fallback data
@@ -37,8 +35,8 @@ const getCache = (): GlobalCache => {
 
 
 /**
- * Loads game configuration (towers, waves) from Firestore.
- * If Firestore data is unavailable or fails to load, it returns the local default data.
+ * Loads game configuration (towers, waves) through the server-side public API.
+ * If the live data is unavailable or fails validation, it returns the local default data.
  * It includes a simple in-memory cache to reduce reads.
  */
 export async function loadGameConfig(): Promise<GameConfig> {
@@ -50,41 +48,42 @@ export async function loadGameConfig(): Promise<GameConfig> {
         return cache.config;
     }
 
-    console.log("Fetching game config from Firestore...");
+    console.log("Fetching live game config...");
     try {
-        const configRef = doc(db, 'game_config/balancing');
-        const docSnap = await getDoc(configRef);
-
-        if (docSnap.exists()) {
-            const data = docSnap.data();
-            const towersData = data.towers as Omit<Tower, 'dps'>[];
-
-            // Re-add the 'dps' getter to each tower object
-            const towersWithDps = towersData.map(towerData => ({
-                ...towerData,
-                get dps() {
-                    return this.damage * (1000 / this.attackSpeed);
-                }
-            }));
-            
-            const config: GameConfig = {
-                towers: towersWithDps,
-                waves: data.waves || defaultWaves,
-            };
-            
-            cache.config = config;
-            cache.lastFetchTimestamp = now;
-            console.log("Successfully loaded game config from Firestore.");
-            return config;
-        } else {
-            console.warn("Firestore config document not found. Using local fallback.");
-            const fallbackConfig = { towers: defaultTowers, waves: defaultWaves };
-            cache.config = fallbackConfig; // Cache fallback to prevent re-fetching on every call
-            cache.lastFetchTimestamp = now;
-            return fallbackConfig;
+        const response = await fetch('/api/game-config', { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`Game config request failed with status ${response.status}`);
         }
+
+        const data = await response.json() as {
+            source?: string;
+            towers?: Omit<Tower, 'dps'>[];
+            waves?: Wave[];
+        };
+        if (!Array.isArray(data.towers) || data.towers.length === 0 ||
+            !Array.isArray(data.waves) || data.waves.length === 0) {
+            throw new Error('Game config response is incomplete');
+        }
+
+        // Re-add the 'dps' getter because functions cannot be serialized as JSON.
+        const towersWithDps = data.towers.map(towerData => ({
+            ...towerData,
+            get dps() {
+                return this.damage * (1000 / this.attackSpeed);
+            }
+        }));
+
+        const config: GameConfig = {
+            towers: towersWithDps,
+            waves: data.waves,
+        };
+
+        cache.config = config;
+        cache.lastFetchTimestamp = now;
+        console.log(`Successfully loaded live game config from ${data.source || 'server'}.`);
+        return config;
     } catch (error) {
-        console.error("Error loading game config from Firestore, using local fallback:", error);
+        console.error("Error loading live game config, using local fallback:", error);
         // Do not cache config on error to allow for retries
         return { towers: defaultTowers, waves: defaultWaves };
     }
