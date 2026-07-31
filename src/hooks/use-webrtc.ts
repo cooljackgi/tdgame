@@ -27,9 +27,12 @@ export type NetMsg<T = any> = {
     payload: T;
 };
 
+type WebRTCRole = 'host' | 'client' | 'monitor';
+
 export type UseWebRTCReturn = {
     sendAction: (type: string, payload: any) => void;
     sendGameData: (type: string, payload: any) => void;
+    lastMessage: NetMsg | null;
     isConnected: boolean; 
     packetsPerSecond: number;
     bytesPerSecond: number;
@@ -56,6 +59,7 @@ export function useWebRTC(
     onActionMessage?: (msg: NetMsg) => void,
 ): UseWebRTCReturn {
     const [isConnected, setIsConnected] = useState(false);
+    const [lastMessage, setLastMessage] = useState<NetMsg | null>(null);
     
     // Stats state
     const [packetsPerSecond, setPacketsPerSecond] = useState(0);
@@ -157,6 +161,7 @@ export function useWebRTC(
         dc.onmessage = (event) => {
             try {
                 const msg: NetMsg = JSON.parse(event.data);
+                if (isMonitor) setLastMessage(msg);
                 packetCountRef.current++;
                 byteCountRef.current += event.data.length;
                 if (dc.label === 'game_data' && onGameDataMessageRef.current) {
@@ -174,9 +179,9 @@ export function useWebRTC(
         } else if (dc.label === 'actions') {
             actionsChannelRef.current = dc;
         }
-    }, [gameId, isHost]);
+    }, [gameId, isHost, isMonitor]);
 
-    const createPeerConnection = useCallback((gid: string, role: string) => {
+    const createPeerConnection = useCallback((gid: string, role: WebRTCRole) => {
         if (!gid) return null;
 
         logWebRTCEvent(gid, role, 'PC_CREATED');
@@ -194,8 +199,9 @@ export function useWebRTC(
                 });
 
                 if (selected && selected.type === 'candidate-pair') {
-                    const local = stats.get(selected.localCandidateId);
-                    const remote = stats.get(selected.remoteCandidateId);
+                    const candidatePair = selected as RTCStats & { localCandidateId?: string; remoteCandidateId?: string };
+                    const local = candidatePair.localCandidateId ? stats.get(candidatePair.localCandidateId) : undefined;
+                    const remote = candidatePair.remoteCandidateId ? stats.get(candidatePair.remoteCandidateId) : undefined;
                     logWebRTCEvent(gid, role, 'ICE_SELECTED', {
                         local: { type: local?.candidateType, ip: local?.ip, protocol: local?.protocol },
                         remote:{ type: remote?.candidateType, ip: remote?.ip, protocol: remote?.protocol }
@@ -274,7 +280,7 @@ export function useWebRTC(
         const connect = () => {
              if (stopped) return;
 
-            const currentRole = isMonitor ? 'monitor' : (isHost ? 'host' : 'client');
+            const currentRole: WebRTCRole = isMonitor ? 'monitor' : (isHost ? 'host' : 'client');
 
             if (signalingSocketRef.current && signalingSocketRef.current.readyState < WebSocket.CLOSING) {
                 signalingSocketRef.current.close();
@@ -454,5 +460,5 @@ export function useWebRTC(
         };
     }, [gameId, isHost, user, isMonitor, createPeerConnection, setupDataChannelEvents]);
 
-    return { sendAction, sendGameData, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond, fps };
+    return { sendAction, sendGameData, lastMessage, isConnected, packetsPerSecond, bytesPerSecond, averagePacketSize, sentPacketsPerSecond, sentBytesPerSecond, fps };
 }

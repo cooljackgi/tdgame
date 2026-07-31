@@ -4,6 +4,8 @@
 import type { Element, Node, SoundEvent } from '@/lib/game-data/types';
 import { GRID_COLS } from '@/lib/game-data/constants';
 
+type SfxName = Extract<SoundEvent, { kind: 'sfx' }>['name'];
+
 const audioBufferCache = new Map<string, AudioBuffer>();
 let hapticsPrimed = false;
 let lastVibeAt = 0;
@@ -30,7 +32,7 @@ async function loadAudioFile(ctx: AudioContext, url: string): Promise<AudioBuffe
 }
 
 // Sound effect mapping
-const SFX_FILES: Record<SoundEvent['kind'] extends 'sfx' ? SoundEvent['name'] : never, string> = {
+const SFX_FILES: Record<SfxName, string> = {
     'build_tower': 'build.wav',
     'upgrade_tower': 'upgrade.wav',
     'sell_tower': 'sell.wav',
@@ -200,7 +202,7 @@ class AudioManager {
         osc.stop(now + totalDuration);
     }
     
-    private playSfx(sfxName: SoundEvent['kind'] extends 'sfx' ? SoundEvent['name'] : never, volume = 0.5) {
+    private playSfx(sfxName: SfxName, volume = 0.5) {
         if (!this.ctx) return;
         const filename = SFX_FILES[sfxName];
         if (!filename) return;

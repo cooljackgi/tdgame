@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Bug, Sparkles, TestTube2, ChevronsRight, Heart, Coins, Microscope, Wifi, WifiOff, FileJson, ArrowDownUp, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '../ui/button';
 import { formatBytes } from '@/lib/utils';
-import type { Player } from './game-session';
+import type { Player } from '@/lib/game-data/types';
 
 type DebugMenuProps = {
   towers: Tower[];

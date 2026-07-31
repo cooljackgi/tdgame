@@ -355,7 +355,7 @@ export type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'pickin
 
 // Updated GameSessionState
 export type GameSessionState = {
-  gameMode: 'coop' | 'versus';
+  gameMode: 'single' | 'coop' | 'versus';
   players: Player[];
   
   // Coop-specific state

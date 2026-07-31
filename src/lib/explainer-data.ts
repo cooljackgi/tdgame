@@ -123,14 +123,14 @@ const buildGraphData = () => {
       });
 
       // Turm -> Effekt
-      if (tower.effect) {
-        const effectType = tower.effect.type;
+      tower.effects?.forEach((effect) => {
+        const effectType = effect.type;
         if (effectType === 'burn') links.push({ source: `tw-${tower.id}`, target: 'ef-burn', type: "synergy" });
         if (effectType === 'slow') links.push({ source: `tw-${tower.id}`, target: 'ef-slow', type: "synergy" });
         if (effectType === 'stun') links.push({ source: `tw-${tower.id}`, target: 'ef-stun', type: "synergy" });
         if (effectType === 'vulnerability') links.push({ source: `tw-${tower.id}`, target: 'ef-vuln', type: "synergy" });
         if (effectType === 'chain') links.push({ source: `tw-${tower.id}`, target: 'ef-chain', type: "synergy" });
-      }
+      });
     });
 
     return { nodes, links };

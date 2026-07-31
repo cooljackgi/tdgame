@@ -80,7 +80,8 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
 
 
   const towerSize = 50;
-  const showSecondEnemy = tower.effect?.type === 'chain';
+  const primaryEffect = tower.effects?.[0];
+  const showSecondEnemy = primaryEffect?.type === 'chain';
 
   const getCanvasRelativeCenter = (el: HTMLElement | null): { x: number; y: number } => {
     if (!canvasRef.current || !el) return { x: 0, y: 0 };
@@ -165,7 +166,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
               return newEnemies;
           });
   
-          if (tower.effect?.type === 'splash' || tower.effect?.type === 'poison') {
+          if (primaryEffect?.type === 'splash' || primaryEffect?.type === 'poison') {
             let vfxType: SplashRingVfxType | undefined = undefined;
             const specId = (tower as any).specId || tower.id;
             
@@ -184,7 +185,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
                 id: crypto.randomUUID(),
                 x: toPos.x, // Use pixel coords
                 y: toPos.y, // Use pixel coords
-                r: tower.effect.radius!,
+                r: primaryEffect.radius!,
                 element: tower.elements[0] || 'neutral',
                 color: elementProjectileColors[tower.elements[0] || 'neutral'],
                 vfxType,
@@ -193,7 +194,7 @@ export default function TowerDemo({ tower }: { tower: Tower }) {
             } as LiveSplashRing);
           }
   
-          if (tower.effect?.type === 'chain' && tower.effect.bounces) {
+          if (primaryEffect?.type === 'chain' && primaryEffect.bounces) {
             attacks.current.push({
                 id: crypto.randomUUID(),
                 start: now,

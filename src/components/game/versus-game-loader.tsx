@@ -416,6 +416,7 @@ export default function VersusGameLoader() {
                     
                     // CRITICAL: Send game state update to client so they know intermission started
                     deltaQueueRef.current.push([DeltaType.GAME_STATE_UPDATE, {
+                        lives: 0,
                         currentWave: currentWaveRef.current,
                         gameStatus: 'playing',
                         isIntermission: true,

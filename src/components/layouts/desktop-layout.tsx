@@ -87,6 +87,8 @@ interface DesktopLayoutProps {
   averagePacketSize?: number;
   onPing?: (kind: PingKind, row: number, col: number, msg?: string) => void;
   isPlacingPortalEntrance?: boolean;
+  gameMode?: 'coop' | 'versus';
+  onSendEnemy?: (payload: { type: any; cost: number; incomeBonus: number }) => void;
 }
 
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
@@ -118,7 +120,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    gameMode = 'coop',
+    onSendEnemy = () => {}
   } = props;
   
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -295,6 +299,8 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
                 localPlayer={localPlayer}
                 buffedTowerIds={buffedTowerIds}
                 currentWave={currentWave}
+                gameMode={gameMode}
+                onSendEnemy={onSendEnemy}
               />
             )}
         </div>

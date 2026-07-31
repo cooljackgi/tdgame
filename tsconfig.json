@@ -37,6 +37,10 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "functions",
+    "src/functions",
+    "src/functionsALT",
+    "workspace"
   ]
 }

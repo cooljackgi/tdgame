@@ -94,6 +94,8 @@ interface MobileLayoutProps {
   clientBytesReceivedPerSecond?: number;
   averagePacketSize?: number;
   isPlacingPortalEntrance?: boolean;
+  gameMode?: 'coop' | 'versus';
+  onSendEnemy?: (payload: { type: any; cost: number; incomeBonus: number }) => void;
 }
 
 const hasAllElements = (unlockedElements: Set<Element>, requiredElements: Element[]) => {
@@ -122,7 +124,9 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     clientPacketsPerSecond,
     clientBytesReceivedPerSecond,
     averagePacketSize,
-    isPlacingPortalEntrance
+    isPlacingPortalEntrance,
+    gameMode = 'coop',
+    onSendEnemy = () => {}
   } = props;
 
   const [isBuildSheetOpen, setIsBuildSheetOpen] = useState(false);
@@ -389,6 +393,8 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                         isMobile
                         buffedTowerIds={buffedTowerIds}
                         currentWave={currentWave}
+                        gameMode={gameMode}
+                        onSendEnemy={onSendEnemy}
                       />
                     )}
                   </ScrollArea>

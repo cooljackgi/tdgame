@@ -3,7 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Coins, Heart, User, RadioTower, Eye, TrendingUp, Wifi, WifiOff } from "lucide-react";
 import { cn } from '@/lib/utils';
-import type { Player } from '@/lib/game-data';
+import type { Player } from '@/lib/game-data/types';
 import { Progress } from '../ui/progress';
 
 type PlayerStatsProps = {
@@ -26,9 +26,9 @@ const PlayerStats = React.memo(function PlayerStats({ player, lives, maxLives, i
   const getStatusIcon = () => {
     if (!isOpponent || !connectionStatus) return null;
     switch(connectionStatus) {
-      case 'connected': return <Wifi className="h-4 w-4 text-green-400" title="Verbunden"/>;
-      case 'disconnected': return <WifiOff className="h-4 w-4 text-red-400" title="Verbindung verloren"/>;
-      case 'waiting': return <WifiOff className="h-4 w-4 text-yellow-400" title="Wartet auf Verbindung..."/>;
+      case 'connected': return <span title="Verbunden"><Wifi className="h-4 w-4 text-green-400" /></span>;
+      case 'disconnected': return <span title="Verbindung verloren"><WifiOff className="h-4 w-4 text-red-400" /></span>;
+      case 'waiting': return <span title="Wartet auf Verbindung..."><WifiOff className="h-4 w-4 text-yellow-400" /></span>;
       default: return null;
     }
   }

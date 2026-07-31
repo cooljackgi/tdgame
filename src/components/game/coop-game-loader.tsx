@@ -92,7 +92,7 @@ export default function CoopGameLoader() {
     const p = players.find(p => p.id === localPlayerId);
     if (p) return p;
     // Fallback (verhindert Crashes in Kindkomponenten)
-    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral'], incomePerSecond: 5, portalCooldownUntilWave: 0 } : null;
+    return localPlayerId ? { id: localPlayerId, name: 'Wird geladen…', avatarUrl: null, resources: 0, unlockedElements: ['neutral' as Element], incomePerSecond: 5, portalCooldownUntilWave: 0 } : null;
   }, [players, localPlayerId]);
 
 
@@ -188,8 +188,7 @@ export default function CoopGameLoader() {
     if (msg.type === 'deltas') {
         const deltas = msg.payload as GameDelta[];
         for (const delta of deltas) {
-            const deltaType = delta[0];
-            const deltaPayload = delta[1];
+            const [deltaType, deltaPayload] = delta;
             switch(deltaType) {
                 case DeltaType.SNAPSHOT:
                   setPlayers((deltaPayload as GameSessionState).players);
@@ -327,7 +326,7 @@ export default function CoopGameLoader() {
         const player = tempPlayers[playerIndex];
         const tempTowersByCell = JSON.parse(JSON.stringify(towersByCellRef.current));
         
-        const tempState: GameSessionState = { players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+        const tempState: GameSessionState = { gameMode: 'coop', players: tempPlayers, gameState: gameStateRef.current, towersByCell: tempTowersByCell, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
 
         switch(action){
             case 'place_portal': {
@@ -483,7 +482,7 @@ export default function CoopGameLoader() {
 
         switch (type) {
             case 'CLIENT_READY': {
-                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current }]);
+                deltaQueueRef.current.push([DeltaType.SNAPSHOT, { gameMode: 'coop', players: playersRef.current, enemies: enemiesRef.current, towersByCell: towersByCellRef.current, gameState: gameStateRef.current, currentWave: currentWaveRef.current, isIntermission: isIntermissionRef.current, waveStartCountdown, gameStatus: gameStatusRef.current, difficulty, currentPath: currentPathRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current }]);
                 return;
             }
             case 'PLACE_PORTAL_REQUEST':   onHostAction('place_portal', payload); return;
@@ -848,7 +847,7 @@ export default function CoopGameLoader() {
             return;
           }
               
-          const stateToUpdate: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+          const stateToUpdate: GameSessionState = { gameMode: 'coop', players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: currentStatus, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
           
           const { workers: nextWorkers, towersByCell: towersAfterBuild, ghosts: nextGhosts, portals: nextPortals, players: playersAfterBuild } = tickWorkers(stateToUpdate, delta, epochNow, gameConfig.towers);
           
@@ -906,7 +905,7 @@ export default function CoopGameLoader() {
                     }
                 }
               
-              let firingIds = new Set();
+              let firingIds = new Set<string>();
 
               Object.values(updatedTowers).forEach(tower => {
                   if (epochNow - tower.lastAttack >= tower.attackSpeed) {
@@ -1107,7 +1106,7 @@ export default function CoopGameLoader() {
   };
   
   const handlePlaceAction = useCallback((row: number, col: number) => {
-    const state: GameSessionState = { players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
+    const state: GameSessionState = { gameMode: 'coop', players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
     
     if (portalPhase !== 'idle') {
         if (portalPhase === 'entrance') {

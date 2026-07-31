@@ -80,7 +80,7 @@ const TowerContextMenu: React.FC<TowerContextMenuProps> = ({
         {tower.ownerId === localPlayer?.id && availableUpgrades.map((upgrade, index) => {
           const upgradeCost = upgrade.cost - Math.floor(tower.cost * 0.75);
           const canAfford = (localPlayer?.resources ?? 0) >= upgradeCost;
-          const specId = upgrade.specId || upgrade.id;
+          const specId = upgrade.id;
           const variant = 
               specId.includes('-1a') || specId.includes('-2a') ? "sniper" :
               specId.includes('-1b') || specId.includes('-2b') ? "ballista" :

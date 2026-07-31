@@ -1,6 +1,6 @@
 // src/components/explainer/vfx-renderer.ts
 
-import type { Tower, SplashRing, Element, Attack, PoisonCloud, PersistentCloudEffect, PersistentCloud } from '@/lib/game-data/types';
+import type { Tower, SplashRing, Element, Attack, PersistentCloudEffect, PersistentCloud } from '@/lib/game-data/types';
 import { elementProjectileColors } from '@/lib/game-data/constants';
 
 const CELL_SIZE = 64;

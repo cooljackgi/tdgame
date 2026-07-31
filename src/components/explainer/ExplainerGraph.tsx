@@ -317,6 +317,7 @@ export default function ExplainerGraph({ nodes: initialNodes, links: initialLink
           {/* Links */}
           <g strokeLinecap="round">
             {links.map((l, i) => {
+              if (typeof l.source === 'string' || typeof l.target === 'string') return null;
               const source = l.source as SimulationNode;
               const target = l.target as SimulationNode;
               if (!source.x || !target.x) return null;

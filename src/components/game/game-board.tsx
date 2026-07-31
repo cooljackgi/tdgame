@@ -350,11 +350,11 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   const towerCooldownsRef = useRef(new Map<string, number>());
 
-  const queuePing = useCallback((cell: Node) => {
-    const pingId = `${cell.x}-${cell.y}`;
+  const queuePing = useCallback((ping: PingPayload) => {
+    const pingId = ping.id;
     const existingTimeout = pingTimeoutsRef.current.get(pingId);
     if (existingTimeout) clearTimeout(existingTimeout);
-    pingsRef.current.set(pingId, { x: cell.x, y: cell.y });
+    pingsRef.current.set(pingId, ping);
     const timeoutId = setTimeout(() => {
       pingsRef.current.delete(pingId);
       pingTimeoutsRef.current.delete(pingId);

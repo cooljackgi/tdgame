@@ -210,7 +210,7 @@ export default function ScoreboardPage() {
                            </div>
                            <div className="flex-grow">
                                <p className="font-semibold">{result.playerName}</p>
-                               <p className="text-xs text-muted-foreground">{new Date(result.date).toLocaleString('de-DE')}</p>
+                               <p className="text-xs text-muted-foreground">{(result.date instanceof Timestamp ? result.date.toDate() : new Date(result.date)).toLocaleString('de-DE')}</p>
                            </div>
                            {result.finalTowers && <ScoreboardMiniMap towersByCell={result.finalTowers} />}
                            <div className="flex items-center gap-4">
