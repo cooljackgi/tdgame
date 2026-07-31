@@ -4,18 +4,8 @@ runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.
   maxInstances: 1
-build:
-  run:
-    - npm install
-    - npm run build
-  env:
-    - variable: NODE_ENV
-      value: production
-run:
-  run:
-    - npm run start
-  env:
-    - variable: NODE_ENV
-      value: production
-    - variable: FIRESTORE_READ_API_KEY
-      secret: FIRESTORE_READ_API_KEY@4
+env:
+  - variable: FIRESTORE_READ_API_KEY
+    secret: FIRESTORE_READ_API_KEY@4
+    availability:
+      - RUNTIME
