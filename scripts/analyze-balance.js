@@ -1,4 +1,9 @@
 const { fetchData } = require('./balance-api');
+const {
+  estimateWaveDurationSeconds,
+  findMixedBurnUnits,
+  getTierStats,
+} = require('./balance-model');
 
 async function analyzeBalance() {
   try {
@@ -7,55 +12,50 @@ async function analyzeBalance() {
     const towers = data.data.towers;
 
     console.log('================= WELLEN-SCHWIERIGKEITSANSTIEG =================\n');
-
-    waves.slice(0, 50).forEach((wave, idx) => {
-      const w = wave.enemies || {};
-      const totalHealthPerWave = (w.count || 0) * (w.health || 0);
-      const armor = w.armor || 0;
-      const flatArmor = Number(armor).toFixed(0);
-      console.log(`Wave ${idx + 1}: ${w.count || 0} x ${w.type || '?'} (${w.health || 0} HP, ${flatArmor} ARM) = ${totalHealthPerWave} HP/Welle`);
+    waves.slice(0, 50).forEach((wave, index) => {
+      const enemies = wave.enemies || {};
+      const totalHealth = (enemies.count || 0) * (enemies.health || 0);
+      const duration = estimateWaveDurationSeconds(wave);
+      const requiredDps = duration > 0 ? totalHealth / duration : 0;
+      console.log(
+        `Wave ${index + 1}: ${enemies.count || 0} x ${enemies.type || '?'} ` +
+        `(${enemies.health || 0} HP, ${Number(enemies.armor || 0).toFixed(0)} ARM) ` +
+        `= ${totalHealth} HP | Basisfenster ${duration.toFixed(1)}s | ~${requiredDps.toFixed(0)} DPS`
+      );
     });
 
     console.log('\n================= TOWER DPS ANALYSE (TOP 10) =================\n');
-
     const towerDps = towers
-      .filter(t => t.damage > 0)
-      .map(t => ({
-        name: t.name,
-        tier: t.tier,
-        damage: t.damage,
-        attackSpeed: t.attackSpeed,
-        cost: t.cost,
-        dps: t.damage / (t.attackSpeed / 1000)
+      .filter(tower => tower.damage > 0 && tower.attackSpeed > 0)
+      .map(tower => ({
+        name: tower.name,
+        tier: tower.tier,
+        cost: tower.cost,
+        dps: tower.damage / (tower.attackSpeed / 1000),
       }))
-      .sort((a, b) => b.dps - a.dps)
+      .sort((left, right) => right.dps - left.dps)
       .slice(0, 10);
 
-    towerDps.forEach((t, idx) => {
-      const efficiency = (t.dps / t.cost * 100).toFixed(1);
-      console.log(`${idx + 1}. ${t.name} (T${t.tier}): ${t.dps.toFixed(2)} DPS | Cost: ${t.cost} | Effizienz: ${efficiency}`);
+    towerDps.forEach((tower, index) => {
+      const efficiency = tower.cost > 0 ? tower.dps / tower.cost * 100 : 0;
+      console.log(`${index + 1}. ${tower.name} (T${tower.tier}): ${tower.dps.toFixed(2)} DPS | Cost: ${tower.cost} | Effizienz: ${efficiency.toFixed(1)}`);
     });
 
-    console.log('\n================= PROBLEM-ANALYSE =================\n');
+    console.log('\n================= KOSTEN- UND DATENPRÜFUNG =================\n');
+    console.log('Durchschnittliche Kosten pro Tier (alle Türme, einheitliche Berechnung):');
+    for (const stats of getTierStats(towers)) {
+      console.log(`  Tier ${stats.tier}: Ø${stats.average.toFixed(0)} (${stats.min}-${stats.max}, ${stats.count} Türme)`);
+    }
 
-    // Check for cost jumps
-    const costByTier = {};
-    towers.forEach(t => {
-      if (!costByTier[t.tier]) costByTier[t.tier] = [];
-      costByTier[t.tier].push(t.cost);
-    });
-
-    console.log('Durchschnittliche Kosten pro Tier:');
-    Object.keys(costByTier).sort((a, b) => a - b).forEach(tier => {
-      const costs = costByTier[tier];
-      const avg = (costs.reduce((a, b) => a + b, 0) / costs.length).toFixed(0);
-      const min = Math.min(...costs);
-      const max = Math.max(...costs);
-      console.log(`  Tier ${tier}: Ø${avg} (${min}-${max})`);
-    });
+    const burnUnits = findMixedBurnUnits(towers);
+    if (burnUnits.mixed) {
+      console.log('\n⚠️  Burn-Potency nutzt gemischte Einheiten:');
+      console.log(`  Relativ zum Trefferschaden: ${burnUnits.relative.map(entry => `${entry.tower}=${entry.potency}`).join(', ')}`);
+      console.log(`  Absoluter DPS-Wert: ${burnUnits.absolute.map(entry => `${entry.tower}=${entry.potency}`).join(', ')}`);
+      console.log('  Die Laufzeit muss Werte > 1 als absoluten DPS-Wert behandeln.');
+    }
 
     console.log('\n✅ Balancing-Analyse abgeschlossen');
-
   } catch (error) {
     console.error('❌ Error:', error.message);
     process.exitCode = 1;

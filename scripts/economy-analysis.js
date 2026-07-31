@@ -1,117 +1,93 @@
 const { fetchData } = require('./balance-api');
+const {
+  NORMAL_START_RESOURCES,
+  PASSIVE_INCOME_PER_SECOND,
+  average,
+  median,
+  buildEconomyTimeline,
+  estimateTowerDps,
+  getAcquisitionCosts,
+  getTierStats,
+} = require('./balance-model');
 
 async function fullEconomyAnalysis() {
   try {
     console.log('📖 Lade Balancing-Daten...\n');
     const data = await fetchData('/api/admin/firestore-read?mode=balancing');
-    const waves = data.data.waves;
+    const waves = data.data.waves.slice(0, 50);
     const towers = data.data.towers;
+    const timeline = buildEconomyTimeline(waves);
 
-    console.log('================= GOLD-WIRTSCHAFT =================\n');
+    console.log('================= RESSOURCEN-WIRTSCHAFT =================\n');
+    console.log(`Normal: ${NORMAL_START_RESOURCES} Startressourcen + ${PASSIVE_INCOME_PER_SECOND}/s + Gegner-Bounty`);
+    console.log('Die alte goldReward-Eigenschaft wird nicht verwendet, weil das Spiel bei Kills bounty auszahlt.\n');
+    console.log('Erste 10 Wellen (Brutto-Budget ohne Ausgaben):');
+    timeline.slice(0, 10).forEach(entry => {
+      console.log(
+        `  Wave ${entry.wave}: vorher ${entry.beforeWave.toFixed(0)} | ` +
+        `Bounty ${entry.bounty.toFixed(0)} | Dauer ~${entry.waveSeconds.toFixed(1)}s | danach ${entry.afterWave.toFixed(0)}`
+      );
+    });
 
-    let totalGold = 0;
-    const goldPerWave = [];
-    
-    for (let i = 0; i < Math.min(50, waves.length); i++) {
-      const wave = waves[i];
-      const enemies = wave.enemies || {};
-      const count = enemies.count || 0;
-      const goldPerEnemy = enemies.goldReward || 10; // Default falls nicht definiert
-      const waveGold = count * goldPerEnemy;
-      totalGold += waveGold;
-      goldPerWave.push({ wave: i + 1, gold: waveGold, total: totalGold });
+    console.log('\nRessourcen-Meilensteine:');
+    [5, 10, 15, 20, 25, 30, 40, 50].forEach(waveNumber => {
+      const entry = timeline[waveNumber - 1];
+      if (entry) console.log(`  Vor Wave ${waveNumber}: ${entry.beforeWave.toFixed(0)} | Nach Wave: ${entry.afterWave.toFixed(0)}`);
+    });
+
+    console.log('\n================= TOWER- UND UPGRADE-KOSTEN =================\n');
+    const acquisitionCosts = getAcquisitionCosts(towers);
+    console.log('Angezeigter Zielwert / günstigster kumulierter Bau- und Upgradeaufwand:');
+    const displayedStats = getTierStats(towers);
+    const acquisitionStats = getTierStats(towers, tower => acquisitionCosts.get(tower.id));
+    for (const displayed of displayedStats) {
+      const acquisition = acquisitionStats.find(entry => entry.tier === displayed.tier);
+      console.log(
+        `  Tier ${displayed.tier}: Ziel Ø${displayed.average.toFixed(0)} | ` +
+        `Erwerb Ø${acquisition.average.toFixed(0)} (Median ${acquisition.median.toFixed(0)})`
+      );
     }
 
-    console.log('Gold-Einkommen (erste 10 Wellen):');
-    goldPerWave.slice(0, 10).forEach(g => {
-      console.log(`  Wave ${g.wave}: ${g.gold} Gold | Gesamt: ${g.total}`);
+    console.log('\n================= ARMOR-BEREINIGTE WAVE-10-PRÜFUNG =================\n');
+    const wave10 = waves[9];
+    const enemies = wave10.enemies || {};
+    const budgetBeforeWave10 = timeline[9].beforeWave;
+    const tier2 = towers.filter(tower => tower.tier === 2);
+    const tier2Costs = tier2.map(tower => acquisitionCosts.get(tower.id));
+    const medianTier2Cost = median(tier2Costs);
+    const affordableTier2 = Math.floor(budgetBeforeWave10 / medianTier2Cost);
+    const tier2Dps = tier2.map(tower => ({
+      name: tower.name,
+      ...estimateTowerDps(tower, enemies.armor || 0, enemies.count || 1),
+    }));
+    const medianEffectiveDps = median(tier2Dps.map(tower => tower.total));
+    const averageEffectiveDps = average(tier2Dps.map(tower => tower.total));
+    const requiredDps = (enemies.count * enemies.health) / timeline[9].waveSeconds;
+    const portfolioDps = affordableTier2 * medianEffectiveDps;
+    const engagementMultiplier = portfolioDps > 0 ? requiredDps / portfolioDps : Infinity;
+
+    console.log(`Budget vor Wave 10: ${budgetBeforeWave10.toFixed(0)} (inkl. Startkapital und passivem Einkommen)`);
+    console.log(`Median-Erwerbskosten Tier 2: ${medianTier2Cost.toFixed(0)} → theoretisch bis zu ${affordableTier2} Türme`);
+    console.log(`Tier-2-DPS gegen ${enemies.armor} Rüstung: Median ${medianEffectiveDps.toFixed(1)}, Ø${averageEffectiveDps.toFixed(1)}`);
+    console.log(`Theoretisches Portfolio: ~${portfolioDps.toFixed(0)} DPS vs. ~${requiredDps.toFixed(0)} benötigte DPS`);
+    console.log(`Benötigte Verlängerung gegenüber dem Basispfad: ~${engagementMultiplier.toFixed(1)}x`);
+
+    console.log('\nEffektivste Tier-2-Türme gegen Wave 10:');
+    tier2Dps.sort((left, right) => right.total - left.total).slice(0, 5).forEach((tower, index) => {
+      console.log(`  ${index + 1}. ${tower.name}: ${tower.total.toFixed(1)} DPS (${tower.direct.toFixed(1)} direkt + ${tower.effects.toFixed(1)} Effekte)`);
     });
-
-    console.log('\nGold-Meilensteine:');
-    [5, 10, 15, 20, 25, 30, 40, 50].forEach(w => {
-      const gp = goldPerWave[w - 1];
-      if (gp) console.log(`  Nach Wave ${w}: ${gp.total} Gold gesamt`);
-    });
-
-    console.log('\n================= TOWER-KOSTEN vs VERFÜGBARES GOLD =================\n');
-
-    // Tier-0 Towers (Start)
-    const tier0Avg = towers.filter(t => t.tier === 0 && t.cost > 1).reduce((sum, t) => sum + t.cost, 0) / 
-                     towers.filter(t => t.tier === 0 && t.cost > 1).length;
-    
-    // Tier-1 Towers
-    const tier1 = towers.filter(t => t.tier === 1);
-    const tier1Avg = tier1.reduce((sum, t) => sum + t.cost, 0) / tier1.length;
-    
-    // Tier-2 Towers
-    const tier2 = towers.filter(t => t.tier === 2);
-    const tier2Avg = tier2.reduce((sum, t) => sum + t.cost, 0) / tier2.length;
-    
-    // Tier-3 Towers
-    const tier3 = towers.filter(t => t.tier === 3);
-    const tier3Avg = tier3.reduce((sum, t) => sum + t.cost, 0) / tier3.length;
-
-    console.log('Durchschnittliche Tower-Kosten:');
-    console.log(`  Tier 0: ~${tier0Avg.toFixed(0)} Gold`);
-    console.log(`  Tier 1: ~${tier1Avg.toFixed(0)} Gold`);
-    console.log(`  Tier 2: ~${tier2Avg.toFixed(0)} Gold`);
-    console.log(`  Tier 3: ~${tier3Avg.toFixed(0)} Gold`);
-
-    console.log('\n================= SCHADEN vs GEGNER-HP =================\n');
-
-    // Berechne wie viel DPS man braucht
-    const criticalWaves = [1, 5, 10, 15, 20, 25, 30, 40, 50];
-    
-    console.log('Benötigter DPS pro Welle (bei 60 Sekunden):');
-    criticalWaves.forEach(waveNum => {
-      if (waveNum <= waves.length) {
-        const wave = waves[waveNum - 1];
-        const e = wave.enemies || {};
-        const totalHP = (e.count || 0) * (e.health || 0);
-        const requiredDPS = totalHP / 60; // Annahme: 60 Sekunden pro Welle
-        console.log(`  Wave ${waveNum}: ${totalHP.toFixed(0)} HP gesamt → ~${requiredDPS.toFixed(0)} DPS benötigt`);
-      }
-    });
-
-    console.log('\n================= LEISTBARKEIT-ANALYSE =================\n');
-
-    // Kann man sich genug Towers leisten?
-    const goldAt10 = goldPerWave[9]?.total || 0;
-    const goldAt20 = goldPerWave[19]?.total || 0;
-    const goldAt30 = goldPerWave[29]?.total || 0;
-
-    const tier2TowersAt10 = Math.floor(goldAt10 / tier2Avg);
-    const tier2TowersAt20 = Math.floor(goldAt20 / tier2Avg);
-    const tier3TowersAt30 = Math.floor(goldAt30 / tier3Avg);
-
-    console.log('Wie viele Towers kann man sich leisten?');
-    console.log(`  Nach Wave 10: ${goldAt10} Gold → ~${tier2TowersAt10} Tier-2 Towers`);
-    console.log(`  Nach Wave 20: ${goldAt20} Gold → ~${tier2TowersAt20} Tier-2 Towers`);
-    console.log(`  Nach Wave 30: ${goldAt30} Gold → ~${tier3TowersAt30} Tier-3 Towers`);
-
-    // Jetzt schauen: Reicht das?
-    const wave10HP = (waves[9].enemies.count || 0) * (waves[9].enemies.health || 0);
-    const wave20HP = (waves[19].enemies.count || 0) * (waves[19].enemies.health || 0);
-    
-    const avgTier2DPS = tier2.reduce((sum, t) => {
-      const dps = t.damage / (t.attackSpeed / 1000);
-      return sum + dps;
-    }, 0) / tier2.length;
-
-    const actualDPSAt10 = tier2TowersAt10 * avgTier2DPS;
-    const requiredDPSAt10 = wave10HP / 60;
 
     console.log('\n================= BALANCING-FAZIT =================\n');
-    console.log(`Wave 10: ${actualDPSAt10.toFixed(0)} DPS verfügbar vs ${requiredDPSAt10.toFixed(0)} DPS benötigt`);
-    
-    if (actualDPSAt10 < requiredDPSAt10 * 0.5) {
-      console.log('⚠️  PROBLEM: Zu wenig DPS möglich! Spieler haben nicht genug Gold.');
-    } else if (actualDPSAt10 > requiredDPSAt10 * 2) {
-      console.log('⚠️  PROBLEM: Zu viel DPS! Game ist zu einfach.');
+    console.log('Die Rechnung ist eine Brutto-Obergrenze: Bauzeiten, Reichweite, Elemente und tatsächliches Mazing reduzieren die nutzbare Leistung.');
+    if (engagementMultiplier < 0.5) {
+      console.log('⚠️  Hohes Risiko für eine zu leichte frühe Spielphase – Effekt- und Upgradeökonomie prüfen.');
+    } else if (engagementMultiplier <= 1.5) {
+      console.log('✓ Wave 10 ist bereits mit einem kurzen Weg plausibel schaffbar.');
+    } else if (engagementMultiplier <= 4.5) {
+      console.log('✓ Wave 10 verlangt deutliches Mazing, liegt aber noch im vorgesehenen Spielfeld-Korridor.');
     } else {
-      console.log('✓ Balance scheint OK zu sein.');
+      console.log('⚠️  Wave 10 verlangt nahezu maximales Mazing; mit echten Spielständen weiter beobachten.');
     }
-
   } catch (error) {
     console.error('❌ Error:', error.message);
     process.exitCode = 1;

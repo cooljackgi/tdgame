@@ -11,6 +11,8 @@ import type {
   import { loadGameConfig, type GameConfig } from './game-config-loader';
   
   const TILE_SIZE = 64;
+  export const resolveDotDamagePerSecond = (potency: number, hitDamage: number) =>
+    potency <= 1 ? potency * hitDamage : potency;
   export const centerOf = (row: number, col: number) => ({
     x: (col - 1) * TILE_SIZE + TILE_SIZE / 2,
     y: (row - 1) * TILE_SIZE + TILE_SIZE / 2,
@@ -148,7 +150,12 @@ import type {
                   currentTarget.effects.push({ type: 'stun', expires: now + (effect.duration ?? 500), potency: 1 });
               }
               if (effect.type === 'burn' && Math.random() < (effect.chance ?? 1)) {
-                  currentTarget.effects.push({ type: 'burn', expires: now + (effect.duration ?? 3000), potency: (effect.potency ?? 0) * damageAmount, lastTick: now });
+                  currentTarget.effects.push({
+                      type: 'burn',
+                      expires: now + (effect.duration ?? 3000),
+                      potency: resolveDotDamagePerSecond(effect.potency ?? 0, damageAmount),
+                      lastTick: now,
+                  });
               }
               if (effect.type === 'vulnerability' && Math.random() < (effect.chance ?? 1)) {
                   if (existingEffect) {
