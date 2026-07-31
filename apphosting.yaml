@@ -18,4 +18,4 @@ run:
     - variable: NODE_ENV
       value: production
     - variable: FIRESTORE_READ_API_KEY
-      secret: FIRESTORE_READ_API_KEY
+      secret: FIRESTORE_READ_API_KEY@4
