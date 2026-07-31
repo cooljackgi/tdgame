@@ -32,7 +32,16 @@ interface AdminOverview {
   environment: string;
   metrics: { games: number; scores: number; towers: number; waves: number };
   checks: Record<string, { ok: boolean; latencyMs?: number; towers?: number; waves?: number; status?: number }>;
-  recentGames: Array<{ id: string; name: string; status: string; wave: number; createdAt: string | null }>;
+  recentGames: Array<{
+    id: string;
+    name: string;
+    status: string;
+    wave: number;
+    createdAt: string | null;
+    mode: string;
+    difficulty: string | null;
+    kind: 'multiplayer' | 'singleplayer';
+  }>;
 }
 
 const statusLabels: Record<string, string> = {
@@ -96,8 +105,8 @@ export default function AdminCenterPage() {
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: 'Spiele', value: overview?.metrics.games, icon: Gamepad2, href: '/admin/analytics' },
-          { label: 'Highscores', value: overview?.metrics.scores, icon: Trophy, href: '/scoreboard' },
+          { label: 'Spiele gesamt', value: overview?.metrics.games, icon: Gamepad2, href: '/admin/analytics' },
+          { label: 'Einzelspieler', value: overview?.metrics.scores, icon: Trophy, href: '/scoreboard' },
           { label: 'Türme', value: overview?.metrics.towers, icon: Swords, href: '/balancing' },
           { label: 'Wellen', value: overview?.metrics.waves, icon: Waves, href: '/balancing/waves' },
         ].map(({ label, value, icon: Icon, href }) => (
@@ -144,16 +153,24 @@ export default function AdminCenterPage() {
 
         <Card>
           <CardHeader className="flex-row items-start justify-between space-y-0">
-            <div><CardTitle>Letzte Spiele</CardTitle><CardDescription>Die zuletzt angelegten Sessions in Firestore.</CardDescription></div>
+            <div><CardTitle>Letzte Spiele</CardTitle><CardDescription>Einzelspieler, Coop und Versus gemeinsam nach Spielzeit.</CardDescription></div>
             <Button asChild variant="outline" size="sm"><Link href="/admin/analytics">Alle anzeigen</Link></Button>
           </CardHeader>
           <CardContent>
             <Table>
-              <TableHeader><TableRow><TableHead>Spiel</TableHead><TableHead>Status</TableHead><TableHead>Welle</TableHead><TableHead className="text-right">Zeit</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Spieler / Spiel</TableHead><TableHead>Modus</TableHead><TableHead>Status</TableHead><TableHead>Welle</TableHead><TableHead className="text-right">Zeit</TableHead></TableRow></TableHeader>
               <TableBody>
                 {overview?.recentGames.map((game) => (
-                  <TableRow key={game.id}>
-                    <TableCell><Link className="font-medium hover:text-primary" href={`/admin/analytics/${game.id}`}>{game.name}</Link><div className="max-w-48 truncate font-mono text-[10px] text-muted-foreground">{game.id}</div></TableCell>
+                  <TableRow key={game.kind + '-' + game.id}>
+                    <TableCell>
+                      {game.kind === 'multiplayer' ? (
+                        <Link className="font-medium hover:text-primary" href={'/admin/analytics/' + game.id}>{game.name}</Link>
+                      ) : (
+                        <Link className="font-medium hover:text-primary" href="/scoreboard">{game.name}</Link>
+                      )}
+                      <div className="max-w-48 truncate font-mono text-[10px] text-muted-foreground">{game.id}</div>
+                    </TableCell>
+                    <TableCell><Badge variant="outline">{game.mode}</Badge>{game.difficulty && <div className="mt-1 text-[10px] text-muted-foreground">{game.difficulty}</div>}</TableCell>
                     <TableCell><Badge variant="secondary">{game.status}</Badge></TableCell>
                     <TableCell>{game.wave}</TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground">{game.createdAt ? new Date(game.createdAt).toLocaleString('de-DE') : '–'}</TableCell>

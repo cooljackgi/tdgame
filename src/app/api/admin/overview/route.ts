@@ -77,11 +77,12 @@ export async function GET(req: NextRequest) {
     const scoresRef = db.collection('scores');
     const balancingRef = db.doc('game_config/balancing');
 
-    const [gamesCountSnap, scoresCountSnap, balancingSnap, recentGamesSnap, signaling, functions] = await Promise.all([
+    const [gamesCountSnap, scoresCountSnap, balancingSnap, recentGamesSnap, recentScoresSnap, signaling, functions] = await Promise.all([
       gamesRef.count().get(),
       scoresRef.count().get(),
       balancingRef.get(),
       gamesRef.orderBy('createdAt', 'desc').limit(8).get(),
+      scoresRef.orderBy('date', 'desc').limit(8).get(),
       checkSignaling(),
       checkCallableFunction(),
     ]);
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
     const balancing = balancingSnap.data() || {};
     const towers = Array.isArray(balancing.towers) ? balancing.towers : [];
     const waves = Array.isArray(balancing.waves) ? balancing.waves : [];
-    const recentGames = recentGamesSnap.docs.map((doc) => {
+    const recentMultiplayerGames = recentGamesSnap.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
@@ -97,8 +98,31 @@ export async function GET(req: NextRequest) {
         status: data.gameStatus || 'unbekannt',
         wave: typeof data.currentWave === 'number' ? data.currentWave : 0,
         createdAt: toIsoDate(data.createdAt),
+        mode: data.gameMode === 'versus' ? 'Versus' : 'Coop',
+        difficulty: typeof data.difficulty === 'string' ? data.difficulty : null,
+        kind: 'multiplayer' as const,
       };
     });
+    const recentSinglePlayerGames = recentScoresSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        name: data.playerName || 'Anonymer Spieler',
+        status: data.won ? 'Gewonnen' : 'Game Over',
+        wave: typeof data.wave === 'number' ? data.wave : 0,
+        createdAt: toIsoDate(data.date),
+        mode: 'Einzelspieler',
+        difficulty: typeof data.difficulty === 'string' ? data.difficulty : null,
+        kind: 'singleplayer' as const,
+      };
+    });
+    const recentGames = [...recentMultiplayerGames, ...recentSinglePlayerGames]
+      .sort((left, right) => {
+        const leftTime = left.createdAt ? Date.parse(left.createdAt) : 0;
+        const rightTime = right.createdAt ? Date.parse(right.createdAt) : 0;
+        return rightTime - leftTime;
+      })
+      .slice(0, 8);
 
     const firestoreLatencyMs = Date.now() - startedAt;
     const checks = {
@@ -116,7 +140,7 @@ export async function GET(req: NextRequest) {
       projectId: adminApp.options.projectId || process.env.GCLOUD_PROJECT || 'studio-8208926735-5ea4c',
       environment: process.env.NODE_ENV || 'unknown',
       metrics: {
-        games: gamesCountSnap.data().count,
+        games: gamesCountSnap.data().count + scoresCountSnap.data().count,
         scores: scoresCountSnap.data().count,
         towers: towers.length,
         waves: waves.length,
