@@ -371,7 +371,12 @@ import type {
             } else if (order.type === 'place_portal') {
                 completePlacePortalPhase(playerState, newWorker, currentWave);
             }
-            startNextOrder(newWorker);
+            // Portal construction has two phases. Completing the entrance keeps
+            // the current order alive and sends the worker to the exit. Only
+            // advance the queue once the current order was actually completed.
+            if (!newWorker.current) {
+                startNextOrder(newWorker);
+            }
         }
     }
     return newWorker;
@@ -467,7 +472,7 @@ function completePlacePortalPhase(playerState: PlayerGameState, w: Worker, curre
               entrance: order.entrance,
               exit: order.exit,
               active: true,
-              usesLeft: Infinity,
+              usesLeft: Number.MAX_SAFE_INTEGER,
               perEnemyCooldownMs: 5000,
               expiresAt: 0, 
           });

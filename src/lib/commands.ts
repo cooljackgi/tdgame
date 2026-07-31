@@ -122,6 +122,7 @@ export function enqueuePlacePortalOrder(
 
     if (!player || player.resources < cost) return state;
     if ((player.portalCooldownUntilWave || 0) > state.currentWave) return state;
+    if (entrance.row === exit.row && entrance.col === exit.col) return state;
     
     let playerState: PlayerGameState;
     if (isVersus) {
@@ -134,6 +135,7 @@ export function enqueuePlacePortalOrder(
     const workers = Array.isArray(playerState.workers) ? playerState.workers : [];
     const ghosts = Array.isArray(playerState.ghosts) ? playerState.ghosts : [];
     const towersByCell = playerState.towersByCell || {};
+    const portals = Array.isArray(playerState.portals) ? playerState.portals : [];
 
     const worker = workers.find(w => w.id === workerId);
     if(!worker) return state;
@@ -142,7 +144,11 @@ export function enqueuePlacePortalOrder(
     // Simplified validation checks
     const isOccupied = (r: number, c: number) => 
         Object.values(towersByCell).some(t => t.position.row === r && t.position.col === c) ||
-        (ghosts ?? []).some(g => g.row === r && g.col === c);
+        ghosts.some(g => g.row === r && g.col === c) ||
+        portals.some(portal =>
+          (portal.entrance.row === r && portal.entrance.col === c) ||
+          (portal.exit.row === r && portal.exit.col === c)
+        );
 
     if (isOccupied(entrance.row, entrance.col) || isOccupied(exit.row, exit.col)) return state;
 

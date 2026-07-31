@@ -379,6 +379,11 @@ export default function SinglePlayerGame({
         const player = localPlayerRef.current;
         const shouldPickElement = (player?.unlockedElements?.length ?? 0) < expectedElements;
 
+        // Portals last for one wave. Their invisible construction markers must
+        // be removed as well, otherwise both cells remain blocked forever.
+        setPortals([]);
+        setGhosts(prev => prev.filter(ghost => !ghost.towerId.startsWith('portal_')));
+
         if (shouldPickElement && (nextWaveIndex % 5 === 0)) {
             setGameStatus('picking-element');
             setIsIntermission(true);
@@ -386,7 +391,6 @@ export default function SinglePlayerGame({
             setCurrentWave(nextWaveIndex);
             setIsIntermission(true);
             setWaveStartCountdown(INTERMISSION_TIME);
-            setPortals([]);
         }
     }, [gameConfig, handleGameEnd]);
 
@@ -410,13 +414,45 @@ export default function SinglePlayerGame({
     const handlePlaceAction = useCallback((row: number, col: number) => {
         const state: GameSessionState = { gameMode: 'single', players: playersRef.current, gameState: gameStateRef.current, towersByCell: towersByCellRef.current, enemies: enemiesRef.current, currentWave: currentWaveRef.current, difficulty: difficultyRef.current, gameStatus: gameStatusRef.current, currentPath: currentPathRef.current, waveStartCountdown: 0, isIntermission: isIntermissionRef.current, workers: workersRef.current, ghosts: ghostsRef.current, portals: portalsRef.current };
         if (portalPhase !== 'idle') {
+            const isPortalCellOccupied = (cell: Node) =>
+                Object.values(towersByCellRef.current).some(tower =>
+                    tower.position.row === cell.row && tower.position.col === cell.col
+                ) ||
+                ghostsRef.current.some(ghost => ghost.row === cell.row && ghost.col === cell.col) ||
+                portalsRef.current.some(portal =>
+                    (portal.entrance.row === cell.row && portal.entrance.col === cell.col) ||
+                    (portal.exit.row === cell.row && portal.exit.col === cell.col)
+                );
+
             if (portalPhase === 'entrance') {
+                if (isPortalCellOccupied({ row, col })) {
+                    toast({ title: 'Portal kann hier nicht gebaut werden.', description: 'Das Feld ist bereits belegt.', variant: 'destructive' });
+                    return;
+                }
                 setPortalEntrance({ row, col });
                 setPortalPhase('exit');
                 return;
             } else if (portalPhase === 'exit' && portalEntrance) {
+                if (portalEntrance.row === row && portalEntrance.col === col) {
+                    toast({ title: 'Ungültiger Portal-Ausgang.', description: 'Eingang und Ausgang müssen auf verschiedenen Feldern liegen.', variant: 'destructive' });
+                    return;
+                }
+                if (isPortalCellOccupied({ row, col })) {
+                    toast({ title: 'Portal kann hier nicht gebaut werden.', description: 'Das Feld ist bereits belegt.', variant: 'destructive' });
+                    return;
+                }
+
+                const queueLengthBefore = state.workers?.find(worker => worker.id === 'worker-1')?.queue.length ?? 0;
                 const newState = enqueuePlacePortalOrder(state, "worker-1", portalEntrance, { row, col }, Date.now());
-                setPlayers(newState.players);
+                const queueLengthAfter = newState.workers?.find(worker => worker.id === 'worker-1')?.queue.length ?? 0;
+                if (queueLengthAfter <= queueLengthBefore) {
+                    toast({ title: 'Portalauftrag konnte nicht gestartet werden.', description: 'Prüfe Ressourcen und Abklingzeit.', variant: 'destructive' });
+                    return;
+                }
+                setPlayers(newState.players.map(player => ({
+                    ...player,
+                    unlockedElements: [...player.unlockedElements],
+                })));
                 setWorkers(newState.workers);
                 setPortals(newState.portals ?? []);
                 cancelInteractions();
@@ -431,7 +467,7 @@ export default function SinglePlayerGame({
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
         }
-    }, [selectedTowerToBuild, portalPhase, portalEntrance, cancelInteractions]);
+    }, [selectedTowerToBuild, portalPhase, portalEntrance, cancelInteractions, toast]);
 
     const handleUpgradeTower = useCallback((upgradeId: string) => {
         const player = localPlayerRef.current;
