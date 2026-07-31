@@ -952,6 +952,7 @@ export default function SinglePlayerGame({
                     gameStatus={gameStatus} 
                     resetGame={onExit}
                     towers={gameConfig.towers} 
+                    waves={gameConfig.waves}
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies}

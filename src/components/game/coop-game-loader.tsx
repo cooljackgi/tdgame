@@ -1175,6 +1175,7 @@ export default function CoopGameLoader() {
                     gameStatus={gameStatus} 
                     resetGame={onExit}
                     towers={gameConfig.towers} 
+                    waves={gameConfig.waves}
                     setTowers={() => {}} 
                     placedTowers={placedTowers} 
                     enemies={enemies}

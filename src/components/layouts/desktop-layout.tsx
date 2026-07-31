@@ -14,8 +14,7 @@ import WaveStartTimer from '@/components/game/wave-start-timer';
 import WavePreview from '@/components/game/wave-preview';
 
 // Import types from page.tsx or a shared types file
-import type { Tower, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal } from '@/lib/game-data/types';
-import { waves } from '@/lib/game-data/enemies';
+import type { Tower, Wave, PlacedTower, Enemy, Node, Element, Player, GameState, Attack, DamageNumber, SplashRing, Difficulty, PingKind, PersistentCloud, Worker, GhostFoundation, Portal } from '@/lib/game-data/types';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
 
@@ -33,6 +32,7 @@ interface DesktopLayoutProps {
   gameStatus: GameStatus;
   resetGame: () => void;
   towers: Tower[];
+  waves: Wave[];
   setTowers: React.Dispatch<React.SetStateAction<Tower[]>>;
   placedTowers: PlacedTower[];
   enemies: Enemy[];
@@ -94,7 +94,7 @@ interface DesktopLayoutProps {
 export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLayoutProps) {
   const {
     players, setPlayers, gameState, localPlayer, currentWave, totalWaves, difficulty, handleGameControl, gameStatus,
-    resetGame, towers, setTowers, placedTowers, enemies, workers, ghosts, portals, damageNumbers, splashRings,
+    resetGame, towers, waves, setTowers, placedTowers, enemies, workers, ghosts, portals, damageNumbers, splashRings,
     persistentClouds,
     currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild, portalEntrance, focusedTower,
     gameBoardRef, interactionPrompt, cancelInteractions,

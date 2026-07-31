@@ -19,11 +19,10 @@ import WavePreview from '../game/wave-preview';
 import { Separator } from '../ui/separator';
 
 import type {
-  Tower, PlacedTower, Enemy, Node, Player, GameState,
+  Tower, Wave, PlacedTower, Enemy, Node, Player, GameState,
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
   Worker, GhostFoundation, Portal
 } from '@/lib/game-data/types';
-import { waves } from '@/lib/game-data/enemies';
 import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
 type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
@@ -62,6 +61,7 @@ interface MobileLayoutProps {
   handleSellTower: () => void;
   setFocusedTower: (tower: PlacedTower | null) => void;
   towers: Tower[];
+  waves: Wave[];
   setTowers: React.Dispatch<React.SetStateAction<Tower[]>>;
   spawnedThisWave: number;
   totalEnemiesInWave: number;
@@ -109,7 +109,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
     damageNumbers, splashRings, persistentClouds, currentPath, handlePlaceTower, onFocusTower, selectedTowerToBuild,
     portalEntrance, focusedTower, gameBoardRef, interactionPrompt,
     cancelInteractions, handleGameControl, gameStatus, resetGame,
-    onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower, setFocusedTower, towers, setTowers,
+    onSelectTowerToBuild, onEnterPortalMode, handleUpgradeTower, handleSellTower, setFocusedTower, towers, waves, setTowers,
     spawnedThisWave, totalEnemiesInWave, totalKilled, totalLeaked, isIntermission, waveStartCountdown, intermissionTime, handleStartNextWaveNow, lastUpgradedTowerId,
     justPlacedTowerId,
     isCoop, playerRole, handleLoadTestLayout, handleLoadAllTowersLayout, isCheating, cheat_addResources, cheat_skipWaves, cheat_heal,
