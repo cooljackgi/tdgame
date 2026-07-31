@@ -187,7 +187,7 @@ export default function AdminCenterPage() {
               <TableRow key={wave.wave}><TableCell>{wave.wave}</TableCell><TableCell>{wave.kills}</TableCell><TableCell>{wave.leaks}</TableCell><TableCell className="text-right">{wave.durationSec.toFixed(1)} s</TableCell></TableRow>
             ))}</TableBody>
           </Table>
-          <p className="text-xs text-muted-foreground">Geprüft {new Date(latestBalanceBrowserReport.checkedAt).toLocaleString('de-DE')} · Build {latestBalanceBrowserReport.build}</p>
+          <p className="text-xs text-muted-foreground">Geprüft {latestBalanceBrowserReport.checkedAtLabel} · Build {latestBalanceBrowserReport.build}</p>
         </CardContent>
       </Card>
     </main>

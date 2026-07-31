@@ -1,5 +1,6 @@
 export const latestBalanceBrowserReport = {
   checkedAt: '2026-07-31T20:07:00+02:00',
+  checkedAtLabel: '31.07.2026, 20:07',
   build: 'live-config-360-15',
   difficulty: 'Normal',
   layout: '5-Wand-Labyrinth, 15 Schützentürme, 40 Fundamente',
