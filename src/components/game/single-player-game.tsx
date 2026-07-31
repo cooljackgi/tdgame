@@ -113,6 +113,8 @@ export default function SinglePlayerGame({
     const workersRef = useRef(workers);
     const ghostsRef = useRef(ghosts);
     const portalsRef = useRef(portals);
+    const totalKilledRef = useRef(totalKilled);
+    const totalLeakedRef = useRef(totalLeaked);
 
 
     useEffect(() => { playersRef.current = players; localPlayerRef.current = players[0]; }, [players]);
@@ -129,6 +131,8 @@ export default function SinglePlayerGame({
     useEffect(() => { workersRef.current = workers; }, [workers]);
     useEffect(() => { ghostsRef.current = ghosts; }, [ghosts]);
     useEffect(() => { portalsRef.current = portals; }, [portals]);
+    useEffect(() => { totalKilledRef.current = totalKilled; }, [totalKilled]);
+    useEffect(() => { totalLeakedRef.current = totalLeaked; }, [totalLeaked]);
     
     // --- Load Game Configuration ---
     useEffect(() => {
@@ -169,6 +173,8 @@ export default function SinglePlayerGame({
             }]);
             setGhosts(initialSavedGame.ghosts || []);
             setPortals(initialSavedGame.portals || []);
+            setTotalKilled(initialSavedGame.totalKilled ?? 0);
+            setTotalLeaked(initialSavedGame.totalLeaked ?? 0);
             setGameStatus('playing');
             if (initialSavedGame.enemies.length === 0) {
                  setIsIntermission(true);
@@ -204,6 +210,8 @@ export default function SinglePlayerGame({
             }]);
             setGhosts([]);
             setPortals([]);
+            setTotalKilled(0);
+            setTotalLeaked(0);
         }
     }, [initialSavedGame, initialDifficulty, user, startWithTutorial, configLoading]);
     
@@ -247,7 +255,9 @@ export default function SinglePlayerGame({
           workers: workersRef.current,
           ghosts: ghostsRef.current,
           portals: portalsRef.current,
-          _v: 2, // Bump version to indicate new structure
+          totalKilled: totalKilledRef.current,
+          totalLeaked: totalLeakedRef.current,
+          _v: 3,
           _savedAt: Date.now(),
         };
 
@@ -460,9 +470,15 @@ export default function SinglePlayerGame({
             }
         } else if (selectedTowerToBuild) {
             const newState = enqueueBuildOrder(state, "worker-1", row, col, selectedTowerToBuild.id, Date.now());
-            setPlayers(newState.players);
-            setGhosts(newState.ghosts);
-            setWorkers(newState.workers);
+            setPlayers(newState.players.map(player => ({
+                ...player,
+                unlockedElements: [...player.unlockedElements],
+            })));
+            setGhosts([...(newState.ghosts ?? [])]);
+            setWorkers((newState.workers ?? []).map(worker => ({
+                ...worker,
+                queue: [...worker.queue],
+            })));
         } else {
             const newState = enqueueMoveOrder(state, 'worker-1', row, col);
             setWorkers(newState.workers);
@@ -539,27 +555,21 @@ export default function SinglePlayerGame({
         audioManager.play({ kind: 'sfx', name: 'ui_click' });
     }, [cancelInteractions]);
 
-    const generateLayout = useCallback((towersToPlace: Tower[]) => {
-        if (!gameConfig) return;
+    const generateLayout = useCallback((towersToPlace: Tower[], repeatTowers = false) => {
+        if (!gameConfig || towersToPlace.length === 0) return;
         const mazePath: Node[] = [
-            ...Array.from({ length: 9 }, (_, i) => ({ row: i + 2, col: 2 })),
-            ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 4 })),
-            ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 6 })),
-            ...Array.from({ length: 10 }, (_, i) => ({ row: 11 - i, col: 8 })),
-            ...Array.from({ length: 10 }, (_, i) => ({ row: i + 2, col: 10 })),
-            
-            { row: 11, col: 3 },
-            { row: 2, col: 5 },
-            { row: 11, col: 7 },
-            { row: 2, col: 9 },
-            { row: 11, col: 11 },
+            ...Array.from({ length: 11 }, (_, i) => ({ row: i + 1, col: 2 })),
+            ...Array.from({ length: 11 }, (_, i) => ({ row: i + 2, col: 4 })),
+            ...Array.from({ length: 11 }, (_, i) => ({ row: i + 1, col: 6 })),
+            ...Array.from({ length: 11 }, (_, i) => ({ row: i + 2, col: 8 })),
+            ...Array.from({ length: 11 }, (_, i) => ({ row: i + 1, col: 10 })),
         ];
 
         const newTowersByCell: Record<string, PlacedTower> = {};
         let towerIndex = 0;
 
         for (const pos of mazePath) {
-            if (towerIndex >= towersToPlace.length) break;
+            if (!repeatTowers && towerIndex >= towersToPlace.length) break;
 
             const towerSpec = towersToPlace[towerIndex % towersToPlace.length];
             const cellKey = `${pos.row}_${pos.col}`;
@@ -582,7 +592,7 @@ export default function SinglePlayerGame({
     const handleLoadTestLayout = useCallback(() => {
         if (!gameConfig) return;
         const testTowers = gameConfig.towers.filter(t => t.tier === 1 && t.id.includes("neutral-1a"));
-        generateLayout(testTowers);
+        generateLayout(testTowers, true);
         toast({ title: 'Test-Layout geladen!', description: 'Ein Labyrinth aus Basistürmen wurde erstellt.' });
     }, [generateLayout, toast, gameConfig]);
 

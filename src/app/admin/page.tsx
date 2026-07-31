@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { latestBalanceBrowserReport } from '@/lib/balance-browser-report';
 
 interface AdminOverview {
   status: 'healthy' | 'degraded' | 'error';
@@ -164,6 +165,31 @@ export default function AdminCenterPage() {
           </CardContent>
         </Card>
       </section>
+
+      <Card>
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2"><Gamepad2 className="h-5 w-5 text-primary" />Browser-Abnahme Einzelspieler</CardTitle>
+            <CardDescription>{latestBalanceBrowserReport.layout} · {latestBalanceBrowserReport.difficulty} · Startkosten {latestBalanceBrowserReport.startCost}</CardDescription>
+          </div>
+          <Badge>Browser-Abnahme bestanden</Badge>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm">{latestBalanceBrowserReport.finding}</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Erreichte Welle</p><p className="text-2xl font-semibold">{latestBalanceBrowserReport.reachedWave}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Kills</p><p className="text-2xl font-semibold">{latestBalanceBrowserReport.totalKills}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Leaks</p><p className="text-2xl font-semibold">{latestBalanceBrowserReport.totalLeaks}</p></div>
+          </div>
+          <Table>
+            <TableHeader><TableRow><TableHead>Welle</TableHead><TableHead>Kills</TableHead><TableHead>Leaks</TableHead><TableHead className="text-right">Dauer</TableHead></TableRow></TableHeader>
+            <TableBody>{latestBalanceBrowserReport.waves.map((wave) => (
+              <TableRow key={wave.wave}><TableCell>{wave.wave}</TableCell><TableCell>{wave.kills}</TableCell><TableCell>{wave.leaks}</TableCell><TableCell className="text-right">{wave.durationSec.toFixed(1)} s</TableCell></TableRow>
+            ))}</TableBody>
+          </Table>
+          <p className="text-xs text-muted-foreground">Geprüft {new Date(latestBalanceBrowserReport.checkedAt).toLocaleString('de-DE')} · Build {latestBalanceBrowserReport.build}</p>
+        </CardContent>
+      </Card>
     </main>
   );
 }

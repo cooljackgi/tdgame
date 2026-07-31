@@ -1,0 +1,19 @@
+export const latestBalanceBrowserReport = {
+  checkedAt: '2026-07-31T20:07:00+02:00',
+  build: 'live-config-360-15',
+  difficulty: 'Normal',
+  layout: '5-Wand-Labyrinth, 15 Schützentürme, 40 Fundamente',
+  startCost: 1240,
+  reachedWave: 5,
+  totalKills: 64,
+  totalLeaks: 0,
+  result: 'passed' as const,
+  finding: 'Bestanden: Wellen 1–4 unverändert ohne Leak; Welle 5 verbessert von 0/13 auf 13/13 Kills ohne Leak.',
+  waves: [
+    { wave: 1, kills: 10, leaks: 0, durationSec: 25.8 },
+    { wave: 2, kills: 12, leaks: 0, durationSec: 32.1 },
+    { wave: 3, kills: 14, leaks: 0, durationSec: 24.7 },
+    { wave: 4, kills: 15, leaks: 0, durationSec: 46.8 },
+    { wave: 5, kills: 13, leaks: 0, durationSec: 51.5 },
+  ],
+};

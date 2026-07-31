@@ -34,6 +34,8 @@ export type GameSaveState = {
   workers: Worker[];
   ghosts: GhostFoundation[];
   portals: Portal[];
+  totalKilled?: number;
+  totalLeaked?: number;
 };
 
 export type GameResult = {

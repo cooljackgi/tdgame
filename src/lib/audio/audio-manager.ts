@@ -35,10 +35,10 @@ async function loadAudioFile(ctx: AudioContext, url: string): Promise<AudioBuffe
 const SFX_FILES: Record<SfxName, string> = {
     'build_tower': 'build.wav',
     'upgrade_tower': 'upgrade.wav',
-    'sell_tower': 'sell.wav',
+    'sell_tower': 'upgrade.wav',
     'enemy_die': 'hit.wav',
     'enemy_leak': 'leak.wav',
-    'ui_click': 'click.wav',
+    'ui_click': 'hit.wav',
     'wave_start': 'wave_start.wav',
 };
 

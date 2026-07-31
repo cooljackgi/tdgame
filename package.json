@@ -11,6 +11,7 @@
     "firestore:read": "node scripts/firestore-read.mjs",
     "balance:analyze": "node scripts/analyze-balance.js",
     "balance:economy": "node scripts/economy-analysis.js",
+    "balance:tune-wave5": "node scripts/tune-wave-5.js",
     "balance:verify": "node scripts/verify-balance.js"
   },
   "dependencies": {
