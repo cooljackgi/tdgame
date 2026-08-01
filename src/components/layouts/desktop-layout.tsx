@@ -192,9 +192,9 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
   const isBossWaveNext = isIntermission && (currentWave + 1) > 0 && (currentWave + 1) % 10 === 0;
 
   return (
-    <div className="grid grid-cols-[320px_1fr_320px] gap-6 max-w-screen-2xl mx-auto h-full">
+    <div className="grid h-full min-h-0 max-w-[1600px] grid-cols-[clamp(240px,20vw,300px)_minmax(0,1fr)_clamp(240px,20vw,300px)] gap-3 mx-auto overflow-hidden">
       {/* Left Sidebar */}
-      <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-r from-background/95 via-background/80 to-transparent backdrop-blur-md border-r border-border/50 overflow-y-auto">
+      <aside className="flex min-h-0 flex-col gap-3 pointer-events-auto p-3 bg-gradient-to-r from-background/95 via-background/80 to-transparent backdrop-blur-md border-r border-border/50 overflow-y-auto">
       {interactionPromptComponent}
         <div id="tutorial-player-stats">
             {players.map(player => player && (
@@ -208,15 +208,15 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
               />
             ))}
         </div>
-         <Card className="p-4 space-y-2">
-          <div className="flex justify-around items-center">
-             <Button onClick={handleGameControl} variant="outline" size="lg" disabled={gameStatus === 'gameover' || gameStatus === 'picking-element' || (gameStatus === 'waiting' && !isHost) || isSpectator}>
-              {gameStatus === 'playing' ? <Pause /> : <Play />}
-              <span className="ml-2">{gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' && !isHost ? 'Wartet...' : 'Weiter')}</span>
+         <Card className="p-3">
+          <div className="grid grid-cols-2 gap-2">
+             <Button className="w-full px-2" onClick={handleGameControl} variant="outline" disabled={gameStatus === 'gameover' || gameStatus === 'picking-element' || (gameStatus === 'waiting' && !isHost) || isSpectator}>
+              {gameStatus === 'playing' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              <span className="ml-1.5">{gameStatus === 'playing' ? 'Pause' : (gameStatus === 'waiting' && !isHost ? 'Wartet...' : 'Weiter')}</span>
             </Button>
-            <Button onClick={resetGame} variant="destructive" size="lg">
-              <LogOut />
-              <span className="ml-2">{isSpectator ? 'Verlassen' : (isCoop ? 'Verlassen' : 'Reset')}</span>
+            <Button className="w-full px-2" onClick={resetGame} variant="destructive">
+              <LogOut className="h-4 w-4" />
+              <span className="ml-1.5">{isSpectator ? 'Verlassen' : (isCoop ? 'Verlassen' : 'Reset')}</span>
             </Button>
           </div>
         </Card>
@@ -234,15 +234,14 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       </aside>
 
             {/* Main Game Area */}
-            <div className="flex-grow flex items-center justify-center h-full">
+            <div className="flex min-h-0 min-w-0 items-center justify-center h-full p-1">
          <div
             id="tutorial-game-board"
             ref={wrapRef}
-            className="relative rounded-xl overflow-hidden shadow-2xl ring-1 ring-primary/20"
+            className="relative aspect-square overflow-hidden rounded-2xl border border-cyan-300/20 bg-slate-950 shadow-[0_24px_80px_-28px_rgba(34,211,238,0.45)]"
             style={{
-                width:  'min(calc(100vw - 640px - 3rem), 90svh)',
-                height: 'min(calc(100vw - 640px - 3rem), 90svh)',
-                background: 'linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%)',
+                width: 'min(100%, calc(100svh - 5rem))',
+                maxHeight: '100%',
             }}
         >
             {isBossWaveNext && (
@@ -284,7 +283,7 @@ export const DesktopLayout = React.memo(function DesktopLayout(props: DesktopLay
       </div>
 
       {/* Right Sidebar */}
-      <aside className="flex flex-col gap-4 pointer-events-auto p-4 bg-gradient-to-l from-background/95 via-background/80 to-transparent backdrop-blur-md border-l border-border/50 overflow-y-auto">
+      <aside className="flex min-h-0 flex-col gap-3 pointer-events-auto p-3 bg-gradient-to-l from-background/95 via-background/80 to-transparent backdrop-blur-md border-l border-border/50 overflow-y-auto">
       <div id="tutorial-build-menu">
             {!isSpectator && (
               <TowerSelection

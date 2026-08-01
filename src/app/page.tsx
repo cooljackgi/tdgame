@@ -318,7 +318,10 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gradient-to-br from-background to-slate-900/50 text-foreground">
+    <main className={activeGame === 'singleplayer'
+      ? "flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-gradient-to-br from-background to-slate-900/50 text-foreground"
+      : "flex min-h-screen flex-col items-center justify-center p-4 bg-gradient-to-br from-background to-slate-900/50 text-foreground"
+    }>
       {renderContent()}
     </main>
   );

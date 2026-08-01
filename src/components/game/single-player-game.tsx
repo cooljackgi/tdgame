@@ -949,7 +949,7 @@ export default function SinglePlayerGame({
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
              {gameStatus === 'tutorial' && <TutorialOverlay onFinish={() => setGameStatus('waiting')} />}
              <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={fps} />
-             <div className="flex-grow p-2">
+             <div className={isMobile ? "flex-grow min-h-0 overflow-hidden" : "flex-grow min-h-0 overflow-hidden p-2"}>
                 <LayoutComponent
                     players={players} 
                     setPlayers={setPlayers} 

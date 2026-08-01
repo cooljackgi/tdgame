@@ -48,17 +48,19 @@ function GamePage() {
     }, [gameId, gameMode]); // Depend on gameMode to prevent re-setting it
 
     if (loading) {
-        return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Lade Spielmodus...</p></div>;
+        return <div className="w-full h-dvh flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Lade Spielmodus...</p></div>;
     }
     
     if (error) {
-         return <div className="w-full h-full flex flex-col items-center justify-center bg-background"><p className="text-destructive">{error}</p></div>;
+         return <div className="w-full h-dvh flex flex-col items-center justify-center bg-background"><p className="text-destructive">{error}</p></div>;
     }
 
     return (
-        <Suspense fallback={<div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Lade Spielkomponenten...</p></div>}>
-            {gameMode === 'versus' ? <VersusGameLoader /> : <CoopGameLoader />}
-        </Suspense>
+        <div className="h-dvh w-full overflow-hidden">
+          <Suspense fallback={<div className="w-full h-full flex flex-col items-center justify-center bg-background"><Loader2 className="h-10 w-10 animate-spin text-primary mb-4" /><p className="text-muted-foreground">Lade Spielkomponenten...</p></div>}>
+              {gameMode === 'versus' ? <VersusGameLoader /> : <CoopGameLoader />}
+          </Suspense>
+        </div>
     );
 }
 

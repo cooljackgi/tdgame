@@ -723,7 +723,7 @@ export default function VersusGameLoader() {
   return (
     <div className="w-full h-full flex flex-col">
       <Header onExit={onExit} isMuted={isMuted} toggleMute={() => setIsMuted(m => !m)} fps={isGameHost ? fps : stats.fps} />
-      <div className="flex-grow p-2">
+      <div className={isMobile ? "flex-grow min-h-0 overflow-hidden" : "flex-grow min-h-0 overflow-hidden p-2"}>
         <LayoutComponent
           players={players}
           setPlayers={setPlayers}

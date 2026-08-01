@@ -3,7 +3,6 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Card } from '@/components/ui/card';
 import type { PlacedTower, Tower, Enemy, Node, Attack, DamageNumber, SplashRing, Element, PingPayload, RequestPayload, RequestResolve, PingKind, LifeGainVfx, SplashRingVfxType, PersistentCloud, Worker, GhostFoundation, Portal } from '@/lib/game-data/types';
 import { elementProjectileColors, GRID_ROWS, GRID_COLS } from '@/lib/game-data/constants';
 import { cn } from '@/lib/utils';
@@ -373,6 +372,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
   const hoverOverlayRef = useRef<HTMLDivElement>(null);
   const panRef = useRef({ x: -CELL_SIZE * 1.5, y: -CELL_SIZE * 1.5 });
   const zoomRef = useRef(0.95);
+  const minZoomRef = useRef(0.35);
   const transformApplyRef = useRef<number>();
 
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -408,13 +408,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
     
-    const targetZoom = Math.min(containerWidth / boardWidth, containerHeight / boardHeight) * 0.9;
+    const targetZoom = Math.min(containerWidth / boardWidth, containerHeight / boardHeight) * 0.97;
     
     panRef.current = {
       x: (containerWidth - boardWidth * targetZoom) / 2,
       y: (containerHeight - boardHeight * targetZoom) / 2,
     }
     zoomRef.current = targetZoom;
+    minZoomRef.current = targetZoom;
     
     scheduleApplyTransform();
   }, [boardDimensions, scheduleApplyTransform]);
@@ -1242,6 +1243,14 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
 
     if (e.touches.length === 1) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          const worldX = (touch.clientX - rect.left - panRef.current.x) / zoomRef.current;
+          const worldY = (touch.clientY - rect.top - panRef.current.y) / zoomRef.current;
+          const col = Math.floor(worldX / CELL_SIZE) + 1;
+          const row = Math.floor(worldY / CELL_SIZE) + 1;
+          setHoveredCell(row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS ? { row, col } : null);
+        }
         isPanningRef.current = true;
         panStartRef.current = { x: touch.clientX, y: touch.clientY, panX: panRef.current.x, panY: panRef.current.y };
     } else if (e.touches.length === 2) {
@@ -1290,7 +1299,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
         const zoomFactor = dist / (lastTouchRef.current.dist || dist);
         const newZoom = zoomRef.current * zoomFactor;
 
-        zoomRef.current = clamp(newZoom, 0.6, 1.5);
+        zoomRef.current = clamp(newZoom, minZoomRef.current, 1.5);
         
         panRef.current.x = mx - mouseWorldX * zoomRef.current;
         panRef.current.y = my - mouseWorldY * zoomRef.current;
@@ -1313,17 +1322,28 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
     if (dist < 10) { // It's a tap or double tap
         e.stopPropagation();
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        const changedTouch = e.changedTouches[0];
+        let tappedCell: { row: number; col: number } | null = null;
+        if (rect && changedTouch) {
+          const worldX = (changedTouch.clientX - rect.left - panRef.current.x) / zoomRef.current;
+          const worldY = (changedTouch.clientY - rect.top - panRef.current.y) / zoomRef.current;
+          const col = Math.floor(worldX / CELL_SIZE) + 1;
+          const row = Math.floor(worldY / CELL_SIZE) + 1;
+          tappedCell = row >= 1 && row <= GRID_ROWS && col >= 1 && col <= GRID_COLS ? { row, col } : null;
+        }
         
         const now = Date.now();
         if (now - lastTapTimeRef.current < 300) { // Double-tap
-            if (hoveredCell) handlePlaceTower(hoveredCell.row, hoveredCell.col); // Move worker
+            if (tappedCell) handlePlaceTower(tappedCell.row, tappedCell.col); // Move worker
             lastTapTimeRef.current = 0;
         } else { // Single-tap
-            if (hoveredCell) {
+            if (tappedCell) {
                 if (selectedTowerToBuild || isPlacingPortalEntrance) {
-                    handlePlaceTower(hoveredCell.row, hoveredCell.col);
+                    handlePlaceTower(tappedCell.row, tappedCell.col);
                 } else {
-                    const towerAtCell = placedTowers.find(t => t.position.row === hoveredCell.row && t.position.col === hoveredCell.col);
+                    const towerAtCell = placedTowers.find(t => t.position.row === tappedCell.row && t.position.col === tappedCell.col);
                     if (towerAtCell) {
                         onFocusTower(towerAtCell);
                     } else {
@@ -1357,7 +1377,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
       const zoomFactor = 1.1;
       const newZoom = e.deltaY < 0 ? zoomRef.current * zoomFactor : zoomRef.current / zoomFactor;
       
-      zoomRef.current = clamp(newZoom, 0.6, 1.5);
+      zoomRef.current = clamp(newZoom, minZoomRef.current, 1.5);
 
       panRef.current.x = mx - mouseWorldX * zoomRef.current;
       panRef.current.y = my - mouseWorldY * zoomRef.current;
@@ -1449,12 +1469,11 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
 
   return (
     <TooltipProvider>
-      <Card 
+      <div
         ref={containerRef}
         className={cn(
-          "absolute inset-0 z-0 overflow-hidden",
-          selectedTowerToBuild || isPlacingPortalEntrance ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing",
-          "border-slate-800 border"
+          "absolute inset-0 z-0 overflow-hidden bg-slate-950",
+          selectedTowerToBuild || isPlacingPortalEntrance ? "cursor-crosshair" : "cursor-grab active:cursor-grabbing"
         )}
         style={{ touchAction: 'none' }}
         onMouseDown={handleMouseDown}
@@ -1854,7 +1873,7 @@ const GameBoard = forwardRef<GameBoardHandle, GameBoardProps>(({
           </Button>
         </div>
         {children}
-      </Card>
+      </div>
     </TooltipProvider>
   );
 });

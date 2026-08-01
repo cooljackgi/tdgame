@@ -5,8 +5,7 @@
 import React, { useState, memo, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot } from 'lucide-react';
-import PlayerStats from '@/components/game/player-stats';
+import { Pause, Play, LogOut, Hammer, ArrowUpCircle, ChevronsUpDown, Bug, X, MessageCircle, Eye, RefreshCcw, Coins, Sparkles, Microscope, Bot, Heart, TrendingUp, Move, ZoomIn } from 'lucide-react';
 import WaveTracker from '@/components/game/wave-tracker';
 import GameStatsTracker from '@/components/game/game-stats-tracker';
 import GameBoard, { type GameBoardHandle } from '@/components/game/game-board';
@@ -23,7 +22,6 @@ import type {
   Attack, DamageNumber, SplashRing, Difficulty, PingKind, Element, PersistentCloud,
   Worker, GhostFoundation, Portal
 } from '@/lib/game-data/types';
-import { difficultyModifiers, INTERMISSION_TIME } from '@/lib/game-data/constants';
 
 type GameStatus = 'waiting' | 'playing' | 'paused' | 'gameover' | 'picking-element' | 'tutorial';
 
@@ -167,7 +165,6 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   const showNextWaveButton = (isIntermission && gameStatus === 'playing') || gameStatus === 'waiting';
   const canStartWave = !isSpectator && (!isCoop || isHost);
 
-  const maxLives = difficultyModifiers[difficulty].startLives;
   const showDebugFeatures = isCheating || isCoop;
   
   const auraTowers = React.useMemo(() => placedTowers.filter(t => t.effects?.some(e => e.type === 'aura')), [placedTowers]);
@@ -248,30 +245,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
   const isBossWaveNext = isIntermission && (currentWave + 1) > 0 && (currentWave + 1) % 10 === 0;
 
   return (
-    <div className="w-full min-h-dvh flex flex-col">
-      {/* HEADER */}
-      <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
-        <div
-            id="tutorial-player-stats"
-            className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
-        >
-           <div className="grid grid-cols-2 gap-2">
-            {players.map((p) => p && (
-              <div key={p.id} className="min-w-0">
-                <PlayerStats
-                  player={p}
-                  lives={gameState.lives}
-                  maxLives={maxLives}
-                  isCompact
-                  isLocalPlayer={p.id === localPlayer.id}
-                  isCoop={isCoop}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-950">
       {/* GAME AREA */}
       <div
         id="tutorial-game-board"
@@ -313,7 +287,37 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
           onPing={onPing}
         >
           {/* TOP OVERLAYS */}
-          <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2">
+          <div
+            id="tutorial-player-stats"
+            className="pointer-events-none absolute left-2 right-2 top-2 z-40 flex gap-2 landscape:right-auto landscape:w-[17rem]"
+          >
+            {players.map((player) => player && (
+              <div
+                key={player.id}
+                className={`min-w-0 flex-1 rounded-xl border px-2.5 py-2 shadow-lg backdrop-blur-md ${
+                  player.id === localPlayer.id
+                    ? 'border-cyan-300/30 bg-slate-950/80'
+                    : 'border-white/10 bg-slate-950/70'
+                }`}
+              >
+                <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-slate-100">
+                  {player.avatarUrl ? (
+                    <img src={player.avatarUrl} alt="" className="h-4 w-4 rounded-full" />
+                  ) : (
+                    <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]" />
+                  )}
+                  <span className="truncate">{player.name || 'Spieler'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
+                  <span className="flex items-center gap-1 text-yellow-300"><Coins className="h-3.5 w-3.5" />{player.id === 'spectator' ? '---' : Math.floor(player.resources)}</span>
+                  <span className="flex items-center gap-1 text-rose-400"><Heart className="h-3.5 w-3.5" />{gameState.lives}</span>
+                  <span className="flex items-center gap-1 text-emerald-300"><TrendingUp className="h-3.5 w-3.5" />+{player.incomePerSecond}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="pointer-events-none absolute top-[4.5rem] left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-sm space-y-2 landscape:left-auto landscape:right-2 landscape:top-2 landscape:w-[19rem] landscape:translate-x-0">
             {showNextWaveButton && (
               <div id="tutorial-start-wave-button" className="pointer-events-auto">
                 <WaveStartTimer countdown={waveStartCountdown} totalTime={intermissionTime} onStartWave={handleStartNextWaveNow} canStartWave={canStartWave}/>
@@ -321,30 +325,43 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             )}
           </div>
 
+          <div className="pointer-events-none absolute bottom-3 left-3 right-14 z-40 landscape:right-auto landscape:w-[17rem]">
+            <div className="flex min-h-9 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-[11px] font-medium text-slate-200 shadow-lg backdrop-blur-md">
+              {selectedTowerToBuild || focusedTower || isPlacingPortalEntrance ? (
+                <MessageCircle className="h-4 w-4 flex-shrink-0 text-cyan-300" />
+              ) : (
+                <Move className="h-4 w-4 flex-shrink-0 text-cyan-300" />
+              )}
+              <span className="min-w-0 flex-1 truncate">
+                {selectedTowerToBuild || focusedTower || isPlacingPortalEntrance
+                  ? interactionPrompt
+                  : 'Tippen: wählen · Ziehen: bewegen · 2 Finger: zoomen'}
+              </span>
+              {!selectedTowerToBuild && !focusedTower && !isPlacingPortalEntrance && <ZoomIn className="h-4 w-4 flex-shrink-0 text-slate-400" />}
+              {(selectedTowerToBuild || focusedTower || isPlacingPortalEntrance) && !isSpectator && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={cancelInteractions}
+                  className="pointer-events-auto h-7 w-7 flex-shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
         </GameBoard>
       </div>
 
       {/* BOTTOM BAR */}
       <footer
-        className="flex-shrink-0 border-t bg-card/80 backdrop-blur-sm"
+        className="z-50 flex-shrink-0 border-t border-white/10 bg-slate-950/90 shadow-[0_-16px_40px_-24px_rgba(34,211,238,0.45)] backdrop-blur-xl"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0)' }}
       >
 <div
-  className="w-full p-2 space-y-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
+  className="w-full p-2 px-[max(env(safe-area-inset-left),0px)] pr-[max(env(safe-area-inset-right),0px)]"
 >
-          {/* PROMPT - Moved here */}
-          {interactionPrompt && (
-            <div className="bg-card/90 backdrop-blur-sm border rounded-lg p-2 flex items-center gap-2 shadow-md">
-                <MessageCircle className="h-5 w-5 text-accent flex-shrink-0" />
-                <p className="text-xs font-medium truncate flex-grow">{interactionPrompt}</p>
-                {(selectedTowerToBuild || focusedTower || isPlacingPortalEntrance) && !isSpectator && (
-                <Button variant="ghost" size="icon" onClick={cancelInteractions} className="h-7 w-7">
-                    <X className="h-4 w-4" />
-                </Button>
-                )}
-            </div>
-           )}
-
           <div className="grid grid-cols-3 gap-2">
             {/* Build / Upgrade Sheet */}
             <Sheet open={isBuildSheetOpen} onOpenChange={setIsBuildSheetOpen}>
@@ -352,7 +369,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
                 <Button
                   id="tutorial-build-menu"
                   variant="outline"
-                  className="h-14 flex flex-col justify-center"
+                  className="h-14 rounded-xl border-white/10 bg-white/[0.04] flex flex-col justify-center"
                   disabled={gameStatus === 'picking-element' || isSpectator}
                 >
                   {sheetIcon}
@@ -406,7 +423,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             <Button
               onClick={handleGameControl}
               variant="outline"
-              className="h-14 flex flex-col justify-center"
+              className="h-14 rounded-xl border-white/10 bg-white/[0.04] flex flex-col justify-center"
               disabled={
                 gameStatus === 'gameover' ||
                 gameStatus === 'picking-element' ||
@@ -424,7 +441,7 @@ export const MobileLayout = memo(function MobileLayout(props: MobileLayoutProps)
             {/* Extra / Debug Sheet */}
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline" className="h-14 flex flex-col justify-center" id="tutorial-wave-tracker">
+                <Button variant="outline" className="h-14 rounded-xl border-white/10 bg-white/[0.04] flex flex-col justify-center" id="tutorial-wave-tracker">
                   <ChevronsUpDown />
                   <span className="text-[11px] mt-1">Menü</span>
                 </Button>

@@ -256,7 +256,7 @@ export const VersusMobileLayout = memo(function VersusMobileLayout(props: Mobile
   const isBossWaveNext = isIntermission && (currentWave + 1) > 0 && (currentWave + 1) % 10 === 0;
 
   return (
-    <div className="w-full min-h-dvh flex flex-col">
+    <div className="w-full h-full min-h-0 flex flex-col overflow-hidden">
       {/* HEADER */}
       <div className="flex-shrink-0 border-b bg-card/80 backdrop-blur-sm z-50">
         <div

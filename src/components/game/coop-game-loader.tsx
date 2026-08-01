@@ -1162,7 +1162,7 @@ export default function CoopGameLoader() {
   return (
         <div className="w-full h-full flex flex-col" onClick={() => { if(!hasInteracted) { audioManager.init(); setHasInteracted(true); }}}>
              <Header onExit={onExit} isMuted={isMuted} toggleMute={toggleMute} fps={isGameHost ? fps : stats.fps} />
-             <div className="flex-grow p-2">
+             <div className={isMobile ? "flex-grow min-h-0 overflow-hidden" : "flex-grow min-h-0 overflow-hidden p-2"}>
                 <LayoutComponent
                     players={players} 
                     setPlayers={setPlayers} 
